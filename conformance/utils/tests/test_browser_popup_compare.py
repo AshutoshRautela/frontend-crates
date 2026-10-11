@@ -523,13 +523,18 @@ def test_tooltip_builds_lazily_on_first_interaction(driver):
     assert built["chart"] and built["thCand"] > 0 and built["head"], f"lazy build incomplete: {built}"
 
 
+@pytest.mark.parametrize("viewport_width", [1600, 480])
 @pytest.mark.parametrize("transpose", [False, True])
 @pytest.mark.parametrize("theme", ["light", "dark"])
-def test_case_schema_chip_expands_inside_the_existing_grammar_popup(driver, transpose, theme):
+def test_case_schema_chip_expands_inside_the_existing_grammar_popup(
+    driver, transpose, theme, viewport_width
+):
     saved_url = driver.current_url
+    saved_size = driver.get_window_size()
     saved_theme = driver.execute_script("return document.documentElement.dataset.theme")
     saved_scroll = driver.execute_script("return [scrollX, scrollY]")
     try:
+        driver.set_window_size(viewport_width, 1200)
         _open_tab(driver, "unified")
         toggle = driver.find_element(By.CSS_SELECTOR, "[data-transpose-toggle]")
         if toggle.is_selected() != transpose:
@@ -591,8 +596,20 @@ def test_case_schema_chip_expands_inside_the_existing_grammar_popup(driver, tran
         summary = disclosure.find_element(By.CSS_SELECTOR, "summary")
         assert summary.is_displayed()
         assert disclosure.get_dom_attribute("open") is None
+        collapsed_width = tip.size["width"]
         summary.click()
         wait.until(lambda browser: disclosure.get_dom_attribute("open") is not None)
+        wait.until(lambda browser: tip.size["width"] >= collapsed_width)
+        popup_rect = driver.execute_script("""
+            const rect = arguments[0].getBoundingClientRect();
+            return {left: rect.left, right: rect.right, width: rect.width,
+                    viewport: innerWidth};
+        """, tip)
+        if viewport_width >= 800:
+            assert popup_rect["width"] >= 720, popup_rect
+        else:
+            assert popup_rect["left"] >= 32, popup_rect
+            assert popup_rect["right"] <= popup_rect["viewport"] - 32, popup_rect
         blocks = disclosure.find_elements(By.CSS_SELECTOR, ".case-schema-json")
         assert all(block.is_displayed() for block in blocks)
         assert [json.loads(block.get_attribute("textContent")) for block in blocks] == headers["expected"]
@@ -622,6 +639,7 @@ def test_case_schema_chip_expands_inside_the_existing_grammar_popup(driver, tran
         if driver.execute_script("return document.documentElement.dataset.theme") != saved_theme:
             driver.find_element(By.CSS_SELECTOR, "[data-theme-toggle]").click()
         driver.get(saved_url)
+        driver.set_window_size(saved_size["width"], saved_size["height"])
         driver.execute_script("scrollTo(arguments[0], arguments[1])", *saved_scroll)
 
 

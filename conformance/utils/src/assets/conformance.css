@@ -489,7 +489,10 @@ td.cell, td.parser { cursor: pointer; }
 .ttip a:hover { color: #dbeafe; background: transparent; }
 .ttip-head { font-weight: bold; margin-bottom: 4px; color: #fbbf24; }
 .case-schema { display: inline; }
-.ttip:has(.case-schema[open]) { overflow: auto; }
+.ttip:has(.case-schema[open]) {
+    min-width: min(720px, max(240px, calc(100vw - 64px)));
+    overflow: auto;
+}
 .case-schema-toggle {
     display: inline-block;
     list-style: none;
