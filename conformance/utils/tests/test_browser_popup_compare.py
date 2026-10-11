@@ -643,6 +643,59 @@ def test_case_schema_chip_expands_inside_the_existing_grammar_popup(
         driver.execute_script("scrollTo(arguments[0], arguments[1])", *saved_scroll)
 
 
+@pytest.mark.parametrize("transpose", [False, True])
+def test_keyboard_schema_popup_stays_interactive_after_resize(driver, transpose):
+    saved_url = driver.current_url
+    saved_size = driver.get_window_size()
+    saved_scroll = driver.execute_script("return [scrollX, scrollY]")
+    try:
+        driver.set_window_size(1000, 700)
+        _open_tab(driver, "unified")
+        toggle = driver.find_element(By.CSS_SELECTOR, "[data-transpose-toggle]")
+        if toggle.is_selected() != transpose:
+            toggle.click()
+        selector = "th.trow-case" if transpose else "th.case-sub"
+        header = driver.execute_script("""
+            const page = JSON.parse(document.getElementById('conformance-model').textContent);
+            const tab = page.tabs.find(item => item.id === 'tab-unified');
+            const index = tab.columns.findIndex(column => column.sub === 'schema_const_plain_bare');
+            return document.querySelectorAll('#tab-unified ' + arguments[0])[index];
+        """, selector)
+        driver.execute_script("""
+            arguments[0].scrollIntoView({block: 'center', inline: 'center'});
+        """, header)
+        actions = ActionChains(driver)
+        actions.w3c_actions.pointer_action.move_to_location(2, 2)
+        actions.perform()
+        wait = WebDriverWait(driver, 10)
+        wait.until(lambda browser: not browser.find_elements(By.CSS_SELECTOR, ".ttip-visible"))
+        driver.execute_script("arguments[0].querySelector('a').focus()", header)
+        tip = wait.until(lambda browser: browser.execute_script("""
+            const tip = arguments[0]._ttip;
+            return tip && tip.classList.contains('ttip-visible') ? tip : null;
+        """, header))
+        assert driver.execute_script("return arguments[0].parentNode === arguments[1]", tip, header)
+        disclosure = tip.find_element(By.CSS_SELECTOR, "details.case-schema")
+        summary = disclosure.find_element(By.CSS_SELECTOR, "summary")
+        # A native click proves sibling sticky case rows do not cover the disclosure.
+        summary.click()
+        wait.until(lambda browser: disclosure.get_dom_attribute("open") is not None)
+        assert driver.execute_script("return document.activeElement === arguments[0]", summary)
+        driver.set_window_size(480, 500)
+        wait.until(lambda browser: browser.execute_script("""
+            const rect = arguments[0].getBoundingClientRect();
+            return rect.left >= 32 && rect.right <= innerWidth - 32
+                && rect.top >= 0 && rect.bottom <= innerHeight;
+        """, tip), "keyboard-origin schema popup did not fit after resize")
+        summary.send_keys(Keys.ENTER)
+        wait.until(lambda browser: disclosure.get_dom_attribute("open") is None)
+        assert tip.is_displayed()
+    finally:
+        driver.get(saved_url)
+        driver.set_window_size(saved_size["width"], saved_size["height"])
+        driver.execute_script("scrollTo(arguments[0], arguments[1])", *saved_scroll)
+
+
 def test_popup_columns_match_compare_bar_candidates(driver):
     """The popup chart's candidate columns are exactly the tab's compare-bar candidate
     keys — the popup renders from the same model as the selector."""

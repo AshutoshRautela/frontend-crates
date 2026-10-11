@@ -808,8 +808,7 @@ struct CaptureChunk {
     expected: Vec<Value>,
 }
 
-/// The scenario slug for each committed case key, read from the `inputs/` shard
-/// (the numbered `UNIFIED.<group>-<description>` key lives only in the Python taxonomy).
+/// The scenario slug for each committed case key, read from the `inputs/` shard.
 #[derive(Deserialize)]
 struct InputDoc {
     family: String,

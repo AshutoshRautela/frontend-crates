@@ -47,7 +47,8 @@ tab = {
   "column_groups": [ {"key","label","span"} ],   # top header row
   "columns": [ {"sub","group_key","band","label","desc","schemas"?} ],
                                      # sub-case headers; optional schemas are
-                                     # deduplicated {families, tools} variants
+                                     # deduplicated {families, tools, cases?} variants;
+                                     # folded cases retain labels/family associations
   "rows": [ row, ... ],
   "glossary": [ {"label": str, "rows": [[sub, desc], ...]} ],
   "stats": { ... },                  # families/sub_cases/slots/real/parity/... counts

@@ -436,7 +436,7 @@ Expected values are authored in `conformance/utils/src/glm47_schema_cases.json`,
 
 String constants fold by literal into ten entries: Direct, Explicit string type, allOf, and Reference. anyOf and oneOf stay separate, each with six entries by alternative type; their variants cross String / Typed value with Forward / Reversed branch order. Existing null groups retain their variants. Each popup lists the child's input, initialization, applicable family, capture, and comparison. A failing child keeps its parent failing; missing captures remain distinguishable from inapplicable cases.
 
-Detailed matrix labels show a small `{}` when the entry or any child has an explicit schema. Overview hides it. Clicking the existing label opens the popup; its `{ } Schema` disclosure expands inline. Identical schema JSON appears once with every associated variant and applicable family. Shared fallback schemas do not get an indicator.
+Detailed matrix labels show a small `{}` when the entry or any child has an explicit schema. Overview hides it. Hover or focus the existing label to open the popup (tap on touch devices). Its `{ } Schema` disclosure expands inline, using more width when space allows and scrolling within the available viewport height. Identical schema JSON appears once with every associated variant and applicable family. Shared fallback schemas do not get an indicator.
 
 Historical schema-subgroup aliases below retain their original meaning. Active IDs use the probe name directly, for example `UNIFIED.7-declared_array` and `UNIFIED.7-const_array_allof`; subgroup headings and ordering remain separate metadata.
 

@@ -778,8 +778,18 @@ def test_case_labels_squish_horizontally_and_expand_when_transposed(driver, rend
             prefix, number = short.split("-", 1)
             by_prefix.setdefault(prefix, []).append((full.split("-", 1)[1], int(number)))
         for pairs in by_prefix.values():
-            assert [desc for desc, _ in pairs] == sorted(desc for desc, _ in pairs)
             assert [number for _, number in pairs] == list(range(1, len(pairs) + 1))
+        section_descriptions = driver.execute_script("""
+            const sections = new Map();
+            for (const header of document.querySelectorAll('#tab-unified th.case-sub')) {
+                const key = header.dataset.colHideGroup;
+                const label = header.querySelector('.case-label-full').textContent;
+                if (!sections.has(key)) sections.set(key, []);
+                sections.get(key).push(label.slice(label.indexOf('-') + 1));
+            }
+            return [...sections.values()];
+        """)
+        assert all(descriptions == sorted(descriptions) for descriptions in section_descriptions)
         assert by_prefix["ds4"][0][1] == by_prefix["ds41"][0][1] == 1
 
         ActionChains(driver).move_to_element(header).perform()
@@ -1383,15 +1393,16 @@ def test_popup_headings_include_compact_references(driver, rendered_page):
                 )
                 assert cell is not None
                 for target in (header, cell):
-                    ActionChains(driver).move_to_element(driver.find_element(By.TAG_NAME, "h1")).perform()
+                    actions = ActionChains(driver)
+                    actions.w3c_actions.pointer_action.move_to_location(2, 2)
+                    actions.perform()
                     WebDriverWait(driver, 5).until(lambda d: not d.find_elements(By.CSS_SELECTOR, ".ttip.ttip-visible"))
                     driver.execute_script("arguments[0].scrollIntoView({block:'center',inline:'center'});", target)
                     ActionChains(driver).move_to_element(target).perform()
-                    driver.execute_script(
-                        "arguments[0].dispatchEvent(new PointerEvent('pointerover',{bubbles:true}));"
-                        "arguments[0].dispatchEvent(new PointerEvent('pointerenter'));", target,
-                    )
-                    popup = WebDriverWait(driver, 5).until(lambda d: d.find_element(By.CSS_SELECTOR, ".ttip.ttip-visible"))
+                    popup = WebDriverWait(driver, 5).until(lambda d: d.execute_script("""
+                        const tip = arguments[0]._ttip;
+                        return tip && tip.classList.contains('ttip-visible') ? tip : null;
+                    """, target))
                     heading = popup.find_element(By.CSS_SELECTOR, ".ttip-head")
                     assert heading.text.startswith(f"{full} ({short})")
                     number = heading.find_element(By.CSS_SELECTOR, ".popup-case-reference .case-label-placeholder")
