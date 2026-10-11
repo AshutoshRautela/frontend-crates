@@ -3096,7 +3096,9 @@ def build_combined_model(output_path: Path | None = None,
     # --- Unified (reasoning + tools) tab: golden oracle vs Dynamo (LIVE) + vLLM ---
     unified_tab = _unified_tab_model(artifact_root, hrefs)
     if unified_tab:
-        tabs.append(unified_tab)
+        # Unified is the main report entry point; explicit `?tab=` selection still
+        # belongs to conformance.js and can activate any tab from this ordered model.
+        tabs.insert(0, unified_tab)
 
     if tabs:
         tabs[0]["active"] = True
@@ -3198,6 +3200,7 @@ def render_combined_html(
             conformance_js=_read_asset("conformance.js"),
             colorize_js=_read_asset("colorize.js"),
             conformance_view_js=_read_asset("conformance_view.js"),
+            comparison_layout_js=_read_asset("comparison_layout.js"),
             sha=sha,
             short_sha=sha[:12] if sha else "",
             command="conformance/utils/render_table_v2.sh",

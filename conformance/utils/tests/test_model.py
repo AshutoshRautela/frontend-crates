@@ -275,8 +275,9 @@ def test_v2_blob_is_compacted_and_hydrates_clean(model_v2_raw):
 def test_v2_all_tabs_present(model_v2):
     ids = [t["id"] for t in model_v2["tabs"]]
     assert ids == [
+        "tab-unified",
         "tab-toolcalling-batch", "tab-toolcalling-streamv1",
-        "tab-reasoning-batch", "tab-reasoning-stream", "tab-unified",
+        "tab-reasoning-batch", "tab-reasoning-stream",
     ], ids
 
 

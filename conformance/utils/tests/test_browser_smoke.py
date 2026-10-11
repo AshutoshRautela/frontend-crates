@@ -282,6 +282,7 @@ def test_hover_shows_tooltip(driver):
 
 
 def test_column_toggle_hint_is_anchored_to_the_button(driver):
+    _click_tab(driver, "tab-toolcalling-batch")
     result = driver.execute_script(
         """
         const button = [...document.querySelectorAll('.tab-panel.active [data-col-toggle]')]
@@ -303,6 +304,7 @@ def test_column_toggle_hint_is_anchored_to_the_button(driver):
 
 
 def test_column_toggle_hover_opens_its_tooltip(driver):
+    _click_tab(driver, "tab-toolcalling-batch")
     result = driver.execute_script(
         """
         const button = [...document.querySelectorAll('.tab-panel.active [data-col-toggle]')]
@@ -426,6 +428,7 @@ def test_focus_tooltip_stays_in_tab_order(driver):
 
 
 def test_column_toggle_reuses_its_portalled_tooltip(driver):
+    _click_tab(driver, "tab-toolcalling-batch")
     result = driver.execute_script(
         """
         const button = [...document.querySelectorAll('.tab-panel.active [data-col-toggle]')]
@@ -734,7 +737,7 @@ def test_first_visible_matrix_matches_transpose_url(rendered_page, override, exp
 
 def test_case_labels_squish_horizontally_and_expand_when_transposed(driver, rendered_page):
     try:
-        driver.get(f"file://{rendered_page}?tab=tab-unified")
+        driver.get(f"file://{rendered_page}?tab=tab-unified&view=details")
         header = driver.find_element(By.CSS_SELECTOR, "#tab-unified th.case-sub a")
         full_label = header.find_element(By.CSS_SELECTOR, ".case-label-full").get_attribute("textContent")
         short_label = header.find_element(By.CSS_SELECTOR, ".case-label-short").get_attribute("textContent")
@@ -1315,7 +1318,7 @@ def test_touch_outside_a_host_does_not_arm_a_pointerdownless_activation(driver):
 
 @pytest.mark.parametrize("transposed", [False, True], ids=["normal", "transposed"])
 def test_matrix_labels_stay_visible_when_scrolled(driver, rendered_page, transposed):
-    driver.get(f"file://{rendered_page}?view=details&transpose=0")
+    driver.get(f"file://{rendered_page}?tab=tab-toolcalling-batch&view=details&transpose=0")
     if transposed:
         toggled = driver.execute_script(
             """

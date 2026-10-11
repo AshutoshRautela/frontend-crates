@@ -629,6 +629,7 @@
     }
     return h;
   }
+  window.__renderConformanceTooltip = buildTooltipHtml;
 
   // --- Compare bar (mirrors _compare_bar.html.j2) ----------------------------
   // Three engine columns (Dynamo / vLLM / SGLang); one .cmprow per candidate whose
@@ -1253,6 +1254,7 @@
     if (!modelEl) { return; }  // no model blob; nothing to build.
     var page = hydratePage(JSON.parse(modelEl.textContent));
     if (!page || !page.tabs || !page.tabs.length) { return; }
+    window.__CONFORMANCE_PAGE = page;
 
     _usesFamily = !!(page.parser_ni && Object.keys(page.parser_ni).length);
     _familyMarkers = page.family_markers || {};
