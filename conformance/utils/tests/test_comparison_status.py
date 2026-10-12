@@ -26,24 +26,45 @@ for (const field of ['explanation', 'reason']) {
   assert.equal(status(cell({[field]: 'Inherited unchanged from Dynamo v2 0.7.18.'})), 'diverge', field);
 }
 const intentional = cell({explanation: 'intentional recovery difference'});
-intentional.tooltip.reasons = [{impl: 'candidate', intentional: true, reason: 'intentional recovery difference'}];
+intentional.tooltip.reasons = [{impl: 'candidate', intentional: true, reason: 'intentional recovery difference',
+  candidate_sig: 2, reference_impl: 'golden', reference_sig: 1}];
 assert.equal(status(intentional), 'documented');
 intentional.tooltip.reasons[0].impl = 'vllm';
 assert.equal(status(intentional), 'diverge');
 intentional.known_divergence = true;
-assert.equal(status(intentional), 'documented');
+assert.equal(status(intentional), 'diverge');
+intentional.tooltip.reasons[0].impl = 'candidate';
+intentional.tooltip.reasons[0].reference_sig = 99;
+assert.equal(status(intentional), 'diverge');
+intentional.tooltip.reasons[0].reference_sig = 1;
+intentional.tooltip.reasons[0].reference_impl = 'vllm';
+assert.equal(status(intentional), 'diverge');
 for (const key of ['vllm_python', 'vllm_python-b-0-26-0', 'vllm_python-0-25-1']) {
   const peer = {key, impl: 'vllm'};
   const value = cell({explanation: 'intentional recovery difference'});
   value.cmp[key] = value.cmp.candidate;
   value.tooltip.candidates[0].key = key;
-  value.tooltip.reasons = [{impl: 'vllm_python', intentional: true, reason: 'intentional recovery difference'}];
+  value.tooltip.reasons = [{impl: 'vllm_python', intentional: true, reason: 'intentional recovery difference',
+    candidate_sig: 2, reference_impl: 'golden', reference_sig: 1}];
   assert.equal(status(value, true, peer), 'documented', key);
   value.tooltip.candidates[0].block.explanation = 'Inherited unchanged from an older capture';
   assert.equal(status(value, true, peer), 'diverge', key);
   value.tooltip.candidates[0].block.explanation = 'intentional recovery difference';
   value.tooltip.reasons[0].impl = 'vllm_rust';
   assert.equal(status(value, true, peer), 'diverge', key);
+}
+const scoped = cell();
+scoped.known_divergence = true;
+scoped.cmp = {dynamo_v1: {sig: 1}, dynamo_v2: {sig: 2}, vllm_python: {sig: 3}};
+scoped.tooltip.candidates = [{key: 'dynamo_v1', block: {}},
+  {key: 'dynamo_v2', block: {explanation: 'known batch/stream difference'}}, {key: 'vllm_python', block: {}}];
+scoped.tooltip.reasons = [{impl: 'dynamo_v2', intentional: true, reason: 'known batch/stream difference',
+  candidate_sig: 2, reference_impl: 'dynamo_v1', reference_sig: 1}];
+for (const [selected, reference, expected] of [
+  ['dynamo_v2', 'dynamo_v1', 'documented'], ['dynamo_v1', 'dynamo_v2', 'documented'],
+  ['vllm_python', 'dynamo_v1', 'diverge'], ['vllm_python', 'dynamo_v2', 'diverge'],
+]) {
+  assert.equal(context.outputStatus({id: 'tab-batch'}, scoped, {key: selected}, reference), expected);
 }
 for (const reference of [undefined, {sig: 0, na: 1}, {sig: 1, err: 1}]) {
   const value = cell({}, reference);

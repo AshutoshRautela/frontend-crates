@@ -55,6 +55,11 @@
     return candidates.find(candidate => candidate.key === key) || null;
   }
 
+  function sourceMatches(key, impl) {
+    return typeof key === 'string' && typeof impl === 'string'
+      && (key === impl || key.startsWith(impl + '-'));
+  }
+
   function captureIssue(cell, key) {
     if (!cell || cell.kind === 'blank' || cell.kind === 'missing') return 'missing';
     const entry = (cell.cmp || {})[key];
@@ -79,12 +84,16 @@
     const compareEntry = (cell.cmp || {})[compareKey];
     if (['missing', 'unsupported', 'error', 'expected'].includes(captureIssue(cell, compareKey))) return 'uncompared';
     if (entry.sig === compareEntry.sig) return 'pass';
-    const block = (tooltipCandidate(cell, candidate.key) || {}).block;
-    const intentional = ((cell.tooltip && cell.tooltip.reasons) || []).some(reason =>
-      reason.intentional === true && typeof reason.impl === 'string'
-      && (candidate.key === reason.impl || candidate.key.startsWith(reason.impl + '-'))
-      && block && reason.reason === (block.explanation || block.reason));
-    if (cell.known_divergence || intentional) return 'documented';
+    const intentional = ((cell.tooltip && cell.tooltip.reasons) || []).some(reason => {
+      if (reason.intentional !== true) return false;
+      const forward = sourceMatches(candidate.key, reason.impl) && sourceMatches(compareKey, reason.reference_impl)
+        && entry.sig === reason.candidate_sig && compareEntry.sig === reason.reference_sig;
+      const reverse = sourceMatches(compareKey, reason.impl) && sourceMatches(candidate.key, reason.reference_impl)
+        && compareEntry.sig === reason.candidate_sig && entry.sig === reason.reference_sig;
+      const block = (tooltipCandidate(cell, forward ? candidate.key : compareKey) || {}).block;
+      return (forward || reverse) && block && reason.reason === (block.explanation || block.reason);
+    });
+    if (intentional) return 'documented';
     return 'diverge';
   }
 
@@ -361,7 +370,7 @@
       const label = state.vertical
         ? escapeHtml(column.label) + (compactReference ? ' (' + compactReference + ')' : '')
         : compactReference || escapeHtml(column.display_number || column.label);
-      return '<th class="matrix-case-heading' + (rowHeading ? ' matrix-model' : '') + '" tabindex="0" data-case-column="' + columnIndex
+      return '<th class="matrix-case-heading' + (rowHeading ? ' matrix-model' : '') + '" tabindex="0" role="button" data-case-column="' + columnIndex
         + '" aria-label="' + escapeHtml(column.case_id || column.label) + '">' + label
         + '<div class="ttip"></div></th>';
     }
@@ -667,8 +676,8 @@
     });
     matrix.addEventListener('keydown', event => {
       if (event.target.closest('.ttip')) return;
-      const cell = event.target.closest('.matrix-cell');
-      if (cell && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); openDrawer(cell); }
+      const cell = event.target.closest('.matrix-cell,.matrix-case-heading');
+      if (cell && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); cell.click(); }
     });
     drawer.addEventListener('click', event => { if (event.target.closest('[data-drawer-close]')) closeDrawer(); });
     drawer.addEventListener('keydown', event => {

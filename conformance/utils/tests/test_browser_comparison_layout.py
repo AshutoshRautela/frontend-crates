@@ -56,6 +56,16 @@ def test_status_mapping_and_capture_denominators(matrix_driver, rendered_page):
     d = matrix_driver
     load(d, rendered_page, "?tab=tab-toolcalling-batch")
     try:
+        coordinates = d.execute_script("""
+          const tab=window.__CONFORMANCE_PAGE.tabs.find(tab=>tab.id==='tab-toolcalling-batch');
+          return {row:tab.rows.findIndex(row=>row.family==='deepseek_v4'),column:tab.columns.findIndex(column=>column.sub==='9.b')};
+        """)
+        peer_case = d.find_element(By.CSS_SELECTOR, f".tab-panel.active .matrix-cell[data-row='{coordinates['row']}'][data-column='{coordinates['column']}']")
+        assert peer_case.find_elements(By.CSS_SELECTOR, ".status-diverge.matrix-status")
+        click(d, "[data-focus='disagreements']")
+        peer_case = d.find_element(By.CSS_SELECTOR, f".tab-panel.active .matrix-cell[data-row='{coordinates['row']}'][data-column='{coordinates['column']}']")
+        assert peer_case.get_attribute("data-disagreement") == "true"
+        assert "focus-dim" not in peer_case.get_attribute("class")
         keys = d.execute_script("""
           const panel=document.querySelector('.tab-panel.active');
           const tab=window.__CONFORMANCE_PAGE.tabs.find(tab=>tab.id===panel.id);
@@ -393,6 +403,11 @@ def test_cell_and_case_popup_renderer_parity_and_drawer(matrix_driver, rendered_
         ActionChains(d).move_to_element(case_header).perform()
         hovered_popup = d.execute_async_script("const done=arguments[0];setTimeout(()=>done(!!document.querySelector('.ttip-visible')),900);")
         assert not hovered_popup
+        for activation in (Keys.ENTER, Keys.SPACE):
+            case_header.send_keys(activation)
+            assert d.find_elements(By.CSS_SELECTOR, ".ttip-pinned")
+            d.find_element(By.CSS_SELECTOR, ".tab-panel.active .matrix-corner").click()
+            assert not d.find_elements(By.CSS_SELECTOR, ".ttip-pinned")
         case_header.click()
         assert d.find_elements(By.CSS_SELECTOR, ".ttip-pinned")
         d.find_element(By.CSS_SELECTOR, ".tab-panel.active .matrix-corner").click()
@@ -480,3 +495,41 @@ def test_first_paint_never_shows_reference_table(matrix_driver, rendered_page):
     finally:
         d.execute_cdp_cmd("Emulation.setCPUThrottlingRate", {"rate": 1})
         d.execute_cdp_cmd("Page.removeScriptToEvaluateOnNewDocument", {"identifier": registration["identifier"]})
+
+
+@pytest.mark.parametrize("layout,vertical", [("split", False), ("stacked", False), ("split", True), ("stacked", True)])
+def test_documented_dynamo_pair_keeps_unrelated_peer_disagreement(matrix_driver, rendered_page, layout, vertical):
+    d = matrix_driver
+    load(d, rendered_page, "?tab=tab-toolcalling-batch")
+    try:
+        if vertical:
+            d.find_element(By.CSS_SELECTOR, "[data-transpose-toggle]").click()
+        click(d, f"[data-layout='{layout}']")
+        case = d.execute_script("""
+          const p=document.querySelector('.tab-panel.active'),t=window.__CONFORMANCE_PAGE.tabs.find(t=>t.id===p.id);
+          const rows=t.rows.filter(r=>!r.section),row=rows.findIndex(r=>r.family==='deepseek_v4');
+          const column=t.columns.findIndex(c=>c.sub==='9.b'),cell=rows[row].cells[t.columns[column].sub];
+          const stream=t.candidates.find(c=>c.key.startsWith('dynamo_v2-s-')&&cell.cmp[c.key]&&!cell.cmp[c.key].na);
+          return {row,column,stream:stream.key,batch:p._comparisonSelection.keys[0],peer:p._comparisonSelection.keys[2]};
+        """)
+        choose_slot(d, 1, "dynamo", case["stream"])
+        assert selection(d)["keys"] == [case["batch"], case["stream"], case["peer"]]
+        for reference_slot in (0, 1):
+            click(d, f"[data-slot-reference='{reference_slot}']")
+            click(d, "[data-focus='disagreements']")
+            actual = d.execute_script("""
+              const p=document.querySelector('.tab-panel.active'),t=window.__CONFORMANCE_PAGE.tabs.find(t=>t.id===p.id);
+              const coordinates=arguments[0],cell=t.rows.filter(r=>!r.section)[coordinates.row].cells[t.columns[coordinates.column].sub];
+              const nodes=[...p.querySelectorAll('.matrix-cell[data-row="'+coordinates.row+'"][data-column="'+coordinates.column+'"]')];
+              const reference=p._comparisonSelection.reference;
+              return {classes:nodes.flatMap(node=>[...node.querySelectorAll('.matrix-status')].map(n=>n.className)),
+                peerMatches:cell.cmp[coordinates.peer].sig===cell.cmp[reference].sig,
+                disagreement:nodes.every(node=>node.dataset.disagreement==='true'),dim:nodes.every(node=>node.classList.contains('focus-dim'))};
+            """, case)
+            expected = ["pass", "documented"] if reference_slot == 0 else ["documented", "pass"]
+            expected.append("pass" if actual["peerMatches"] else "diverge")
+            assert actual["classes"] == ["matrix-status status-" + status for status in expected], actual
+            assert actual["disagreement"] == (not actual["peerMatches"]), actual
+            assert actual["dim"] == actual["peerMatches"], actual
+    finally:
+        load(d, rendered_page)
