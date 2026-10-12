@@ -1228,6 +1228,7 @@ body.view-details .case-schema-indicator { display: inline; }
 .comparison-matrix-card { overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-bg); box-shadow: var(--card-shadow); }
 .comparison-matrix-scroll { max-height: calc(100vh - 240px); overflow: auto; }
 .comparison-matrix { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; font-size: 11px; }
+.layout-vertical .comparison-matrix { min-width: max-content; }
 .comparison-matrix th,.comparison-matrix td { padding: 0; border: 0; }
 .comparison-matrix thead th { position: sticky; z-index: 3; background: var(--panel-bg); color: var(--ink-muted); white-space: nowrap; }
 .comparison-matrix .matrix-group-row th { top: 0; height: 29px; padding: 0 7px; border-bottom: 1px solid var(--line); border-left: 1px solid var(--line); text-align: left; font-size: 11px; }
@@ -1280,7 +1281,7 @@ html.comparison-page .legacy-report-body .transpose-table { display: none; }
 :root[data-theme] .comparison-matrix .engine-tint-sglang, :root[data-theme] .comparison-matrix .engine-tint-vllm { background: var(--engine-tint); }
 .engine-picker-trigger { display: inline-flex; align-items: center; gap: 8px; border: 0; background: transparent; color: var(--engine-color, var(--ink)); font: inherit; font-weight: 600; cursor: pointer; padding: 3px; }
 .comparison-matrix .matrix-case-heading { overflow: visible; cursor: help; }
-.layout-vertical .matrix-case-row th { height: auto; max-width: none; min-width: 90px; padding: 5px !important; }
+.layout-vertical .matrix-case-row th { height: auto; max-width: none; min-width: 0; padding: 5px !important; }
 .layout-vertical .matrix-segments { width: 100%; min-width: 27px; }
 .comparison-picker { position: fixed; inset: auto; margin: 0; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--panel-bg); color: var(--ink); max-width: calc(100vw - 48px); }
 .comparison-picker::backdrop { background: rgba(10,14,20,.35); }

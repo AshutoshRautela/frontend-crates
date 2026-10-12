@@ -115,6 +115,14 @@ def test_geometry_focus_orientation_and_themes(matrix_driver, rendered_page):
         assert vertical_border["count"] > 1 and vertical_border["width"] == "2px", vertical_border
         assert vertical_border["color"] == ("rgb(17, 24, 39)" if theme == "light" else "rgb(232, 237, 243)"), vertical_border
         click(d, "[data-layout='split']")
+        vertical_width = d.execute_script("""
+          const scroll=document.querySelector('.tab-panel.active .comparison-matrix-scroll');
+          const table=scroll.querySelector('.comparison-matrix');
+          const headers=[...table.querySelectorAll('thead .matrix-case-row th')].slice(1);
+          return {tableMinWidth:getComputedStyle(table).minWidth,headerMinWidths:headers.map(n=>getComputedStyle(n).minWidth)};
+        """)
+        assert vertical_width["tableMinWidth"] == "max-content", vertical_width
+        assert vertical_width["headerMinWidths"] and set(vertical_width["headerMinWidths"]) == {"0px"}, vertical_width
         assert len(d.find_elements(By.CSS_SELECTOR, ".tab-panel.active .matrix-segments")) * 3 == len(cells)
         d.find_element(By.CSS_SELECTOR, "[data-transpose-toggle]").click()
     d.set_window_size(540, 900)
