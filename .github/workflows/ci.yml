@@ -178,14 +178,20 @@ jobs:
               <meta name="robots" content="noindex">
               <title>Report moved</title>
               <script>
-                const target = new URL("/parser/", window.location.origin);
-                target.search = window.location.search;
-                target.hash = window.location.hash;
-                window.location.replace(target);
+                function openReport(path) {
+                  const target = new URL(path, window.location.origin);
+                  target.search = window.location.search;
+                  target.hash = window.location.hash;
+                  window.location.replace(target);
+                }
+
+                fetch("/parser/", { method: "HEAD", cache: "no-store" })
+                  .then((response) => openReport(response.ok ? "/parser/" : "/frontend-crates/report/"))
+                  .catch(() => openReport("/frontend-crates/report/"));
               </script>
             </head>
             <body>
-              <p>The report moved to <a href="https://ai-dynamo.org/parser/">/parser/</a>.</p>
+              <p>The report moved to <a href="/parser/">/parser/</a>.</p>
             </body>
           </html>
           HTML
