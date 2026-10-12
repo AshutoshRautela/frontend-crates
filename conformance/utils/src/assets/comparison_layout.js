@@ -499,12 +499,28 @@
     picker.setAttribute('aria-label', 'Choose comparison engine and capture');
     document.body.appendChild(picker);
     let pickerSlot = 0;
+    let pickerTrigger = null;
+    function positionPicker() {
+      if (!picker.open || !pickerTrigger) return;
+      const anchor = pickerTrigger.getBoundingClientRect();
+      const popup = picker.getBoundingClientRect();
+      const margin = 12;
+      const gap = 8;
+      let left = anchor.right + gap;
+      if (left + popup.width > window.innerWidth - margin) left = anchor.left - popup.width - gap;
+      left = Math.max(margin, Math.min(left, window.innerWidth - popup.width - margin));
+      const top = Math.max(margin, Math.min(anchor.top + (anchor.height - popup.height) / 2,
+        window.innerHeight - popup.height - margin));
+      picker.style.left = left + 'px';
+      picker.style.top = top + 'px';
+    }
     function pickerVersions(engine) {
       const items = candidatesByEngine.get(engine) || [];
       return items.map(candidate => captureOption(candidate, state.slots[pickerSlot], pickerSlot)).join('');
     }
-    function openPicker(slot) {
+    function openPicker(slot, trigger) {
       pickerSlot = slot;
+      pickerTrigger = trigger;
       const selected = byKey.get(state.slots[slot]);
       const engine = selected ? engineKey(selected) : 'none';
       picker.innerHTML = '<form method="dialog"><h2>Comparison slot ' + (slot + 1) + '</h2><label>Engine <select data-picker-engine>'
@@ -514,11 +530,13 @@
         + '<label>Capture <select data-picker-version' + (engine === 'none' ? ' disabled' : '') + '>' + pickerVersions(engine) + '</select></label>'
         + '<div><button value="cancel">Cancel</button><button type="button" data-picker-apply>Apply</button></div></form>';
       picker.showModal();
+      window.requestAnimationFrame(positionPicker);
     }
     ui.addEventListener('click', event => {
       const trigger = event.target.closest('[data-slot-picker]');
-      if (trigger) openPicker(Number(trigger.dataset.slotPicker));
+      if (trigger) openPicker(Number(trigger.dataset.slotPicker), trigger);
     });
+    window.addEventListener('resize', positionPicker);
     picker.addEventListener('change', event => {
       if (!event.target.matches('[data-picker-engine]')) return;
       const version = picker.querySelector('[data-picker-version]');

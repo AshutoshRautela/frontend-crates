@@ -1277,7 +1277,7 @@ html.comparison-page .legacy-report-body .transpose-table { display: none; }
 .comparison-matrix .matrix-case-heading { overflow: visible; cursor: help; }
 .layout-vertical .matrix-case-row th { height: auto; max-width: none; min-width: 90px; padding: 5px !important; }
 .layout-vertical .matrix-segments { width: 100%; min-width: 27px; }
-.comparison-picker { border: 1px solid var(--line-strong); border-radius: 12px; background: var(--panel-bg); color: var(--ink); max-width: calc(100vw - 48px); }
+.comparison-picker { position: fixed; inset: auto; margin: 0; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--panel-bg); color: var(--ink); max-width: calc(100vw - 48px); }
 .comparison-picker::backdrop { background: rgba(10,14,20,.35); }
 .comparison-picker h2 { font-size: 17px; }
 .comparison-picker label { display: flex; gap: 10px; justify-content: space-between; margin: 12px 0; }

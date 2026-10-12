@@ -103,6 +103,13 @@ def test_interchangeable_slots_reference_empty_and_legacy_urls(matrix_driver, re
     defaults = selection(d)
     click(d, ".engine-card .engine-mark")
     assert d.find_elements(By.CSS_SELECTOR, "dialog[open]")
+    placement = d.execute_script("""
+      const trigger=document.querySelector('.tab-panel.active .engine-card .engine-mark').closest('[data-slot-picker]');
+      const a=trigger.getBoundingClientRect(),p=document.querySelector('dialog[open]').getBoundingClientRect();
+      return {horizontal:Math.min(Math.abs(p.left-a.right),Math.abs(a.left-p.right)),overlapsVertically:p.top<a.bottom&&p.bottom>a.top};
+    """)
+    assert placement["horizontal"] <= 12, placement
+    assert placement["overlapsVertically"], placement
     d.find_element(By.CSS_SELECTOR, "dialog[open] button[value='cancel']").click()
     click(d, ".engine-card [data-slot-picker='2']")
     missing = d.execute_script("return [...document.querySelectorAll('dialog[open] [data-picker-version] option')].filter(o=>o.textContent.includes('no captured results')).map(o=>({key:o.value,disabled:o.disabled}))")
