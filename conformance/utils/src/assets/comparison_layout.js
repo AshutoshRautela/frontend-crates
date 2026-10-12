@@ -118,40 +118,54 @@
   function createUi(panel, tab) {
     const candidates = candidatesFor(tab);
     const query = new URLSearchParams(window.location.search);
-    const hasCompareOverride = query.has('base_' + tab.id) || query.has('cmp_' + tab.id);
-    if (!hasCompareOverride) {
-      const firstCandidateByEngine = new Map();
-      candidates.forEach(candidate => {
-        const key = engineKey(candidate);
-        if (!firstCandidateByEngine.has(key)) firstCandidateByEngine.set(key, candidate.key);
-      });
-      const control = panel.querySelector('.cmpctl');
-      if (control) {
-        candidates.forEach(candidate => {
-          const input = Array.from(control.querySelectorAll('input.cmp-on')).find(item => item.value === candidate.key);
-          if (!input) return;
-          input.checked = candidate.default_bucket === 'A' || candidate.default_bucket === 'B'
-            || firstCandidateByEngine.get(engineKey(candidate)) === candidate.key;
-        });
-      }
-    }
-    const candidatesByEngine = new Map();
-    candidates.forEach(candidate => {
-      const key = engineKey(candidate);
-      if (!candidatesByEngine.has(key)) candidatesByEngine.set(key, []);
-      candidatesByEngine.get(key).push(candidate);
+    const capturedKeys = new Set(candidates.filter(candidate => (tab.rows || []).some(row =>
+      Object.values(row.cells || {}).some(cell => eligibleData(cell, candidate)))).map(candidate => candidate.key));
+    const candidatesByEngine = new Map(engineOrder.map(key => [key, candidates.filter(candidate => engineKey(candidate) === key)]));
+    const byKey = new Map(candidates.map(candidate => [candidate.key, candidate]));
+    const defaults = engineOrder.map(key => {
+      const items = candidatesByEngine.get(key).filter(candidate => capturedKeys.has(candidate.key));
+      const preferred = items.find(candidate => candidate.default_bucket === 'A') || items[0];
+      return preferred ? preferred.key : null;
     });
+    const param = name => name + '_' + tab.id;
+    const available = keys => [...new Set(keys.filter(key => byKey.has(key)))];
+    const legacyReference = query.has(param('base')) ? query.get(param('base')) : referenceKey(panel);
+    const legacyKeys = available([legacyReference, ...(query.get(param('cmp')) || '').split(',')]);
+    const hasLegacy = query.has(param('base')) || query.has(param('cmp'));
+    const initialKeys = query.has(param('slots')) ? query.get(param('slots')).split(',').map(key => byKey.has(key) ? key : null)
+      : hasLegacy ? legacyKeys : defaults;
+    const groupKeys = (tab.column_groups || []).map(group => group.key);
     const state = {
-      layout: 'split', focus: 'all', peerOnly: false, search: '',
-      groups: new Set((tab.column_groups || []).map(group => group.key)),
-      shown: new Set(selectedKeys(panel)),
-      chosen: new Map(),
+      slots: [null, null, null], reference: legacyReference,
+      layout: query.get(param('layout')) === 'stacked' ? 'stacked' : 'split',
+      focus: ['disagreements', 'problems'].includes(query.get(param('focus'))) ? query.get(param('focus')) : 'all',
+      peerOnly: query.get(param('peer')) === '1', search: query.get(param('search')) || '',
+      vertical: ['1', 'true'].includes(query.get('vertical') || query.get('transpose')),
+      groups: new Set(query.has(param('groups')) ? query.get(param('groups')).split(',').filter(key => groupKeys.includes(key)) : groupKeys),
       selectedCell: null,
     };
-    candidatesByEngine.forEach((items, key) => {
-      const selected = items.find(candidate => state.shown.has(candidate.key)) || items[0];
-      if (selected) state.chosen.set(key, selected.key);
+    const initialSeen = new Set();
+    initialKeys.slice(0, 3).forEach((key, index) => {
+      if (key && !initialSeen.has(key)) { state.slots[index] = key; initialSeen.add(key); }
     });
+    if (!state.slots.includes(state.reference)) state.reference = state.slots.find(Boolean) || null;
+    const caseTooltips = new Map();
+    function activeCandidates() { return state.slots.filter(Boolean).map(key => byKey.get(key)); }
+    function engineAvailable(key) { return candidatesByEngine.get(key).some(candidate => capturedKeys.has(candidate.key)); }
+    function captureOption(candidate, selectedKey, slot) {
+      const missing = !capturedKeys.has(candidate.key);
+      const duplicate = state.slots.includes(candidate.key) && state.slots[slot] !== candidate.key;
+      return '<option value="' + escapeHtml(candidate.key) + '"' + (candidate.key === selectedKey ? ' selected' : '')
+        + (missing || duplicate ? ' disabled' : '') + '>' + escapeHtml(candidateVersion(candidate))
+        + (missing ? ' — no captured results for this tab' : duplicate ? ' — selected in another slot' : '') + '</option>';
+    }
+    function engineButton(candidate, slot, withMark = false) {
+      const key = candidate ? engineKey(candidate) : null;
+      return '<button type="button" class="engine-picker-trigger" data-slot-picker="' + slot + '" aria-label="Comparison slot ' + (slot + 1)
+        + ': ' + escapeHtml(key ? engineNames[key] : 'None') + '">'
+        + (withMark ? '<span class="engine-mark">' + escapeHtml(engineNames[key].slice(0, 1)) + '</span>' : '')
+        + escapeHtml(key ? engineNames[key] : 'None') + '</button>';
+    }
     const ui = document.createElement('div');
     ui.className = 'comparison-ui';
     const engines = document.createElement('div');
@@ -176,12 +190,17 @@
     scroll.appendChild(matrix);
     matrixCard.appendChild(scroll);
     ui.append(engines, toolbar, legend, categories, matrixCard);
+    if (!query.has(param('slots')) && legacyKeys.length > 3) {
+      const notice = document.createElement('p');
+      notice.className = 'comparison-notice';
+      notice.textContent = 'This link selected more than three captures. Showing the reference and the first two other captures (three-slot limit).';
+      ui.prepend(notice);
+    }
 
     const legacy = document.createElement('details');
     legacy.className = 'legacy-report-details';
-    legacy.innerHTML = '<summary>Detailed comparison controls and case reference table</summary>';
-    const legacyRequested = query.get('view') === 'details' || query.has('transpose')
-      || query.has('base_' + tab.id) || query.has('cmp_' + tab.id);
+    legacy.innerHTML = '<summary>Detailed case reference table</summary>';
+    const legacyRequested = query.get('view') === 'details';
     legacy.open = legacyRequested;
     const legacyBody = document.createElement('div');
     legacyBody.className = 'legacy-report-body';
@@ -212,13 +231,13 @@
     document.body.appendChild(drawer);
 
     function renderCards(columns, rows) {
-      const reference = referenceKey(panel);
-      const enginesInOrder = engineOrder.filter(key => candidatesByEngine.has(key));
-      candidatesByEngine.forEach((_items, key) => { if (!enginesInOrder.includes(key)) enginesInOrder.push(key); });
-      engines.innerHTML = enginesInOrder.map(key => {
-        const items = candidatesByEngine.get(key) || [];
-        const selectedKey = state.chosen.get(key);
-        const selected = items.find(item => item.key === selectedKey) || items[0];
+      const reference = state.reference;
+      engines.innerHTML = state.slots.map((selectedKey, slot) => {
+        const selected = byKey.get(selectedKey);
+        const key = selected ? engineKey(selected) : null;
+        const items = key ? candidatesByEngine.get(key) : [];
+        if (!selected) return '<article class="engine-card empty-slot"><div class="engine-card-head">' + engineButton(null, slot)
+          + '</div><p>No comparison selected</p></article>';
         const counts = Object.fromEntries(statusClasses.map(status => [status, 0]));
         const totalized = new Set();
         let captured = 0;
@@ -239,24 +258,17 @@
         const percent = denominator ? Math.round(success / denominator * 100) : null;
         const bar = statusClasses.map(status => totalCases
           ? '<span class="bar-' + status + '" style="width:' + (counts[status] / totalCases * 100) + '%"></span>' : '').join('');
-        const engineName = engineNames[key] || items[0].label.split(/\s+/)[0];
-        const options = items.map(item => '<option value="' + escapeHtml(item.key) + '"'
-          + (item.key === selectedKey ? ' selected' : '') + '>' + escapeHtml(candidateVersion(item)) + '</option>').join('');
-        const more = items.length > 1 ? '<details class="engine-version-list"><summary>Compare captured versions (' + items.length + ')</summary>'
-          + items.map(item => '<label><input type="checkbox" data-candidate-show="' + escapeHtml(item.key) + '"'
-            + (state.shown.has(item.key) ? ' checked' : '') + '> ' + escapeHtml(item.label) + '</label>').join('') + '</details>' : '';
+        const options = items.map(item => captureOption(item, selectedKey, slot)).join('');
         return '<article class="engine-card" style="--engine-color:' + (engineColors[key] || 'var(--accent)') + '">'
-          + '<div class="engine-card-head"><div class="engine-name"><span class="engine-mark">' + escapeHtml(engineName.slice(0, 1)) + '</span>'
-          + '<strong>' + escapeHtml(engineName) + '</strong></div><select data-candidate-select="' + escapeHtml(key) + '" aria-label="' + escapeHtml(engineName) + ' capture version">' + options + '</select></div>'
+          + '<div class="engine-card-head"><div class="engine-name">'
+          + engineButton(selected, slot, true) + '</div><select data-slot-version="' + slot + '" aria-label="Slot ' + (slot + 1) + ' capture version">' + options + '</select></div>'
           + '<div class="engine-score"><strong>' + (percent == null ? '—' : percent + '%') + '</strong><span>'
-          + escapeHtml(tab.id === 'tab-unified' ? 'matches GOLDEN' : 'no detected leak/error') + ' · ' + success + ' of ' + captured + ' captured</span></div>'
+          + escapeHtml(tab.id === 'tab-unified' ? 'matches GOLDEN' : 'matches reference') + ' · ' + success + ' of ' + captured + ' captured</span></div>'
           + '<div class="engine-status-bar" role="img" aria-label="' + statusClasses.map(status => statusNames[status] + ': ' + counts[status]).join(', ') + '">' + bar + '</div>'
           + '<div class="engine-counts">' + statusClasses.filter(status => counts[status] > 0).map(status => '<span><i class="legend-swatch status-' + status + '"></i>'
             + counts[status] + ' ' + escapeHtml(statusNames[status].toLowerCase()) + '</span>').join('') + '</div>'
-          + '<div class="engine-card-controls"><label><input type="checkbox" data-engine-show="' + escapeHtml(key) + '"'
-          + (items.some(item => state.shown.has(item.key)) ? ' checked' : '') + '> Show</label>'
-          + '<label><input type="radio" name="reference-' + escapeHtml(tab.id) + '" data-engine-reference="' + escapeHtml(selected.key) + '"'
-          + (reference === selected.key ? ' checked' : '') + '> Reference</label>' + more + '</div></article>';
+          + '<div class="engine-card-controls"><label><input type="radio" name="reference-' + escapeHtml(tab.id) + '" data-slot-reference="' + slot + '"'
+          + (reference === selected.key ? ' checked' : '') + '> Reference</label></div></article>';
       }).join('');
     }
 
@@ -303,122 +315,227 @@
         }
         const percentage = denominator ? Math.round(pass / denominator * 100) : null;
         const key = engineKey(candidate);
-        return '<div class="model-summary" style="--engine-color:' + (engineColors[key] || 'var(--accent)') + '"><b>'
-          + escapeHtml((engineNames[key] || candidate.label).slice(0, 1)) + '</b><span class="model-summary-bar"><i style="width:'
-          + (percentage == null ? 0 : percentage) + '%"></i></span><span>' + (percentage == null ? '—' : percentage + '%') + '</span></div>';
+        return '<div class="model-summary" style="--engine-color:' + (engineColors[key] || 'var(--accent)') + '" title="'
+          + escapeHtml(candidate.label + ': ' + pass + ' of ' + denominator + ' captured match the reference') + '"><b>'
+          + escapeHtml((engineNames[key] || candidate.label).slice(0, 1)) + '</b><span>' + (percentage == null ? '—' : percentage + '%') + '</span></div>';
+
       });
     }
 
-    function statusCell(row, column, visibleCandidates, reference, rowIndex, columnIndex, engineOnly) {
+    function comparisonFocus(row, column, visibleCandidates, reference) {
       const codes = cellCodes(row, column, visibleCandidates, reference);
-      const signatures = codes.filter(code => code.entry && code.entry.na !== 1 && code.entry.err !== 1).map(code => code.entry.sig);
-      const disagreement = new Set(signatures).size > 1;
-      const problem = codes.some(code => ['diverge', 'leak', 'error', 'expected', 'missing', 'unsupported'].includes(code.status));
-      const focused = state.focus === 'all' || (state.focus === 'disagreements' ? disagreement : problem);
-      const segments = codes.map(code => '<i class="matrix-status status-' + code.status + '" title="'
-        + escapeHtml((code.candidate.label || code.candidate.key) + ': ' + statusNames[code.status]) + '"></i>').join('');
+      const cell = row.cells && row.cells[column.sub];
+      const entries = codes.filter(code => ['pass', 'diverge'].includes(code.status)).map(code => code.entry);
+      if (tab.id === 'tab-unified' && entries.length) entries.push(cell && cell.cmp && cell.cmp.golden);
+      const signatures = entries.filter(entry => entry && entry.na !== 1 && entry.err !== 1).map(entry => entry.sig);
+      return {
+        disagreement: new Set(signatures).size > 1,
+        problem: codes.some(code => ['leak', 'error', 'expected', 'missing', 'unsupported'].includes(code.status)),
+      };
+    }
+
+    function statusCell(row, column, visibleCandidates, reference, rowIndex, columnIndex, engineOnly, focus) {
+      const codes = cellCodes(row, column, visibleCandidates, reference);
+      const focused = state.focus === 'all' || (state.focus === 'disagreements' ? focus.disagreement : focus.problem);
+      const segments = codes.map(code => '<i class="matrix-status status-' + code.status + '"></i>').join('');
       const label = tab.columns[columnIndex];
       return '<td class="matrix-cell' + (focused ? '' : ' focus-dim') + (engineOnly ? ' stacked-cell' : '') + '" tabindex="0" role="button"'
-        + ' data-row="' + rowIndex + '" data-column="' + columnIndex + '" aria-label="' + escapeHtml((row.model_label || row.family) + ', ' + label.label + ': '
+        + ' data-disagreement="' + focus.disagreement + '" data-row="' + rowIndex + '" data-column="' + columnIndex + '" aria-label="' + escapeHtml((row.model_label || row.family) + ', ' + label.label + ': '
         + codes.map(code => (code.candidate.label || code.candidate.key) + ' ' + statusNames[code.status]).join('; ')) + '">'
-        + '<span class="matrix-segments">' + segments + '</span></td>';
+        + '<span class="matrix-segments">' + segments + '</span><div class="ttip"></div></td>';
+    }
+
+    function caseHeading(column, columnIndex, rowHeading) {
+      return '<th class="matrix-case-heading' + (rowHeading ? ' matrix-model' : '') + '" tabindex="0" data-case-column="' + columnIndex
+        + '" aria-label="' + escapeHtml(column.case_id || column.label) + '">' + escapeHtml(state.vertical ? column.label : column.display_number || column.label)
+        + '<div class="ttip"></div></th>';
     }
 
     function renderMatrix(columns, rows) {
-      const shown = candidates.filter(candidate => state.shown.has(candidate.key));
-      const visibleCandidates = shown.length ? shown : candidates.filter(candidate => candidate.key === referenceKey(panel)).slice(0, 1);
-      const reference = referenceKey(panel);
-      const groupRuns = [];
-      columns.forEach(column => {
-        const last = groupRuns[groupRuns.length - 1];
-        if (last && last.key === column.group_key) last.span += 1;
-        else groupRuns.push({ key: column.group_key, span: 1 });
-      });
-      const groupHeader = '<tr class="matrix-group-row"><th class="matrix-corner">Model family</th>'
-        + groupRuns.map(run => {
-          const group = (tab.column_groups || []).find(item => item.key === run.key);
-          return '<th colspan="' + run.span + '">' + escapeHtml(group ? group.label : run.key) + '</th>';
-        }).join('') + '<th class="matrix-summary-head">Conformance</th></tr>';
-      const caseHeader = '<tr class="matrix-case-row"><th class="matrix-corner">' + (state.layout === 'split'
-        ? 'cell = ' + visibleCandidates.map(candidate => '<b style="color:' + (engineColors[engineKey(candidate)] || 'var(--accent)') + '">'
-          + escapeHtml((engineNames[engineKey(candidate)] || candidate.label).slice(0, 1)) + '</b>').join(' · ') : 'Engine') + '</th>'
-        + columns.map(column => '<th title="' + escapeHtml(column.desc || column.case_id || column.label) + '">' + escapeHtml(column.display_number || column.label) + '</th>').join('')
-        + '<th class="matrix-summary-head"></th></tr>';
+      matrix.querySelectorAll('[data-ttip-wired]').forEach(node => node._ttipDispose());
+      const visibleCandidates = activeCandidates();
+      const reference = state.reference;
+      const allRows = (tab.rows || []).filter(row => !row.section);
+      const coordinates = (row, column, projection, stacked) => statusCell(row, column, projection, reference,
+        allRows.indexOf(row), tab.columns.indexOf(column), stacked, comparisonFocus(row, column, visibleCandidates, reference));
+      const engineLabel = candidate => engineButton(candidate, state.slots.indexOf(candidate.key));
+      let header = '';
       let body = '';
-      rows.forEach(row => {
-        const rowIndex = (tab.rows || []).filter(item => !item.section).indexOf(row);
-        const rowColumns = columns.map(column => ({ column, columnIndex: tab.columns.indexOf(column) }));
-        const summaries = rowSummaries(row, columns, visibleCandidates, reference);
-        if (state.layout === 'split') {
-          body += '<tr class="matrix-model-row"><th scope="row" class="matrix-model"><strong>'
-            + escapeHtml(row.model_label || row.family || '') + '</strong><small>' + escapeHtml(row.parser_label || row.family || '') + '</small></th>'
-            + rowColumns.map(({ column, columnIndex }) => statusCell(row, column, visibleCandidates, reference, rowIndex, columnIndex, false)).join('')
-            + '<td class="matrix-summary">' + summaries.join('') + '</td></tr>';
-        } else {
-          visibleCandidates.forEach((candidate, candidateIndex) => {
-            body += '<tr class="matrix-model-row stacked-row"><th scope="row" class="matrix-model">'
-              + (candidateIndex === 0 ? '<strong>' + escapeHtml(row.model_label || row.family || '') + '</strong>' : '')
-              + '<small class="stacked-engine" style="--engine-color:' + (engineColors[engineKey(candidate)] || 'var(--accent)') + '">'
-              + escapeHtml(engineNames[engineKey(candidate)] || candidate.label) + '</small></th>'
-              + rowColumns.map(({ column, columnIndex }) => statusCell(row, column, [candidate], reference, rowIndex, columnIndex, true)).join('')
-              + '<td class="matrix-summary">' + (summaries[candidateIndex] || '') + '</td></tr>';
-          });
-        }
+      if (state.vertical) {
+        const span = state.layout === 'stacked' ? Math.max(1, visibleCandidates.length) : 1;
+        header = '<tr class="matrix-group-row"><th class="matrix-corner">Case / model family</th>'
+          + rows.map(row => '<th colspan="' + span + '">' + escapeHtml(row.model_label || row.family) + '</th>').join('') + '</tr>';
+        header += '<tr class="matrix-case-row"><th class="matrix-corner">Conformance</th>'
+          + rows.map(row => {
+            const summaries = rowSummaries(row, columns, visibleCandidates, reference);
+            return state.layout === 'stacked' ? visibleCandidates.map((candidate, index) => '<th class="engine-tint-' + engineKey(candidate) + '">'
+              + engineLabel(candidate) + summaries[index] + '</th>').join('') : '<th>' + summaries.join('') + '</th>';
+          }).join('') + '</tr>';
+        body = columns.map(column => '<tr>' + caseHeading(column, tab.columns.indexOf(column), true)
+          + rows.map(row => state.layout === 'stacked' ? visibleCandidates.map(candidate => coordinates(row, column, [candidate], true).replace('class="matrix-cell', 'class="engine-tint-' + engineKey(candidate) + ' matrix-cell')).join('')
+            : coordinates(row, column, visibleCandidates, false)).join('') + '</tr>').join('');
+      } else {
+        const groupRuns = [];
+        columns.forEach(column => {
+          const last = groupRuns[groupRuns.length - 1];
+          if (last && last.key === column.group_key) last.span += 1;
+          else groupRuns.push({ key: column.group_key, span: 1 });
+        });
+        header = '<tr class="matrix-group-row"><th class="matrix-corner">Model family</th>'
+          + groupRuns.map(run => '<th colspan="' + run.span + '">' + escapeHtml((tab.column_groups || []).find(group => group.key === run.key)?.label || run.key) + '</th>').join('')
+          + '<th class="matrix-summary-head">Conformance</th></tr><tr class="matrix-case-row"><th class="matrix-corner">'
+          + (state.layout === 'split' ? visibleCandidates.map(engineLabel).join(' · ') : 'Engine') + '</th>'
+          + columns.map(column => caseHeading(column, tab.columns.indexOf(column), false)).join('') + '<th class="matrix-summary-head"></th></tr>';
+        rows.forEach(row => {
+          const summaries = rowSummaries(row, columns, visibleCandidates, reference);
+          if (state.layout === 'split') {
+            body += '<tr class="matrix-model-row"><th scope="row" class="matrix-model"><strong>' + escapeHtml(row.model_label || row.family)
+              + '</strong><small>' + escapeHtml(row.parser_label || row.family) + '</small></th>'
+              + columns.map(column => coordinates(row, column, visibleCandidates, false)).join('') + '<td class="matrix-summary">' + summaries.join('') + '</td></tr>';
+          } else {
+            visibleCandidates.forEach((candidate, index) => {
+              body += '<tr class="matrix-model-row stacked-row engine-tint-' + engineKey(candidate) + '"><th scope="row" class="matrix-model">'
+                + (index === 0 ? '<strong>' + escapeHtml(row.model_label || row.family) + '</strong>' : '') + engineLabel(candidate) + '</th>'
+                + columns.map(column => coordinates(row, column, [candidate], true)).join('') + '<td class="matrix-summary">' + summaries[index] + '</td></tr>';
+            });
+          }
+        });
+      }
+      matrix.innerHTML = '<thead>' + header + '</thead><tbody>' + body + '</tbody>';
+      matrix.dataset.empty = String(columns.length === 0 || rows.length === 0 || visibleCandidates.length === 0);
+      matrix.querySelectorAll('.matrix-cell').forEach(node => {
+        node.dataset.ttipPortal = '1';
+        const row = allRows[Number(node.dataset.row)];
+        const column = tab.columns[Number(node.dataset.column)];
+        const tip = row.cells && row.cells[column.sub] && row.cells[column.sub].tooltip;
+        if (!tip) return;
+        node.dataset.ttipClick = 'drawer';
+        window.__registerConformanceTooltip(node, tip, row.cells[column.sub].fixture_href);
+        window.__attachConformanceTooltip(node);
       });
-      matrix.innerHTML = '<thead>' + groupHeader + caseHeader + '</thead><tbody>' + body + '</tbody>';
-      matrix.dataset.empty = String(columns.length === 0 || rows.length === 0);
+      matrix.querySelectorAll('[data-case-column]').forEach(node => {
+        node.dataset.ttipPortal = '1';
+        const index = Number(node.dataset.caseColumn);
+        if (!caseTooltips.has(index)) caseTooltips.set(index, window.__conformanceCaseTooltip(tab, tab.columns[index]));
+        window.__registerConformanceTooltip(node, caseTooltips.get(index));
+        window.__attachConformanceTooltip(node);
+      });
     }
 
-    function update() {
-      state.shown = new Set(selectedKeys(panel));
+    function persist() {
+      const url = new URL(window.location.href);
+      const set = (name, value, isDefault) => {
+        url.searchParams.delete(param(name));
+        if (!isDefault) url.searchParams.set(param(name), value);
+      };
+      const defaultSelection = state.slots.every((key, index) => key === defaults[index]) && state.reference === (defaults.find(Boolean) || null);
+      set('slots', state.slots.map(key => key || '').join(','), defaultSelection);
+      set('base', state.reference || '', state.reference === (defaults.find(Boolean) || null));
+      set('cmp', state.slots.filter(key => key && key !== state.reference).join(','), defaultSelection);
+      set('groups', groupKeys.filter(key => state.groups.has(key)).join(','), state.groups.size === groupKeys.length);
+      set('layout', state.layout, state.layout === 'split');
+      set('focus', state.focus, state.focus === 'all');
+      set('search', state.search, !state.search);
+      set('peer', '1', !state.peerOnly);
+      window.history.replaceState(null, '', url.toString());
+    }
+
+    function update(writeUrl = true, pickerFocus = null) {
+      const focused = document.activeElement;
+      const attribute = ui.contains(focused) && ['data-slot-picker', 'data-slot-version', 'data-slot-reference', 'data-group']
+        .find(name => focused.hasAttribute(name));
+      const focusTarget = pickerFocus !== null ? { attribute: 'data-slot-picker', value: String(pickerFocus) }
+        : attribute ? { attribute, value: focused.getAttribute(attribute) } : null;
+      const keys = state.slots.filter(Boolean);
+      if (!keys.includes(state.reference)) state.reference = keys[0] || null;
+      panel._comparisonSelection.keys = keys;
+      panel._comparisonSelection.reference = state.reference;
+      window.__applyConformanceSelection(panel, keys, state.reference);
       const { columns, categoryColumns, rows } = filteredView();
       renderCards(columns, rows);
       renderCategories(columns, categoryColumns);
       renderMatrix(columns, rows);
+      if (drawer.classList.contains('open')) window.__syncConformanceTooltip(drawer, keys, state.reference, tab.id === 'tab-unified');
       ui.classList.toggle('layout-stacked', state.layout === 'stacked');
+      ui.classList.toggle('layout-vertical', state.vertical);
+      control.querySelector('[data-layout="stacked"]').textContent = state.vertical ? 'Stacked columns' : 'Stacked rows';
       control.querySelectorAll('[data-layout]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.layout === state.layout)));
       control.querySelectorAll('[data-focus]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.focus === state.focus)));
-      const peer = control.querySelector('[data-peer-only]');
-      if (peer) peer.checked = state.peerOnly;
+      control.querySelector('[data-peer-only]').checked = state.peerOnly;
       const search = control.querySelector('[data-case-search]');
-      if (search && search.value !== state.search) search.value = state.search;
+      if (search.value !== state.search) search.value = state.search;
+      if (writeUrl) persist();
+      if (focusTarget) {
+        const replacement = Array.from(ui.querySelectorAll('[' + focusTarget.attribute + ']'))
+          .find(node => node.getAttribute(focusTarget.attribute) === focusTarget.value);
+        if (replacement) replacement.focus({ preventScroll: true });
+      }
     }
 
-    function changeCandidate(key, checked) {
-      const ctl = panel.querySelector('.cmpctl');
-      const input = ctl && Array.from(ctl.querySelectorAll('input.cmp-on')).find(item => item.value === key);
-      if (!input || input.disabled) return;
-      input.checked = checked;
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-      update();
+    function selectSlot(slot, key, restorePicker = false) {
+      if (key && (!capturedKeys.has(key) || state.slots.some((other, index) => index !== slot && other === key))) return;
+      state.slots[slot] = key;
+      update(true, restorePicker ? slot : null);
     }
+    panel._comparisonSelection = {
+      keys: state.slots.filter(Boolean), reference: state.reference,
+      setVertical(enabled) {
+        if (state.vertical === enabled) return;
+        state.vertical = enabled;
+        dismissVisibleTooltips();
+        update();
+      },
+      fromControls(target) {
+        const keys = available(selectedKeys(panel));
+        if (target.matches('.cmp-ref') && !keys.includes(target.value)) keys.unshift(target.value);
+        state.slots = [...keys.slice(0, 3), null, null, null].slice(0, 3);
+        state.reference = referenceKey(panel);
+        update();
+      },
+    };
 
+    const picker = document.createElement('dialog');
+    picker.className = 'comparison-picker';
+    picker.setAttribute('aria-label', 'Choose comparison engine and capture');
+    document.body.appendChild(picker);
+    let pickerSlot = 0;
+    function pickerVersions(engine) {
+      const items = candidatesByEngine.get(engine) || [];
+      return items.map(candidate => captureOption(candidate, state.slots[pickerSlot], pickerSlot)).join('');
+    }
+    function openPicker(slot) {
+      pickerSlot = slot;
+      const selected = byKey.get(state.slots[slot]);
+      const engine = selected ? engineKey(selected) : 'none';
+      picker.innerHTML = '<form method="dialog"><h2>Comparison slot ' + (slot + 1) + '</h2><label>Engine <select data-picker-engine>'
+        + engineOrder.map(key => '<option value="' + key + '"' + (engine === key ? ' selected' : '') + (!engineAvailable(key) ? ' disabled' : '') + '>'
+          + engineNames[key] + (!engineAvailable(key) ? ' — no captures for this tab' : '') + '</option>').join('')
+        + '<option value="none"' + (engine === 'none' ? ' selected' : '') + '>None</option></select></label>'
+        + '<label>Capture <select data-picker-version' + (engine === 'none' ? ' disabled' : '') + '>' + pickerVersions(engine) + '</select></label>'
+        + '<div><button value="cancel">Cancel</button><button type="button" data-picker-apply>Apply</button></div></form>';
+      picker.showModal();
+    }
+    ui.addEventListener('click', event => {
+      const trigger = event.target.closest('[data-slot-picker]');
+      if (trigger) openPicker(Number(trigger.dataset.slotPicker));
+    });
+    picker.addEventListener('change', event => {
+      if (!event.target.matches('[data-picker-engine]')) return;
+      const version = picker.querySelector('[data-picker-version]');
+      version.innerHTML = pickerVersions(event.target.value);
+      version.disabled = event.target.value === 'none';
+    });
+    picker.addEventListener('click', event => {
+      if (!event.target.matches('[data-picker-apply]')) return;
+      const engine = picker.querySelector('[data-picker-engine]').value;
+      const key = engine === 'none' ? null : picker.querySelector('[data-picker-version]').value;
+      if (engine !== 'none' && !key) return;
+      picker.close();
+      selectSlot(pickerSlot, key, true);
+    });
     engines.addEventListener('change', event => {
-      const select = event.target.closest('[data-candidate-select]');
-      if (select) {
-        const engine = select.dataset.candidateSelect;
-        state.chosen.set(engine, select.value);
-        const items = candidatesByEngine.get(engine) || [];
-        items.forEach(candidate => { if (candidate.key !== select.value) changeCandidate(candidate.key, false); });
-        changeCandidate(select.value, true);
-        update();
-        return;
-      }
-      const version = event.target.closest('[data-candidate-show]');
-      if (version) { changeCandidate(version.dataset.candidateShow, version.checked); return; }
-      const showEngine = event.target.closest('[data-engine-show]');
-      if (showEngine) {
-        const engine = showEngine.dataset.engineShow;
-        const key = state.chosen.get(engine);
-        if (key) changeCandidate(key, showEngine.checked);
-        return;
-      }
-      const ref = event.target.closest('[data-engine-reference]');
-      if (ref) {
-        const input = Array.from(panel.querySelectorAll('.cmp-ref')).find(item => item.value === ref.dataset.engineReference);
-        if (input) { input.checked = true; input.dispatchEvent(new Event('change', { bubbles: true })); }
-        update();
-      }
+      if (event.target.matches('[data-slot-version]')) selectSlot(Number(event.target.dataset.slotVersion), event.target.value);
+      if (event.target.matches('[data-slot-reference]')) { state.reference = state.slots[Number(event.target.dataset.slotReference)]; update(); }
     });
     control.addEventListener('click', event => {
       const layoutButton = event.target.closest('[data-layout]');
@@ -458,27 +575,22 @@
       drawer.querySelector('[data-drawer-description]').textContent = [row.model_label, row.family].filter(Boolean).join(' · ');
       const content = drawer.querySelector('[data-drawer-content]');
       content.innerHTML = cell && cell.tooltip && window.__renderConformanceTooltip
-        ? window.__renderConformanceTooltip(cell.tooltip)
+        ? '<div class="ttip">' + window.__renderConformanceTooltip(cell.tooltip, cell.fixture_href) + '</div>'
         : '<p class="drawer-empty">' + escapeHtml(cell && cell.kind === 'missing' ? 'No fixture was captured for this case.' : 'No output details are available for this case.') + '</p>';
-      const candidateKeys = new Set(selectedKeys(panel));
-      content.querySelectorAll('.cand').forEach(section => {
-        const key = Array.from(section.classList).find(name => name.startsWith('cand-'));
-        section.classList.toggle('cand-on', key && candidateKeys.has(key.slice(5)));
-        section.classList.toggle('cand-base', key && key.slice(5) === referenceKey(panel));
-      });
-      if (tab.id === 'tab-unified') {
-        content.querySelectorAll('.cand-golden').forEach(section => section.classList.add('cand-on', 'cand-base'));
-      }
+      dismissVisibleTooltips();
+      window.__syncConformanceTooltip(drawer, state.slots.filter(Boolean), state.reference, tab.id === 'tab-unified');
       drawer.classList.add('open');
       drawer.setAttribute('aria-hidden', 'false');
       const closeButton = drawer.querySelector('.drawer-close');
       closeButton.focus();
     }
     matrix.addEventListener('click', event => {
+      if (event.target.closest('.ttip')) return;
       const cell = event.target.closest('.matrix-cell');
       if (cell) openDrawer(cell);
     });
     matrix.addEventListener('keydown', event => {
+      if (event.target.closest('.ttip')) return;
       const cell = event.target.closest('.matrix-cell');
       if (cell && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); openDrawer(cell); }
     });
@@ -500,8 +612,7 @@
         state.selectedCell = null;
       }
     });
-    panel.querySelector('.legacy-report-details').addEventListener('toggle', update);
-    panel.addEventListener('change', event => { if (event.target.closest('.cmpctl')) update(); });
+
     function dismissVisibleTooltips() {
       document.querySelectorAll('.ttip.ttip-visible').forEach(tip => {
         const owner = tip._ttipOwner;
@@ -509,15 +620,14 @@
         else tip.classList.remove('ttip-visible');
       });
     }
+    let detailed = legacyRequested;
     const transposeObserver = new MutationObserver(() => {
-      dismissVisibleTooltips();
-      if (panel.classList.contains('active') && (legacyRequested
-        || document.body.classList.contains('transpose-mode')
-        || document.body.classList.contains('view-details'))) legacy.open = true;
-      else legacy.open = false;
+      const requestedDetails = document.body.classList.contains('view-details');
+      if (detailed !== requestedDetails) { detailed = requestedDetails; legacy.open = detailed; }
     });
     transposeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
-    update();
+    update(false);
+
   }
 
   function install() {
@@ -526,8 +636,14 @@
       const tab = page.tabs.find(item => item.id === panel.id);
       if (tab) createUi(panel, tab);
     });
+    document.documentElement.classList.remove('comparison-pending');
+    document.body.classList.remove('cmp-loading');
   }
 
   try { install(); }
-  catch (error) { console.error('comparison_layout: failed to build comparison UI', error); }
+  catch (error) {
+    document.documentElement.classList.remove('comparison-pending');
+    document.body.classList.remove('cmp-loading');
+    console.error('comparison_layout: failed to build comparison UI', error);
+  }
 })();

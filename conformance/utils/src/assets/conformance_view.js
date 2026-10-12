@@ -166,8 +166,11 @@
   // supplies its own HTML so the legacy v1 page keeps its "match Base" wording.
   var _summaryLegendHtml = null;
 
-  function registerTooltip(td, model) {
-    var id = String(++_ttipSeq);
+  const tooltipIds = new WeakMap();
+  function registerTooltip(td, model, fixtureHref) {
+    if (fixtureHref) td.dataset.ttipFixture = fixtureHref;
+    const id = tooltipIds.get(model) || String(++_ttipSeq);
+    tooltipIds.set(model, id);
     td.setAttribute('data-ttip-id', id);
     _ttipModels[id] = model;
   }
@@ -183,7 +186,7 @@
     if (!m) { return; }
     // Append (don't overwrite): conformance.js may already have inserted its
     // `.ttip-close` button / `.cmp-why` line into the empty `.ttip`; keep them.
-    ttip.insertAdjacentHTML('beforeend', buildTooltipHtml(m));
+    ttip.insertAdjacentHTML('beforeend', renderTooltip(m, td.dataset.ttipFixture));
     // The freshly-built `.cand` sections + chart columns start hidden — CSS shows
     // them only with `.cand-on`/visible-column, which conformance.js's toggleCands
     // adds during applyCtl. Nudge applyCtl so the current selection is reflected.
@@ -191,6 +194,8 @@
   }
   // Expose so conformance.js (or tests) can force-build a specific cell if needed.
   window.__buildTooltip = buildTooltipInto;
+  window.__registerConformanceTooltip = registerTooltip;
+  window.__conformanceCaseTooltip = columnGrammarModel;
 
   function delegatedBuild(e) {
     var t = e.target;
@@ -213,6 +218,10 @@
   function refreshCompare(td) {
     var panel = td.closest ? td.closest('.tab-panel') : null;
     if (!panel) { return; }
+    if (panel._comparisonSelection) {
+      window.__syncConformanceTooltip(td, panel._comparisonSelection.keys, panel._comparisonSelection.reference, panel.id === 'tab-unified');
+      return;
+    }
     var ctl = panel.querySelector('.cmpctl');
     if (!ctl) { return; }
     var box = ctl.querySelector('input.cmp-on');
@@ -453,7 +462,8 @@
     var inputHdr = showGolden ? 'input / golden output' : 'input';
     // The table carries class `ttip-chunks` — conformance.js keys the popup grid on it.
     return '<table class="ttip-chunks"><thead><tr><th>' + escapeHtml(inputHdr) + '</th>' + header
-      + '</tr></thead><tbody>' + body + fin + '</tbody></table>';
+      + '</tr></thead><tbody>' + body + fin + '</tbody></table>'
+      + (golden && input.kind === 'text' ? '<details class="oracle-output"><summary>GOLDEN</summary><pre>' + outputBlock(golden.block, family, ctx) + '</pre></details>' : '');
   }
 
   // --- Parser configuration bullet list ---------------------------------------
@@ -629,7 +639,10 @@
     }
     return h;
   }
-  window.__renderConformanceTooltip = buildTooltipHtml;
+  function renderTooltip(model, fixtureHref) {
+    return buildTooltipHtml(model) + (fixtureHref ? '<div class="ttip-fixture"><a href="' + escapeAttr(fixtureHref) + '">Fixture YAML</a></div>' : '');
+  }
+  window.__renderConformanceTooltip = renderTooltip;
 
   // --- Compare bar (mirrors _compare_bar.html.j2) ----------------------------
   // Three engine columns (Dynamo / vLLM / SGLang); one .cmprow per candidate whose
@@ -1010,7 +1023,7 @@
       td.appendChild(ttip);
       // Empty .ttip now (so conformance.js's attachTooltip finds it); content built
       // lazily on first interaction from the keyed model (survives transpose clones).
-      registerTooltip(td, cell.tooltip);
+      registerTooltip(td, cell.tooltip, cell.fixture_href);
     }
     return td;
   }
@@ -1191,7 +1204,7 @@
       + '<label class="checkbox-option cmp-detailed"><input type="checkbox" data-view-detailed> Detailed</label>'
       + '<button type="button" class="theme-toggle" data-theme-toggle'
       + ' title="Switch between light and dark">' + THEME_GLYPH[currentTheme()] + '</button>'
-      + '<label class="checkbox-option cmp-transpose"><input type="checkbox" data-transpose-toggle> Transpose</label>'
+      + '<label class="checkbox-option cmp-transpose"><input type="checkbox" data-transpose-toggle> Vertical</label>'
       + '<button type="button" class="cmp-reset" data-reset title="Clear all selections and reload defaults">Reset</button>'
       + '</span></div>';
     var tmp = document.createElement('div');

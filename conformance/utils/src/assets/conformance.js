@@ -167,6 +167,7 @@
     });
   }
   function applyCtl(panel) {
+    if (window.__comparisonLayoutEnabled && !panel._comparisonSelection) return;
     const ctl = panelCtl(panel);
     if (!ctl) { return; }
     const base = ctlBase(ctl);
@@ -280,7 +281,17 @@
     // is PINNED (always shown, leftmost); the rest show only when active (Reference +
     // selected compares). Flag the Reference column and order golden -> REF -> the rest,
     // the same rule the cell-popup candidate grid uses.
-    panel.querySelectorAll('table.ttip-grammar').forEach(function (tbl) {
+    panel.querySelectorAll('[data-ttip-id]').forEach(cell => syncTooltip(cell, [...active], base, panel.id === 'tab-unified'));
+    if (!panel._comparisonSelection) updateCompareUrl(panel, ctl);
+  }
+  // Cell popups, case grammar tables and drawers use the same capture visibility policy.
+  function syncTooltip(host, keys, base, oracle) {
+    const active = new Set(keys);
+    if (oracle) active.add('golden');
+    toggleCands(host, active, base);
+    const tip = host._ttip || host.querySelector('.ttip');
+    if (!tip) return;
+    tip.querySelectorAll('table.ttip-grammar').forEach(function (tbl) {
       tbl.querySelectorAll('[data-cand]').forEach(function (el) {
         const key = el.getAttribute('data-cand');
         const pinned = el.getAttribute('data-cand-pin') === '1';
@@ -304,8 +315,16 @@
         cols.forEach(function (el) { tr.appendChild(el); });
       });
     });
-    updateCompareUrl(panel, ctl);
   }
+  window.__syncConformanceTooltip = syncTooltip;
+  window.__applyConformanceSelection = function (panel, keys, reference) {
+    const ctl = panelCtl(panel);
+    if (!ctl) return;
+    ctl.querySelectorAll('input.cmp-ref').forEach(input => { input.checked = input.value === reference; });
+    ctl.querySelectorAll('input.cmp-on').forEach(input => { input.checked = keys.includes(input.value); });
+    ctl.dataset.prevBase = reference || '';
+    applyCtl(panel);
+  };
   function applyCompare() { const p = activePanel(); if (p) { applyCtl(p); } }
   function _boxFor(ctl, val) {
     return Array.prototype.find.call(
@@ -347,6 +366,7 @@
         if (!label) { return; }
         label.addEventListener('mousedown', function () { r.dataset.wasChecked = r.checked ? '1' : '0'; });
         label.addEventListener('click', function () {
+          if (ctl.closest('.tab-panel')._comparisonSelection) return;
           if (r.dataset.wasChecked !== '1') { return; }
           r.dataset.wasChecked = '0';
           // Only clear the Reference when nothing else is selected to compare against.
@@ -368,6 +388,8 @@
         });
       });
       ctl.addEventListener('change', function (e) {
+        const selection = ctl.closest('.tab-panel')._comparisonSelection;
+        if (selection) { selection.fromControls(e.target); return; }
         if (e.target.matches('input.cmp-ref')) { handleRefChange(ctl); }
         if (e.target.matches('input.cmp-ref, input.cmp-on')) {
           const panel = ctl.closest('.tab-panel');
@@ -417,7 +439,7 @@
     viewCheckboxes.forEach(function (cb) { cb.checked = detailed; });
     // Compare-with only exists in Detailed. Leaving it returns to one reference (★),
     // rather than carrying a hidden comparison into the next Detailed session.
-    if (!detailed && Object.keys(cmpDefaults).length > 0) {
+    if (!window.__comparisonLayoutEnabled && !detailed && Object.keys(cmpDefaults).length > 0) {
       document.querySelectorAll('.tab-panel').forEach(function (panel) {
         const ctl = panelCtl(panel);
         if (!ctl) { return; }
@@ -432,7 +454,8 @@
     }
   }
 
-  initCompare();
+  if (!window.__comparisonLayoutEnabled) initCompare();
+  else initCompareInputs();
   applyView(readDetailed(), false);
   viewCheckboxes.forEach(function (cb) {
     cb.addEventListener('change', function () { applyView(cb.checked, true); });
@@ -886,9 +909,16 @@
     let isVisible = false;
     let portalParent = null;
 
+    cell._ttipDispose = function () {
+      clearTimeout(showTimer);
+      clearTimeout(hideTimer);
+      unpin();
+      ttip.remove();
+    };
+
     function portalTooltip() {
       if (portalParent) return;
-      if (cell._focusTooltip || (document.activeElement && cell.contains(document.activeElement))) return;
+      if (cell.dataset.ttipPortal !== '1' && (cell._focusTooltip || (document.activeElement && cell.contains(document.activeElement)))) return;
       portalParent = ttip.parentNode;
       document.body.appendChild(ttip);
     }
@@ -1028,6 +1058,10 @@
       // on the popup's own links or its ✕ takes this return, and used to leave it armed.
       const shouldPin = consumeClickShouldPin(cell);
       if (e.target.closest('.ttip')) { return; }
+      if (cell.dataset.ttipClick === 'drawer') {
+        unpin();
+        return;
+      }
       // Decided per-interaction, not per-page: only a finger or stylus pins. A mouse click
       // falls through to the cell's own parser-source link, and never enters modal pin mode.
       if (!shouldPin) { return; }
@@ -1093,6 +1127,7 @@
       cell.addEventListener('pointerenter', keepButtonTooltipOpen);
     }
   }
+  window.__attachConformanceTooltip = attachTooltip;
   // The elements present at load. `th.case-sub` carries the per-column grammar popup (the
   // same case in every family's grammar); it uses the identical hover/pin machinery as a
   // data cell. Transpose builds its headers later and wires them itself — this list is only
@@ -1116,15 +1151,17 @@
   const transposeToggle = document.querySelector('[data-transpose-toggle]');
 
   function readTransposeMode() {
-    const requested = new URLSearchParams(window.location.search).get('transpose');
+    const params = new URLSearchParams(window.location.search);
+    const requested = params.get('vertical') || params.get('transpose');
     return requested === '1' || requested === 'true';
   }
 
   function updateTransposeUrl(enabled) {
     const url = new URL(window.location.href);
     url.searchParams.delete('transpose');
+    url.searchParams.delete('vertical');
     if (enabled) {
-      url.searchParams.set('transpose', '1');
+      url.searchParams.set(window.__comparisonLayoutEnabled ? 'vertical' : 'transpose', '1');
     }
     window.history.replaceState(null, '', url.toString());
   }
@@ -1358,11 +1395,16 @@
 
   function applyTransposeMode(enabled, shouldUpdateUrl) {
     document.body.classList.toggle('transpose-mode', Boolean(enabled));
+    document.querySelectorAll('.tab-panel').forEach(panel => {
+      if (panel._comparisonSelection) panel._comparisonSelection.setVertical(Boolean(enabled));
+    });
     if (transposeToggle) {
       transposeToggle.checked = Boolean(enabled);
     }
     if (enabled) {
-      document.querySelectorAll('.tab-panel').forEach(ensureTransposed);
+      if (!window.__comparisonLayoutEnabled) {
+        document.querySelectorAll('.tab-panel').forEach(ensureTransposed);
+      }
     }
     document.documentElement.classList.remove('transpose-pending');
     if (shouldUpdateUrl) {
