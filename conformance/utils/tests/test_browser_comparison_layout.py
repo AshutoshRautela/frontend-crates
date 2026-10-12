@@ -66,6 +66,20 @@ def test_geometry_focus_orientation_and_themes(matrix_driver, rendered_page):
         expected:tab.columns.map(c=>c.compact_prefix+'-'+c.display_number)};
     """)
     assert labels["actual"] == labels["expected"]
+    d.find_element(By.CSS_SELECTOR, "[data-transpose-toggle]").click()
+    WebDriverWait(d, 10).until(lambda browser: "layout-vertical" in browser.find_element(By.CSS_SELECTOR, ".tab-panel.active .comparison-ui").get_attribute("class"))
+    vertical_labels = d.execute_script("""
+      const p=document.querySelector('.tab-panel.active'),tab=window.__CONFORMANCE_PAGE.tabs.find(t=>t.id===p.id);
+      const headings=[...p.querySelectorAll('.matrix-case-heading')];
+      const sample=headings[1],small=sample.querySelector('.case-label-placeholder');
+      return {actual:headings.map(n=>{const c=n.cloneNode(true);c.querySelector('.ttip')?.remove();return c.textContent.trim()}),
+        expected:tab.columns.map(c=>c.label+' ('+c.compact_prefix+'-'+c.display_number+')'),
+        small:small&&{color:getComputedStyle(small).color,fontSize:parseFloat(getComputedStyle(small).fontSize),parentSize:parseFloat(getComputedStyle(sample).fontSize)}};
+    """)
+    assert vertical_labels["actual"] == vertical_labels["expected"]
+    assert vertical_labels["small"]["color"] == "rgb(138, 143, 152)" and vertical_labels["small"]["fontSize"] < vertical_labels["small"]["parentSize"], vertical_labels
+    d.find_element(By.CSS_SELECTOR, "[data-transpose-toggle]").click()
+    WebDriverWait(d, 10).until(lambda browser: "layout-vertical" not in browser.find_element(By.CSS_SELECTOR, ".tab-panel.active .comparison-ui").get_attribute("class"))
     load(d, rendered_page, "?tab=tab-toolcalling-batch")
     labels = d.execute_script("""
       const p=document.querySelector('.tab-panel.active'),tab=window.__CONFORMANCE_PAGE.tabs.find(t=>t.id===p.id);
