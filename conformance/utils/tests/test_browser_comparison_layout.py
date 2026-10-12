@@ -49,8 +49,8 @@ def choose_slot(driver, slot, engine, capture=None):
     click(driver, f".engine-card [data-slot-picker='{slot}']")
     driver.execute_script("const e=document.querySelector('dialog[open] [data-picker-engine]');e.value=arguments[0];e.dispatchEvent(new Event('change',{bubbles:true}));", engine)
     if capture:
-        driver.execute_script("document.querySelector('dialog[open] [data-picker-version]').value=arguments[0]", capture)
-    driver.find_element(By.CSS_SELECTOR, "dialog[open] [data-picker-apply]").click()
+        driver.execute_script("const v=document.querySelector('dialog[open] [data-picker-version]');v.value=arguments[0];v.dispatchEvent(new Event('change',{bubbles:true}));", capture)
+    driver.find_element(By.CSS_SELECTOR, "dialog[open]").send_keys(Keys.ESCAPE)
 
 
 def test_geometry_focus_orientation_and_themes(matrix_driver, rendered_page):
@@ -158,11 +158,26 @@ def test_interchangeable_slots_reference_empty_and_legacy_urls(matrix_driver, re
     """)
     assert placement["horizontal"] <= 12, placement
     assert placement["overlapsVertically"], placement
-    d.find_element(By.CSS_SELECTOR, "dialog[open] button[value='cancel']").click()
+    assert not d.find_elements(By.CSS_SELECTOR, "dialog[open] [data-picker-apply], dialog[open] button[value='cancel']")
+    d.find_element(By.CSS_SELECTOR, "dialog[open]").send_keys(Keys.ESCAPE)
+    click(d, ".comparison-matrix [data-slot-picker='2']")
+    d.execute_script("const e=document.querySelector('dialog[open] [data-picker-engine]');e.value='none';e.dispatchEvent(new Event('change',{bubbles:true}));")
+    assert selection(d)["keys"] == defaults["keys"][:1]
+    d.set_window_size(2200, 1200)
+    placement = d.execute_script("""
+      const trigger=document.querySelector('.tab-panel.active .engine-card [data-slot-picker="2"]');
+      const a=trigger.getBoundingClientRect(),p=document.querySelector('dialog[open]').getBoundingClientRect();
+      return {horizontal:Math.min(Math.abs(p.left-a.right),Math.abs(a.left-p.right)),overlapsVertically:p.top<a.bottom&&p.bottom>a.top};
+    """)
+    assert placement["horizontal"] <= 12 and placement["overlapsVertically"], placement
+    d.find_element(By.CSS_SELECTOR, "dialog[open]").send_keys(Keys.ESCAPE)
+    assert d.switch_to.active_element.get_attribute("data-slot-picker") == "2"
+    choose_slot(d, 2, "vllm", defaults["keys"][1])
+    d.set_window_size(2400, 1200)
     click(d, ".engine-card [data-slot-picker='2']")
     missing = d.execute_script("return [...document.querySelectorAll('dialog[open] [data-picker-version] option')].filter(o=>o.textContent.includes('no captured results')).map(o=>({key:o.value,disabled:o.disabled}))")
     assert missing and all(item["disabled"] for item in missing)
-    d.find_element(By.CSS_SELECTOR, "dialog[open] button[value='cancel']").click()
+    d.find_element(By.CSS_SELECTOR, "dialog[open]").send_keys(Keys.ESCAPE)
     click(d, "[data-slot-reference='2']")
     changed = selection(d)
     assert changed["keys"] == defaults["keys"]
@@ -179,7 +194,22 @@ def test_interchangeable_slots_reference_empty_and_legacy_urls(matrix_driver, re
     d.execute_script("const e=document.querySelector('dialog[open] [data-picker-engine]');e.value='dynamo';e.dispatchEvent(new Event('change',{bubbles:true}));")
     disabled = d.execute_script("return [...document.querySelectorAll('dialog[open] [data-picker-version] option:disabled')].map(o=>o.value)")
     assert set(selection(d)["keys"][:2]) <= set(disabled)
-    d.find_element(By.CSS_SELECTOR, "dialog[open] button[value='cancel']").click()
+    assert len(selection(d)["keys"]) == 3
+    assert selection(d)["keys"][2] not in selection(d)["keys"][:2]
+    d.set_window_size(2200, 1200)
+    placement = d.execute_script("""
+      const trigger=document.querySelector('.tab-panel.active [data-slot-picker="2"]');
+      const a=trigger.getBoundingClientRect(),p=document.querySelector('dialog[open]').getBoundingClientRect();
+      return {horizontal:Math.min(Math.abs(p.left-a.right),Math.abs(a.left-p.right),Math.abs(p.left-12)),overlapsVertically:p.top<a.bottom&&p.bottom>a.top};
+    """)
+    assert placement["horizontal"] <= 12 and placement["overlapsVertically"], placement
+    d.find_element(By.CSS_SELECTOR, "dialog[open]").send_keys(Keys.ESCAPE)
+    assert d.switch_to.active_element.get_attribute("data-slot-picker") == "2"
+    click(d, ".engine-card [data-slot-picker='2']")
+    d.execute_script("document.querySelector('dialog[open]').dispatchEvent(new MouseEvent('click',{bubbles:true}));")
+    assert not d.find_elements(By.CSS_SELECTOR, "dialog[open]")
+    assert d.switch_to.active_element.get_attribute("data-slot-picker") == "2"
+    d.set_window_size(2400, 1200)
     for slot in range(3):
         choose_slot(d, slot, "none")
     assert selection(d) == {"keys": [], "reference": None}
@@ -202,7 +232,7 @@ def test_interchangeable_slots_reference_empty_and_legacy_urls(matrix_driver, re
     click(d, ".engine-card [data-slot-picker='0']")
     unavailable = d.execute_script("return [...document.querySelectorAll('dialog[open] [data-picker-engine] option:disabled')].map(o=>o.textContent)")
     assert any("SGLang" in label and "no captures" in label for label in unavailable)
-    d.find_element(By.CSS_SELECTOR, "dialog[open] button[value='cancel']").click()
+    d.find_element(By.CSS_SELECTOR, "dialog[open]").send_keys(Keys.ESCAPE)
     load(d, rendered_page, "?tab=tab-toolcalling-batch")
     modes = d.execute_script("return window.__CONFORMANCE_PAGE.tabs.find(t=>t.id==='tab-toolcalling-batch').candidates.filter(c=>c.impl.startsWith('dynamo')).map(c=>({key:c.key,mode:c.parse_mode}))")
     first = modes[0]
@@ -319,6 +349,7 @@ def test_cell_and_case_popup_renderer_parity_and_drawer(matrix_driver, rendered_
 def test_native_picker_focus_schema_and_reference_disclosure(matrix_driver, rendered_page):
     d = matrix_driver
     load(d, rendered_page, "?vertical=1")
+    initial = selection(d)
     version = d.find_element(By.CSS_SELECTOR, ".tab-panel.active [data-slot-version='0']")
     previous = version.get_attribute("value")
     version.send_keys(Keys.ARROW_DOWN)
@@ -336,9 +367,11 @@ def test_native_picker_focus_schema_and_reference_disclosure(matrix_driver, rend
     trigger.send_keys(Keys.ENTER)
     engine = d.find_element(By.CSS_SELECTOR, "dialog[open] [data-picker-engine]")
     engine.send_keys(Keys.END)
-    d.find_element(By.CSS_SELECTOR, "dialog[open] [data-picker-apply]").send_keys(Keys.ENTER)
+    assert not d.find_elements(By.CSS_SELECTOR, "dialog[open] [data-picker-apply], dialog[open] button[value='cancel']")
+    assert selection(d)["keys"] == initial["keys"][1:]
+    assert d.switch_to.active_element.get_attribute("data-picker-engine") is not None
+    d.find_element(By.CSS_SELECTOR, "dialog[open]").send_keys(Keys.ESCAPE)
     assert d.switch_to.active_element.get_attribute("data-slot-picker") == "0"
-    assert "None" in d.switch_to.active_element.text
     click(d, ".legacy-report-details > summary")
     assert d.find_element(By.CSS_SELECTOR, ".tab-panel.active table[data-parity-table]").is_displayed()
     header = d.execute_script("""

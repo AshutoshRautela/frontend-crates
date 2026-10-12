@@ -509,6 +509,8 @@
     document.body.appendChild(picker);
     let pickerSlot = 0;
     let pickerTrigger = null;
+    let pickerTriggerSurface = '.engine-cards';
+    let pickerTriggerIndex = 0;
     function positionPicker() {
       if (!picker.open || !pickerTrigger) return;
       const anchor = pickerTrigger.getBoundingClientRect();
@@ -527,17 +529,27 @@
       const items = candidatesByEngine.get(engine) || [];
       return items.map(candidate => captureOption(candidate, state.slots[pickerSlot], pickerSlot)).join('');
     }
+    function syncPickerTrigger() {
+      if (!picker.open) return;
+      const surface = ui.querySelector(pickerTriggerSurface);
+      const matchingTriggers = surface ? surface.querySelectorAll('[data-slot-picker="' + pickerSlot + '"]') : [];
+      const replacement = matchingTriggers[Math.min(pickerTriggerIndex, matchingTriggers.length - 1)]
+        || engines.querySelector('[data-slot-picker="' + pickerSlot + '"]');
+      if (replacement) pickerTrigger = replacement;
+    }
     function openPicker(slot, trigger) {
       pickerSlot = slot;
       pickerTrigger = trigger;
+      pickerTriggerSurface = trigger.closest('.comparison-matrix') ? '.comparison-matrix' : '.engine-cards';
+      const surface = trigger.closest(pickerTriggerSurface);
+      pickerTriggerIndex = surface ? Array.from(surface.querySelectorAll('[data-slot-picker="' + slot + '"]')).indexOf(trigger) : 0;
       const selected = byKey.get(state.slots[slot]);
       const engine = selected ? engineKey(selected) : 'none';
       picker.innerHTML = '<form method="dialog"><h2>Comparison slot ' + (slot + 1) + '</h2><label>Engine <select data-picker-engine>'
         + engineOrder.map(key => '<option value="' + key + '"' + (engine === key ? ' selected' : '') + (!engineAvailable(key) ? ' disabled' : '') + '>'
           + engineNames[key] + (!engineAvailable(key) ? ' — no captures for this tab' : '') + '</option>').join('')
         + '<option value="none"' + (engine === 'none' ? ' selected' : '') + '>None</option></select></label>'
-        + '<label>Capture <select data-picker-version' + (engine === 'none' ? ' disabled' : '') + '>' + pickerVersions(engine) + '</select></label>'
-        + '<div><button value="cancel">Cancel</button><button type="button" data-picker-apply>Apply</button></div></form>';
+        + '<label>Capture <select data-picker-version' + (engine === 'none' ? ' disabled' : '') + '>' + pickerVersions(engine) + '</select></label></form>';
       picker.showModal();
       window.requestAnimationFrame(positionPicker);
     }
@@ -546,19 +558,46 @@
       if (trigger) openPicker(Number(trigger.dataset.slotPicker), trigger);
     });
     window.addEventListener('resize', positionPicker);
-    picker.addEventListener('change', event => {
-      if (!event.target.matches('[data-picker-engine]')) return;
-      const version = picker.querySelector('[data-picker-version]');
-      version.innerHTML = pickerVersions(event.target.value);
-      version.disabled = event.target.value === 'none';
-    });
     picker.addEventListener('click', event => {
-      if (!event.target.matches('[data-picker-apply]')) return;
-      const engine = picker.querySelector('[data-picker-engine]').value;
-      const key = engine === 'none' ? null : picker.querySelector('[data-picker-version]').value;
-      if (engine !== 'none' && !key) return;
-      picker.close();
-      selectSlot(pickerSlot, key, true);
+      if (event.target === picker) picker.close();
+    });
+    picker.addEventListener('close', () => {
+      if (pickerTrigger && pickerTrigger.isConnected) pickerTrigger.focus({ preventScroll: true });
+    });
+    picker.addEventListener('change', event => {
+      if (event.target.matches('[data-picker-engine]')) {
+        const engine = event.target.value;
+        const version = picker.querySelector('[data-picker-version]');
+        if (engine === 'none') {
+          version.innerHTML = '';
+          version.disabled = true;
+          selectSlot(pickerSlot, null);
+          syncPickerTrigger();
+          return;
+        }
+        const current = byKey.get(state.slots[pickerSlot]);
+        const choices = (candidatesByEngine.get(engine) || []).filter(candidate => capturedKeys.has(candidate.key)
+          && !state.slots.some((key, index) => index !== pickerSlot && key === candidate.key));
+        const selected = choices.find(candidate => current && candidate.key === current.key) || choices[0];
+        if (!selected) {
+          const restoredEngine = current ? engineKey(current) : 'none';
+          event.target.value = restoredEngine;
+          version.innerHTML = pickerVersions(restoredEngine);
+          version.disabled = restoredEngine === 'none';
+          return;
+        }
+        version.innerHTML = pickerVersions(engine);
+        version.value = selected.key;
+        version.disabled = false;
+        selectSlot(pickerSlot, selected.key);
+        syncPickerTrigger();
+      } else if (event.target.matches('[data-picker-version]')) {
+        const candidate = byKey.get(event.target.value);
+        if (!candidate || !capturedKeys.has(candidate.key)
+          || state.slots.some((key, index) => index !== pickerSlot && key === candidate.key)) return;
+        selectSlot(pickerSlot, candidate.key);
+        syncPickerTrigger();
+      }
     });
     engines.addEventListener('change', event => {
       if (event.target.matches('[data-slot-version]')) selectSlot(Number(event.target.dataset.slotVersion), event.target.value);
