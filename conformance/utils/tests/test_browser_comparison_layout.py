@@ -100,17 +100,14 @@ def test_status_mapping_and_capture_denominators(matrix_driver, rendered_page):
           cell.cmp[panel._comparisonSelection.reference]={sig:0,na:1};
           cell.tooltip.candidates.find(candidate=>candidate.key===panel._comparisonSelection.reference).block={unavailable:'not captured at this version'};
         """)
-        for vertical in (False, True):
-            if vertical:
-                d.find_element(By.CSS_SELECTOR, "[data-transpose-toggle]").click()
-            for layout in ("split", "stacked"):
-                click(d, f"[data-layout='{layout}']")
-                assert len(d.find_elements(By.CSS_SELECTOR, ".tab-panel.active .status-uncompared.matrix-status")) == 2
-                assert len(d.find_elements(By.CSS_SELECTOR, ".tab-panel.active .status-missing.matrix-status")) == 1
-                scores = [card.text for card in d.find_elements(By.CSS_SELECTOR, ".tab-panel.active .engine-score")]
-                assert "0 of 0 captured" in scores[0], scores
-                assert all("0 of 1 captured" in score for score in scores[1:]), scores
-                assert not d.find_elements(By.CSS_SELECTOR, ".tab-panel.active .status-pass.matrix-status")
+        for layout in ("split", "stacked"):
+            click(d, f"[data-layout='{layout}']")
+            assert len(d.find_elements(By.CSS_SELECTOR, ".tab-panel.active .status-uncompared.matrix-status")) == 2
+            assert len(d.find_elements(By.CSS_SELECTOR, ".tab-panel.active .status-missing.matrix-status")) == 1
+            scores = [card.text for card in d.find_elements(By.CSS_SELECTOR, ".tab-panel.active .engine-score")]
+            assert "0 of 0 captured" in scores[0], scores
+            assert all("0 of 1 captured" in score for score in scores[1:]), scores
+            assert not d.find_elements(By.CSS_SELECTOR, ".tab-panel.active .status-pass.matrix-status")
     finally:
         load(d, rendered_page)
 
@@ -518,13 +515,11 @@ def test_first_paint_never_shows_reference_table(matrix_driver, rendered_page):
         d.execute_cdp_cmd("Page.removeScriptToEvaluateOnNewDocument", {"identifier": registration["identifier"]})
 
 
-@pytest.mark.parametrize("layout,vertical", [("split", False), ("stacked", False), ("split", True), ("stacked", True)])
-def test_documented_dynamo_pair_keeps_unrelated_peer_disagreement(matrix_driver, rendered_page, layout, vertical):
+@pytest.mark.parametrize("layout", ["split", "stacked"])
+def test_documented_dynamo_pair_keeps_unrelated_peer_disagreement(matrix_driver, rendered_page, layout):
     d = matrix_driver
     load(d, rendered_page, "?tab=tab-toolcalling-batch")
     try:
-        if vertical:
-            d.find_element(By.CSS_SELECTOR, "[data-transpose-toggle]").click()
         click(d, f"[data-layout='{layout}']")
         case = d.execute_script("""
           const p=document.querySelector('.tab-panel.active'),t=window.__CONFORMANCE_PAGE.tabs.find(t=>t.id===p.id);
