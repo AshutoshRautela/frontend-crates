@@ -1,6 +1,5 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
-"""Real matrix selection, geometry, popup and shared-URL regressions."""
 from __future__ import annotations
 
 import shutil
@@ -51,6 +50,50 @@ def choose_slot(driver, slot, engine, capture=None):
     if capture:
         driver.execute_script("const v=document.querySelector('dialog[open] [data-picker-version]');v.value=arguments[0];v.dispatchEvent(new Event('change',{bubbles:true}));", capture)
     driver.find_element(By.CSS_SELECTOR, "dialog[open]").send_keys(Keys.ESCAPE)
+
+
+def test_status_mapping_and_capture_denominators(matrix_driver, rendered_page):
+    d = matrix_driver
+    load(d, rendered_page, "?tab=tab-toolcalling-batch")
+    try:
+        keys = d.execute_script("""
+          const panel=document.querySelector('.tab-panel.active');
+          const tab=window.__CONFORMANCE_PAGE.tabs.find(tab=>tab.id===panel.id);
+          const keys=panel._comparisonSelection.keys;
+          const row=tab.rows.find(row=>!row.section);
+          const column=tab.columns[0];
+          const cell=row.cells[column.sub];
+          tab.rows=[row]; tab.columns=[column];
+          cell.kind='cell'; cell.known_divergence=false;
+          cell.cmp=Object.fromEntries(keys.map(key=>[key,{sig:1}]));
+          cell.cmp[keys[1]].sig=2;
+          cell.tooltip={candidates:keys.map(key=>({key,block:{explanation:'Inherited unchanged from an older capture.'}})),reasons:[]};
+          return keys;
+        """)
+        assert len(keys) == 3
+        click(d, "[data-focus='all']")
+        assert len(d.find_elements(By.CSS_SELECTOR, ".tab-panel.active .status-diverge.matrix-status")) == 1
+        assert not d.find_elements(By.CSS_SELECTOR, ".tab-panel.active .status-documented.matrix-status")
+        d.execute_script("""
+          const panel=document.querySelector('.tab-panel.active');
+          const tab=window.__CONFORMANCE_PAGE.tabs.find(tab=>tab.id===panel.id);
+          const cell=tab.rows[0].cells[tab.columns[0].sub];
+          cell.cmp[panel._comparisonSelection.reference]={sig:0,na:1};
+          cell.tooltip.candidates.find(candidate=>candidate.key===panel._comparisonSelection.reference).block={unavailable:'not captured at this version'};
+        """)
+        for vertical in (False, True):
+            if vertical:
+                d.find_element(By.CSS_SELECTOR, "[data-transpose-toggle]").click()
+            for layout in ("split", "stacked"):
+                click(d, f"[data-layout='{layout}']")
+                assert len(d.find_elements(By.CSS_SELECTOR, ".tab-panel.active .status-uncompared.matrix-status")) == 2
+                assert len(d.find_elements(By.CSS_SELECTOR, ".tab-panel.active .status-missing.matrix-status")) == 1
+                scores = [card.text for card in d.find_elements(By.CSS_SELECTOR, ".tab-panel.active .engine-score")]
+                assert "0 of 0 captured" in scores[0], scores
+                assert all("0 of 1 captured" in score for score in scores[1:]), scores
+                assert not d.find_elements(By.CSS_SELECTOR, ".tab-panel.active .status-pass.matrix-status")
+    finally:
+        load(d, rendered_page)
 
 
 def test_geometry_focus_orientation_and_themes(matrix_driver, rendered_page):

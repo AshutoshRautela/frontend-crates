@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
-// Harry's comparison layout, rendered from the report model and existing cell payloads.
 (function () {
   'use strict';
 
@@ -13,9 +12,9 @@
   const statusNames = {
     pass: 'Matches reference', documented: 'Documented difference', diverge: 'Disagreement',
     leak: 'Markup leak', error: 'Parser error', expected: 'Expected error',
-    unsupported: 'No parser for family', missing: 'No captured result',
+    unsupported: 'No parser for family', missing: 'No captured result', uncompared: 'Reference unavailable',
   };
-  const statusClasses = ['pass', 'documented', 'diverge', 'leak', 'error', 'expected', 'unsupported', 'missing'];
+  const statusClasses = ['pass', 'documented', 'diverge', 'leak', 'error', 'expected', 'unsupported', 'missing', 'uncompared'];
 
   function escapeHtml(value) {
     return String(value == null ? '' : value).replace(/[&<>"']/g, ch => ({
@@ -56,25 +55,36 @@
     return candidates.find(candidate => candidate.key === key) || null;
   }
 
-  function outputStatus(tab, cell, candidate, reference) {
-    if (!cell || cell.kind === 'blank') return 'missing';
-    if (cell.kind === 'missing') return 'missing';
-    const entry = (cell.cmp || {})[candidate.key];
-    const candidateTip = tooltipCandidate(cell, candidate.key);
+  function captureIssue(cell, key) {
+    if (!cell || cell.kind === 'blank' || cell.kind === 'missing') return 'missing';
+    const entry = (cell.cmp || {})[key];
+    const candidateTip = tooltipCandidate(cell, key);
     const block = candidateTip && candidateTip.block;
     if (!entry || entry.na === 1) {
-      return block && block.unavailable ? 'unsupported' : 'missing';
+      const reason = String((block && block.unavailable) || '');
+      return /\bno(?: [\w.-]+)* parser\b|\bnot (?:yet )?implemented\b/i.test(reason) ? 'unsupported' : 'missing';
     }
     if (entry.err === 1 || (block && (block.exception || (block.error && typeof block.error === 'object')))) return 'error';
     if (block && typeof block.error === 'string') return 'expected';
     if (entry.leak === 1 || (candidateTip && candidateTip.leak)) return 'leak';
+    return null;
+  }
 
+  function outputStatus(tab, cell, candidate, reference) {
+    const issue = captureIssue(cell, candidate.key);
+    if (issue) return issue;
+    const entry = cell.cmp[candidate.key];
     const oracleTab = tab.id === 'tab-unified';
     const compareKey = oracleTab ? 'golden' : reference;
     const compareEntry = (cell.cmp || {})[compareKey];
-    if (!compareEntry || compareEntry.na === 1 || compareEntry.err === 1) return 'pass';
+    if (['missing', 'unsupported', 'error', 'expected'].includes(captureIssue(cell, compareKey))) return 'uncompared';
     if (entry.sig === compareEntry.sig) return 'pass';
-    if (cell.known_divergence || (block && (block.explanation || block.reason))) return 'documented';
+    const block = (tooltipCandidate(cell, candidate.key) || {}).block;
+    const intentional = ((cell.tooltip && cell.tooltip.reasons) || []).some(reason =>
+      reason.intentional === true && typeof reason.impl === 'string'
+      && (candidate.key === reason.impl || candidate.key.startsWith(reason.impl + '-'))
+      && block && reason.reason === (block.explanation || block.reason));
+    if (cell.known_divergence || intentional) return 'documented';
     return 'diverge';
   }
 
@@ -249,10 +259,10 @@
             totalized.add(identity);
             const status = statusFor(tab, row, column, selected, reference);
             counts[status] += 1;
-            if (!['unsupported', 'missing'].includes(status)) captured += 1;
+            if (eligibleData(cell, selected)) captured += 1;
           }
         }
-        const denominator = counts.pass + counts.documented + counts.diverge + counts.leak + counts.error + counts.expected;
+        const denominator = captured;
         const totalCases = statusClasses.reduce((total, status) => total + counts[status], 0);
         const success = counts.pass;
         const percent = denominator ? Math.round(success / denominator * 100) : null;
@@ -310,7 +320,7 @@
         let denominator = 0;
         for (const column of columns) {
           const status = statusFor(tab, row, column, candidate, reference);
-          if (!['unsupported', 'missing'].includes(status)) denominator += 1;
+          if (eligibleData(row.cells && row.cells[column.sub], candidate)) denominator += 1;
           if (status === 'pass') pass += 1;
         }
         const percentage = denominator ? Math.round(pass / denominator * 100) : null;
@@ -325,12 +335,12 @@
     function comparisonFocus(row, column, visibleCandidates, reference) {
       const codes = cellCodes(row, column, visibleCandidates, reference);
       const cell = row.cells && row.cells[column.sub];
-      const entries = codes.filter(code => ['pass', 'diverge'].includes(code.status)).map(code => code.entry);
+      const entries = codes.filter(code => ['pass', 'diverge', 'uncompared'].includes(code.status)).map(code => code.entry);
       if (tab.id === 'tab-unified' && entries.length) entries.push(cell && cell.cmp && cell.cmp.golden);
       const signatures = entries.filter(entry => entry && entry.na !== 1 && entry.err !== 1).map(entry => entry.sig);
       return {
         disagreement: new Set(signatures).size > 1,
-        problem: codes.some(code => ['leak', 'error', 'expected', 'missing', 'unsupported'].includes(code.status)),
+        problem: codes.some(code => ['leak', 'error', 'expected', 'missing', 'unsupported', 'uncompared'].includes(code.status)),
       };
     }
 

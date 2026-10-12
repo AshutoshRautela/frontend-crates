@@ -1140,8 +1140,6 @@ table.glossary td.gloss-desc { font-family: -apple-system, system-ui, sans-serif
 body.view-details .case-schema-indicator { display: inline; }
 :root[data-theme="dark"] .case-schema-indicator { color: #94a3b8; }
 
-/* Harry's report layout. The source comparison table stays inside the details panel,
-   while this view reads the same model, capture candidates, and output popups. */
 :root {
   --page-bg: #f6f7f9; --panel-bg: #fff; --panel-alt: #f1f3f6; --ink: #111827;
   --ink-muted: #596575; --ink-soft: #8a94a3; --line: #e2e6eb; --line-strong: #cfd5dc;
@@ -1202,6 +1200,7 @@ body.view-details .case-schema-indicator { display: inline; }
 .bar-expected,.status-expected { background: var(--status-expected); }
 .bar-unsupported,.status-unsupported { background: var(--status-unsupported); }
 .bar-missing,.status-missing { background: var(--status-missing); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.bar-uncompared,.status-uncompared { background: var(--panel-alt); box-shadow: inset 0 0 0 1px var(--ink-muted); }
 .engine-counts { display: flex; flex-wrap: wrap; gap: 4px 11px; margin-top: 7px; color: var(--ink-muted); font-size: 11px; }
 .engine-counts span,.comparison-legend span { display: inline-flex; align-items: center; gap: 4px; }
 .legend-swatch { display: inline-block; width: 9px; height: 9px; flex: 0 0 9px; border-radius: 2px; }

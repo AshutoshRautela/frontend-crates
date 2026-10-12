@@ -877,7 +877,6 @@
   let pinnedCell = null;
   function unpinCell(c) { if (c && c._ttipUnpin) { c._ttipUnpin(); } }
   document.addEventListener('click', function (e) {
-    // A pin stays open only while clicks land on its owner or inside its popup.
     if (pinnedCell && !pinnedCell.contains(e.target) && !pinnedCell._ttip.contains(e.target)) { unpinCell(pinnedCell); }
   });
 
@@ -1053,8 +1052,6 @@
         if (ttip.classList.contains('ttip-pinned')) { unpin(); } else { pin(); }
         return;
       }
-      // Legacy behavior is decided per interaction: only a finger or stylus pins. Other
-      // clicks fall through to the host's normal action.
       if (!shouldPin) { return; }
       e.preventDefault();
       if (ttip.classList.contains('ttip-pinned')) { unpin(); } else { pin(); }
