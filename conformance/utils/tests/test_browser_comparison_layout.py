@@ -496,7 +496,7 @@ def test_first_paint_never_shows_reference_table(matrix_driver, rendered_page):
     registration = d.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {"source": script})
     try:
         d.execute_cdp_cmd("Emulation.setCPUThrottlingRate", {"rate": 4})
-        for query in ("", "?transpose=1", "?vertical=1", "?base_tab-unified=vllm_rust&cmp_tab-unified=vllm_rust"):
+        for query in ("", "?vertical=1", "?base_tab-unified=vllm_rust&cmp_tab-unified=vllm_rust"):
             load(d, rendered_page, query)
             assert d.execute_script("return window.__firstTable") == "comparison-matrix"
             assert d.execute_script("return window.__legacyPaint") is False

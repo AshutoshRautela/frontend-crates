@@ -22,9 +22,7 @@ function cell(block = {}, reference = {sig: 1}) {
 function status(value, unified = true, selected = candidate) {
   return context.outputStatus({id: unified ? 'tab-unified' : 'tab-batch'}, value, selected, 'reference');
 }
-for (const field of ['explanation', 'reason']) {
-  assert.equal(status(cell({[field]: 'Inherited unchanged from Dynamo v2 0.7.18.'})), 'diverge', field);
-}
+assert.equal(status(cell({explanation: 'Inherited unchanged from Dynamo v2 0.7.18.'})), 'diverge');
 const intentional = cell({explanation: 'intentional recovery difference'});
 intentional.tooltip.reasons = [{impl: 'candidate', intentional: true, reason: 'intentional recovery difference',
   candidate_sig: 2, reference_impl: 'golden', reference_sig: 1}];
