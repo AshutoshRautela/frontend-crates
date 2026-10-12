@@ -346,8 +346,11 @@
     }
 
     function caseHeading(column, columnIndex, rowHeading) {
+      const label = !state.vertical && tab.id === 'tab-unified' && column.compact_prefix != null && column.display_number != null
+        ? window.__compactCaseLabelHtml(column)
+        : escapeHtml(state.vertical ? column.label : column.display_number || column.label);
       return '<th class="matrix-case-heading' + (rowHeading ? ' matrix-model' : '') + '" tabindex="0" data-case-column="' + columnIndex
-        + '" aria-label="' + escapeHtml(column.case_id || column.label) + '">' + escapeHtml(state.vertical ? column.label : column.display_number || column.label)
+        + '" aria-label="' + escapeHtml(column.case_id || column.label) + '">' + label
         + '<div class="ttip"></div></th>';
     }
 

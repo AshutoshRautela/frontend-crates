@@ -60,7 +60,19 @@ def test_geometry_focus_orientation_and_themes(matrix_driver, rendered_page):
     assert len(d.find_elements(By.CSS_SELECTOR, ".tab-panel.active .engine-card")) == 3
     assert "matches GOLDEN" in d.find_element(By.CSS_SELECTOR, ".tab-panel.active .engine-score").text
     assert not d.find_elements(By.CSS_SELECTOR, ".model-summary-bar")
+    labels = d.execute_script("""
+      const p=document.querySelector('.tab-panel.active'),tab=window.__CONFORMANCE_PAGE.tabs.find(t=>t.id===p.id);
+      return {actual:[...p.querySelectorAll('.matrix-case-heading')].map(n=>{const c=n.cloneNode(true);c.querySelector('.ttip')?.remove();return c.textContent.trim()}),
+        expected:tab.columns.map(c=>c.compact_prefix+'-'+c.display_number)};
+    """)
+    assert labels["actual"] == labels["expected"]
     load(d, rendered_page, "?tab=tab-toolcalling-batch")
+    labels = d.execute_script("""
+      const p=document.querySelector('.tab-panel.active'),tab=window.__CONFORMANCE_PAGE.tabs.find(t=>t.id===p.id);
+      return {actual:[...p.querySelectorAll('.matrix-case-heading')].map(n=>{const c=n.cloneNode(true);c.querySelector('.ttip')?.remove();return c.textContent.trim()}),
+        expected:tab.columns.map(c=>c.display_number||c.label)};
+    """)
+    assert labels["actual"] == labels["expected"]
     for theme in ("light", "dark"):
         d.execute_script("document.documentElement.dataset.theme=arguments[0]", theme)
         geometry = d.execute_script("""

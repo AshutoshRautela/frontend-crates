@@ -544,6 +544,7 @@
     return escapeHtml(col.compact_prefix) + '-<span class="case-label-placeholder">'
       + escapeHtml(String(col.display_number)) + '</span>';
   }
+  window.__compactCaseLabelHtml = compactCaseLabelHtml;
 
   function popupCaseHeadingHtml(model) {
     const col = model.popupCase;
