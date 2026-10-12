@@ -423,6 +423,7 @@
       });
       matrix.querySelectorAll('[data-case-column]').forEach(node => {
         node.dataset.ttipPortal = '1';
+        node.dataset.ttipClick = 'pin';
         const index = Number(node.dataset.caseColumn);
         if (!caseTooltips.has(index)) caseTooltips.set(index, window.__conformanceCaseTooltip(tab, tab.columns[index]));
         window.__registerConformanceTooltip(node, caseTooltips.get(index));

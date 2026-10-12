@@ -287,11 +287,10 @@ body.transpose-mode .transpose-table .case-label-reference { display: inline-blo
    the cell it describes — with several popups' worth of chart on screen it is
    otherwise easy to lose which cell you are looking at.
 
-   The press must mark the cell whose popup is ACTUALLY up, never a second cell. So it
-   is driven by two states that mirror how a popup opens: :hover / :focus-within while
-   hovering opens popups, and `.ttip-open` on the pinned cell. Once a pin is held,
-   `body.ttip-pin-mode` switches the hover half OFF — hover no longer opens a popup
-   then, so a hovered cell looking pressed would point at a popup that is not there.
+   The press must mark the cell whose popup is ACTUALLY up, never a second cell. Hover
+   and focus press legacy hover popups; `.ttip-open` marks pinned popups. Matrix cells
+   with a click policy are excluded from hover and focus because they do not open a
+   popup until clicked.
 
    Depth comes from the inset shadow and the dim ONLY — deliberately no `transform`.
    A transformed element becomes the containing block for its absolutely-positioned
@@ -302,8 +301,8 @@ body.transpose-mode .transpose-table .case-label-reference { display: inline-blo
    Keyed to `[data-ttip-wired]` — the mark `attachTooltip` leaves on each element it wires —
    so the press marks exactly what can open a popup. Listing the classes instead meant the
    transpose headers (wired dynamically, never in any static list) got popups with no press. */
-[data-ttip-wired]:hover,
-[data-ttip-wired]:focus-within,
+[data-ttip-wired]:not([data-ttip-click]):hover,
+[data-ttip-wired]:not([data-ttip-click]):focus-within,
 [data-ttip-wired].ttip-open {
   box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.55), inset 0 0 0 1px rgba(0, 0, 0, 0.18);
 }
@@ -313,8 +312,8 @@ body.ttip-pin-mode [data-ttip-wired]:focus-within:not(.ttip-open) {
   box-shadow: none;
 }
 body.view-overview.ttip-pin-mode td.cell:hover:not(.ttip-open) { filter: none; }
-[data-theme="dark"] [data-ttip-wired]:hover,
-[data-theme="dark"] [data-ttip-wired]:focus-within,
+[data-theme="dark"] [data-ttip-wired]:not([data-ttip-click]):hover,
+[data-theme="dark"] [data-ttip-wired]:not([data-ttip-click]):focus-within,
 [data-theme="dark"] [data-ttip-wired].ttip-open {
   box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.8), inset 0 0 0 1px rgba(0, 0, 0, 0.4);
 }

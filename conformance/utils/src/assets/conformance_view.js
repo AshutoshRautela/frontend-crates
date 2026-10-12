@@ -156,7 +156,7 @@
   // survives cloneNode), NOT a JS property (which does not) — so transpose clones
   // (built by conformance.js via cloneNode) can still build their tooltip. One
   // DELEGATED document listener handles every cell (originals + clones) instead of
-  // thousands of per-cell listeners.
+  // thousands of per-cell listeners; click-only hosts build only after a click.
   var _ttipModels = {};
   var _ttipSeq = 0;
   // Whether this page carries a reference-aware not-implemented map (v2 only); gates
@@ -201,9 +201,11 @@
     var t = e.target;
     // Anything carrying a `data-ttip-id` builds the same lazy way a data cell does —
     // headers included, which is why this asks for the attribute rather than listing the
-    // element types that happen to have one today. A list here had already missed
-    // `th.tcol-model`, so hovering a transposed model header showed an empty box.
+    // element types that happen to have one today. Click-only matrix cells either open the
+    // output drawer or pin their tooltip, so pointer and focus must not build them.
     var td = t && t.closest ? t.closest('[data-ttip-id]') : null;
+    if (td && (td.dataset.ttipClick === 'drawer'
+      || (td.dataset.ttipClick === 'pin' && e.type !== 'click'))) { return; }
     if (td) { buildTooltipInto(td); }
   }
   // pointerover/focusin/click all bubble, so one document listener covers every

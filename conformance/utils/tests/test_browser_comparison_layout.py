@@ -266,13 +266,16 @@ def test_cell_and_case_popup_renderer_parity_and_drawer(matrix_driver, rendered_
         golden:tip.querySelectorAll('.cand-golden.cand-on,[data-cand=golden]:not(.col-hidden),.golden-out-cap,.oracle-output').length,fixtures:tip.querySelectorAll('a[href]').length};
     """)
     assert result["same"] and result["variants"] > 1 and result["golden"], result
-    ActionChains(d).move_to_element(d.find_element(By.CSS_SELECTOR, ".tab-panel.active .matrix-cell")).perform()
-    WebDriverWait(d, 10).until(lambda browser: browser.find_elements(By.CSS_SELECTOR, ".ttip.ttip-visible"))
-    d.execute_script("const c=document.querySelector('.tab-panel.active .matrix-cell');c.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerType:'touch'}));c.click();")
+    cell = d.find_element(By.CSS_SELECTOR, ".tab-panel.active .matrix-cell")
+    ActionChains(d).move_to_element(cell).perform()
+    hovered_popup = d.execute_async_script("const done=arguments[0];setTimeout(()=>done(!!document.querySelector('.ttip-visible')),900);")
+    assert not hovered_popup
+    cell.click()
     WebDriverWait(d, 10).until(lambda browser: browser.find_elements(By.CSS_SELECTOR, ".comparison-drawer.open"))
     assert not d.find_elements(By.CSS_SELECTOR, ".ttip-pinned")
     assert d.find_elements(By.CSS_SELECTOR, ".comparison-drawer.open .cand-golden.cand-on,.comparison-drawer.open [data-cand=golden]:not(.col-hidden),.comparison-drawer.open .golden-out-cap,.comparison-drawer.open .oracle-output")
-    d.switch_to.active_element.send_keys(Keys.ESCAPE)
+    d.find_element(By.CSS_SELECTOR, ".comparison-drawer .drawer-scrim").click()
+    assert not d.find_elements(By.CSS_SELECTOR, ".comparison-drawer.open")
     for vertical in (False, True):
         if vertical:
             d.find_element(By.CSS_SELECTOR, "[data-transpose-toggle]").click()
@@ -282,19 +285,25 @@ def test_cell_and_case_popup_renderer_parity_and_drawer(matrix_driver, rendered_
           const tab=window.__CONFORMANCE_PAGE.tabs.find(t=>t.id===p.id);
           const header=[...p.querySelectorAll('.matrix-case-heading')].find(n=>tab.columns[+n.dataset.caseColumn].schemas?.length);
           const chosen=header || p.querySelector('.matrix-case-heading');
-          chosen.focus();window.__buildTooltip(chosen);
+          chosen.focus();const focusOpened=chosen._ttip.classList.contains('ttip-visible');window.__buildTooltip(chosen);
           const model=window.__conformanceCaseTooltip(tab,tab.columns[+chosen.dataset.caseColumn]);
           const expected=document.createElement('div');expected.innerHTML='<div class="ttip">'+window.__renderConformanceTooltip(model)+'</div>';
           window.__syncConformanceTooltip(expected,p._comparisonSelection.keys,p._comparisonSelection.reference,true);
           const tip=chosen._ttip;const actual=tip.cloneNode(true);actual.querySelector('.ttip-close')?.remove();
           window.__caseHeader=chosen;
-          return {same:actual.textContent===expected.querySelector('.ttip').textContent,
-            families:tip.querySelectorAll('table.ttip-grammar tbody tr').length,golden:tip.querySelectorAll('[data-cand=golden]:not(.col-hidden)').length};
+          return {same:actual.textContent===expected.querySelector('.ttip').textContent,focusOpened,
+            column:chosen.dataset.caseColumn,families:tip.querySelectorAll('table.ttip-grammar tbody tr').length,
+            golden:tip.querySelectorAll('[data-cand=golden]:not(.col-hidden)').length};
         """)
         assert grammar["same"] and grammar["families"] > 1 and grammar["golden"], grammar
-        d.execute_script("const c=window.__caseHeader;c.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerType:'touch'}));c.click();")
+        assert not grammar["focusOpened"], grammar
+        case_header = d.find_element(By.CSS_SELECTOR, f".matrix-case-heading[data-case-column='{grammar['column']}']")
+        ActionChains(d).move_to_element(case_header).perform()
+        hovered_popup = d.execute_async_script("const done=arguments[0];setTimeout(()=>done(!!document.querySelector('.ttip-visible')),900);")
+        assert not hovered_popup
+        case_header.click()
         assert d.find_elements(By.CSS_SELECTOR, ".ttip-pinned")
-        d.find_element(By.CSS_SELECTOR, ".ttip-pinned .ttip-close").click()
+        d.find_element(By.CSS_SELECTOR, ".matrix-corner").click()
         assert not d.find_elements(By.CSS_SELECTOR, ".ttip-pinned")
     load(d, rendered_page, "?tab=tab-toolcalling-streamv1")
     chunks = d.execute_script("""
@@ -337,7 +346,12 @@ def test_native_picker_focus_schema_and_reference_disclosure(matrix_driver, rend
       return [...p.querySelectorAll('.matrix-case-heading')].find(n=>t.columns[+n.dataset.caseColumn].schemas?.length);
     """)
     assert header is not None
-    d.execute_script("arguments[0].focus()", header)
+    ActionChains(d).move_to_element(header).perform()
+    hover_started = d.execute_script("return performance.now()")
+    WebDriverWait(d, 2).until(lambda browser: browser.execute_script("return performance.now()-arguments[0] >= 850", hover_started))
+    hover_built = d.execute_script("return {visible:arguments[0]._ttip.classList.contains('ttip-visible'),built:arguments[0]._ttip.classList.contains('ttip-built')}", header)
+    assert not hover_built["visible"] and not hover_built["built"], hover_built
+    header.click()
     WebDriverWait(d, 10).until(lambda browser: browser.find_elements(By.CSS_SELECTOR, ".ttip-visible .case-schema-toggle"))
     schema = d.find_element(By.CSS_SELECTOR, ".ttip-visible .case-schema-toggle")
     schema.send_keys(Keys.ENTER)
