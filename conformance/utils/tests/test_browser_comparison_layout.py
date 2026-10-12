@@ -44,6 +44,15 @@ def click(driver, selector):
     driver.find_element(By.CSS_SELECTOR, ".tab-panel.active " + selector).click()
 
 
+def wait_for_popup(driver):
+    return WebDriverWait(driver, 20).until(lambda browser: browser.execute_script("""
+      const popup=document.querySelector('.comparison-drawer.open');
+      if(!popup) return null;
+      const style=getComputedStyle(popup.querySelector('.drawer-panel'));
+      return style.opacity==='1' && style.transform==='none' ? popup : null;
+    """))
+
+
 def choose_slot(driver, slot, engine, capture=None):
     click(driver, f".engine-card [data-slot-picker='{slot}']")
     driver.execute_script("const e=document.querySelector('dialog[open] [data-picker-engine]');e.value=arguments[0];e.dispatchEvent(new Event('change',{bubbles:true}));", engine)
@@ -355,27 +364,26 @@ def test_cell_and_case_popup_renderer_parity_and_drawer(matrix_driver, rendered_
     hovered_popup = d.execute_async_script("const done=arguments[0];setTimeout(()=>done(!!document.querySelector('.ttip-visible')),900);")
     assert not hovered_popup
     cell.click()
-    WebDriverWait(d, 10).until(lambda browser: browser.find_elements(By.CSS_SELECTOR, ".comparison-drawer.open"))
-    WebDriverWait(d, 10).until(lambda browser: browser.execute_script("return getComputedStyle(document.querySelector('.comparison-drawer.open .drawer-panel')).transform === 'none'"))
+    wait_for_popup(d)
     drawer_geometry = d.execute_script("const r=document.querySelector('.comparison-drawer.open .drawer-panel').getBoundingClientRect();return {width:r.width,left:r.left,right:innerWidth-r.right,viewport:innerWidth,clientWidth:document.documentElement.clientWidth};")
-    assert drawer_geometry["width"] == pytest.approx(drawer_geometry["viewport"] - 24, abs=2), drawer_geometry
+    assert drawer_geometry["width"] == pytest.approx(1600, abs=2), drawer_geometry
     assert drawer_geometry["left"] + drawer_geometry["right"] == pytest.approx(drawer_geometry["viewport"] - drawer_geometry["width"], abs=1), drawer_geometry
-    assert drawer_geometry["right"] == pytest.approx(drawer_geometry["viewport"] - drawer_geometry["clientWidth"], abs=1), drawer_geometry
+    assert drawer_geometry["left"] == pytest.approx((drawer_geometry["clientWidth"] - drawer_geometry["width"]) / 2, abs=2), drawer_geometry
     assert not d.find_elements(By.CSS_SELECTOR, ".ttip-pinned")
     assert d.find_elements(By.CSS_SELECTOR, ".comparison-drawer.open .cand-golden.cand-on,.comparison-drawer.open [data-cand=golden]:not(.col-hidden),.comparison-drawer.open .golden-out-cap,.comparison-drawer.open .oracle-output")
     scrim = d.find_element(By.CSS_SELECTOR, ".comparison-drawer.open .drawer-scrim")
     scrim_width = d.execute_script("return arguments[0].getBoundingClientRect().width", scrim)
     ActionChains(d).move_to_element_with_offset(scrim, -int(scrim_width / 2) + 2, 0).click().perform()
     assert not d.find_elements(By.CSS_SELECTOR, ".comparison-drawer.open")
+    assert d.execute_script("return !document.elementFromPoint(innerWidth/2,innerHeight/2).closest('.comparison-drawer')")
     d.set_window_size(540, 900)
     cell = d.find_element(By.CSS_SELECTOR, ".tab-panel.active .matrix-cell")
     cell.click()
-    WebDriverWait(d, 10).until(lambda browser: browser.find_elements(By.CSS_SELECTOR, ".comparison-drawer.open"))
-    WebDriverWait(d, 10).until(lambda browser: browser.execute_script("return getComputedStyle(document.querySelector('.comparison-drawer.open .drawer-panel')).transform === 'none'"))
+    wait_for_popup(d)
     narrow_geometry = d.execute_script("const r=document.querySelector('.comparison-drawer.open .drawer-panel').getBoundingClientRect();return {width:r.width,left:r.left,right:innerWidth-r.right,viewport:innerWidth,clientWidth:document.documentElement.clientWidth};")
-    assert narrow_geometry["width"] == pytest.approx(narrow_geometry["viewport"] - 24, abs=2), narrow_geometry
+    assert narrow_geometry["width"] == pytest.approx(narrow_geometry["viewport"] - 48, abs=2), narrow_geometry
     assert narrow_geometry["left"] + narrow_geometry["right"] == pytest.approx(narrow_geometry["viewport"] - narrow_geometry["width"], abs=1), narrow_geometry
-    assert narrow_geometry["right"] == pytest.approx(narrow_geometry["viewport"] - narrow_geometry["clientWidth"], abs=1), narrow_geometry
+    assert narrow_geometry["left"] == pytest.approx((narrow_geometry["clientWidth"] - narrow_geometry["width"]) / 2, abs=2), narrow_geometry
     d.find_element(By.CSS_SELECTOR, ".comparison-drawer.open .drawer-close").click()
     d.set_window_size(2400, 1200)
     for vertical in (False, True):
@@ -531,5 +539,95 @@ def test_documented_dynamo_pair_keeps_unrelated_peer_disagreement(matrix_driver,
             assert actual["classes"] == ["matrix-status status-" + status for status in expected], actual
             assert actual["disagreement"] == (not actual["peerMatches"]), actual
             assert actual["dim"] == actual["peerMatches"], actual
+    finally:
+        load(d, rendered_page)
+
+
+@pytest.mark.parametrize("tab_id,vertical", [("tab-unified", False), ("tab-unified", True),
+                                             ("tab-toolcalling-streamv1", False), ("tab-toolcalling-streamv1", True)])
+def test_cell_popup_url_restores_identity_and_selection(matrix_driver, rendered_page, tab_id, vertical):
+    d = matrix_driver
+    load(d, rendered_page, "?tab=" + tab_id)
+    try:
+        if vertical:
+            d.find_element(By.CSS_SELECTOR, "[data-transpose-toggle]").click()
+            click(d, "[data-layout='stacked']")
+        click(d, "[data-focus='disagreements']")
+        chosen = d.execute_script("""
+          const p=document.querySelector('.tab-panel.active'),t=window.__CONFORMANCE_PAGE.tabs.find(t=>t.id===p.id);
+          const rows=t.rows.filter(r=>!r.section);
+          const node=[...p.querySelectorAll('.matrix-cell')].find(n=>rows[+n.dataset.row].cells[t.columns[+n.dataset.column].sub]?.tooltip);
+          return {node,family:rows[+node.dataset.row].family,model:rows[+node.dataset.row].model_label,sub:t.columns[+node.dataset.column].sub,row:node.dataset.row,column:node.dataset.column};
+        """)
+        expected_selection = selection(d)
+        chosen["node"].click()
+        popup = wait_for_popup(d)
+        expected_text = popup.text
+        geometry = d.execute_script("const r=arguments[0].querySelector('.drawer-panel').getBoundingClientRect();return {top:r.top,bottom:innerHeight-r.bottom,height:r.height,viewport:innerHeight};", popup)
+        assert geometry["top"] >= geometry["viewport"] * .09, geometry
+        assert geometry["bottom"] >= geometry["viewport"] * .09, geometry
+        shared_url = d.current_url
+        query = d.execute_script("return Object.fromEntries(new URLSearchParams(location.search))")
+        assert query["tab"] == tab_id
+        assert query["family_" + tab_id] == chosen["family"]
+        assert query["model_" + tab_id] == chosen["model"]
+        assert query["case_" + tab_id] == chosen["sub"]
+        d.get(shared_url)
+        assert wait_for_popup(d).text == expected_text
+        assert selection(d) == expected_selection
+        assert ("layout-vertical" in d.find_element(By.CSS_SELECTOR, ".tab-panel.active .comparison-ui").get_attribute("class")) == vertical
+        assert not d.find_element(By.CSS_SELECTOR, ".tab-panel.active .legacy-report-details").get_attribute("open")
+        d.find_element(By.CSS_SELECTOR, ".comparison-drawer.open .drawer-close").send_keys(Keys.ESCAPE)
+        assert not d.find_elements(By.CSS_SELECTOR, ".comparison-drawer.open")
+        closed_query = d.execute_script("return Object.fromEntries(new URLSearchParams(location.search))")
+        assert "case_" + tab_id not in closed_query and "family_" + tab_id not in closed_query
+        assert "model_" + tab_id not in closed_query
+        focus = d.execute_script("return {row:document.activeElement.dataset.row,column:document.activeElement.dataset.column}")
+        assert focus == {"row": chosen["row"], "column": chosen["column"]}
+        d.get(d.current_url)
+        WebDriverWait(d, 20).until(lambda browser: browser.find_elements(By.CSS_SELECTOR, ".tab-panel.active .comparison-matrix"))
+        assert not d.find_elements(By.CSS_SELECTOR, ".comparison-drawer.open")
+        invalid_url = rendered_page.resolve().as_uri() + "?tab=" + tab_id + "&case_" + tab_id + "=absent&family_" + tab_id + "=absent"
+        d.get(invalid_url)
+        WebDriverWait(d, 20).until(lambda browser: browser.find_elements(By.CSS_SELECTOR, ".tab-panel.active .comparison-matrix"))
+        assert not d.find_elements(By.CSS_SELECTOR, ".comparison-drawer.open")
+    finally:
+        load(d, rendered_page)
+
+
+@pytest.mark.parametrize("tab_id,vertical", [("tab-reasoning-batch", False), ("tab-reasoning-batch", True),
+                                             ("tab-reasoning-stream", False), ("tab-reasoning-stream", True)])
+def test_cell_popup_url_preserves_reasoning_alias_row(matrix_driver, rendered_page, tab_id, vertical):
+    d = matrix_driver
+    load(d, rendered_page, "?tab=" + tab_id)
+    try:
+        if vertical:
+            d.find_element(By.CSS_SELECTOR, "[data-transpose-toggle]").click()
+            click(d, "[data-layout='stacked']")
+        chosen = d.execute_script("""
+          const p=document.querySelector('.tab-panel.active'),t=window.__CONFORMANCE_PAGE.tabs.find(t=>t.id===p.id);
+          const rows=t.rows.filter(r=>!r.section),row=rows.findIndex(r=>r.model_label==='DeepSeek V3.2');
+          const node=[...p.querySelectorAll('.matrix-cell[data-row="'+row+'"]')].find(n=>rows[row].cells[t.columns[+n.dataset.column].sub]?.tooltip);
+          return {node,row:String(row),column:node.dataset.column,family:rows[row].family,model:rows[row].model_label};
+        """)
+        chosen["node"].click()
+        wait_for_popup(d)
+        expected_description = d.find_element(By.CSS_SELECTOR, ".comparison-drawer.open [data-drawer-description]").text
+        assert expected_description.startswith(chosen["model"])
+        query = d.execute_script("return Object.fromEntries(new URLSearchParams(location.search))")
+        assert query["model_" + tab_id] == chosen["model"]
+        d.get(d.current_url)
+        wait_for_popup(d)
+        assert d.find_element(By.CSS_SELECTOR, ".comparison-drawer.open [data-drawer-description]").text == expected_description
+        d.find_element(By.CSS_SELECTOR, ".comparison-drawer.open .drawer-close").send_keys(Keys.ESCAPE)
+        focus = d.execute_script("return {row:document.activeElement.dataset.row,column:document.activeElement.dataset.column}")
+        assert focus == {"row": chosen["row"], "column": chosen["column"]}
+        closed_query = d.execute_script("return Object.fromEntries(new URLSearchParams(location.search))")
+        assert "model_" + tab_id not in closed_query
+        ambiguous = d.execute_script("const u=new URL(location.href);u.searchParams.set(arguments[0],arguments[1]);u.searchParams.set(arguments[2],arguments[3]);return u.href;",
+                                     "family_" + tab_id, chosen["family"], "case_" + tab_id, query["case_" + tab_id])
+        d.get(ambiguous)
+        WebDriverWait(d, 20).until(lambda browser: browser.find_elements(By.CSS_SELECTOR, ".tab-panel.active .comparison-matrix"))
+        assert not d.find_elements(By.CSS_SELECTOR, ".comparison-drawer.open")
     finally:
         load(d, rendered_page)

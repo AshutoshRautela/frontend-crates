@@ -162,6 +162,8 @@
       vertical: ['1', 'true'].includes(query.get('vertical') || query.get('transpose')),
       groups: new Set(query.has(param('groups')) ? query.get(param('groups')).split(',').filter(key => groupKeys.includes(key)) : groupKeys),
       selectedCell: null,
+      popup: query.has(param('family')) && query.has(param('case'))
+        ? { family: query.get(param('family')), model: query.get(param('model')), sub: query.get(param('case')) } : null,
     };
     const initialSeen = new Set();
     initialKeys.slice(0, 3).forEach((key, index) => {
@@ -465,6 +467,10 @@
       set('focus', state.focus, state.focus === 'all');
       set('search', state.search, !state.search);
       set('peer', '1', !state.peerOnly);
+      set('family', state.popup ? state.popup.family : '', !state.popup);
+      set('model', state.popup ? state.popup.model : '', !state.popup || !state.popup.model);
+      set('case', state.popup ? state.popup.sub : '', !state.popup);
+      if (state.popup && panel.classList.contains('active')) url.searchParams.set('tab', tab.id);
       window.history.replaceState(null, '', url.toString());
     }
 
@@ -643,18 +649,32 @@
       update();
     });
 
-    function closeDrawer() {
+    function closeDrawer(restoreFocus = true) {
       drawer.classList.remove('open');
       drawer.setAttribute('aria-hidden', 'true');
-      if (state.selectedCell) state.selectedCell.focus();
+      const coordinates = popupCoordinates();
+      const selectedCell = state.selectedCell && state.selectedCell.isConnected ? state.selectedCell
+        : coordinates && matrix.querySelector('.matrix-cell[data-row="' + coordinates.row + '"][data-column="' + coordinates.column + '"]');
+      state.selectedCell = null;
+      state.popup = null;
+      persist();
+      if (restoreFocus && selectedCell) selectedCell.focus({ preventScroll: true });
     }
-    function openDrawer(cellNode) {
-      const rowIndex = Number(cellNode.dataset.row);
-      const columnIndex = Number(cellNode.dataset.column);
+    function popupCoordinates() {
+      if (!state.popup) return null;
+      const matchingRows = (tab.rows || []).filter(item => !item.section).flatMap((item, index) =>
+        item.family === state.popup.family && (!state.popup.model || item.model_label === state.popup.model) ? [index] : []);
+      const row = matchingRows.length === 1 ? matchingRows[0] : -1;
+      const column = (tab.columns || []).findIndex(item => item.sub === state.popup.sub);
+      return row >= 0 && column >= 0 ? { row, column } : null;
+    }
+    function openDrawer(rowIndex, columnIndex, cellNode = null, writeUrl = true) {
       const row = (tab.rows || []).filter(item => !item.section)[rowIndex];
       const column = (tab.columns || [])[columnIndex];
+      if (!row || !column) return;
       const cell = row && column && row.cells && row.cells[column.sub];
       state.selectedCell = cellNode;
+      state.popup = { family: row.family, model: row.model_label, sub: column.sub };
       drawer.querySelector('[data-drawer-id]').textContent = (cell && cell.case_id) || column.case_id || column.label;
       drawer.querySelector('[data-drawer-title]').textContent = column.desc || column.label;
       drawer.querySelector('[data-drawer-description]').textContent = [row.model_label, row.family].filter(Boolean).join(' · ');
@@ -666,13 +686,14 @@
       window.__syncConformanceTooltip(drawer, state.slots.filter(Boolean), state.reference, tab.id === 'tab-unified');
       drawer.classList.add('open');
       drawer.setAttribute('aria-hidden', 'false');
+      if (writeUrl) persist();
       const closeButton = drawer.querySelector('.drawer-close');
       closeButton.focus();
     }
     matrix.addEventListener('click', event => {
       if (event.target.closest('.ttip')) return;
       const cell = event.target.closest('.matrix-cell');
-      if (cell) openDrawer(cell);
+      if (cell) openDrawer(Number(cell.dataset.row), Number(cell.dataset.column), cell);
     });
     matrix.addEventListener('keydown', event => {
       if (event.target.closest('.ttip')) return;
@@ -691,11 +712,7 @@
     });
     document.addEventListener('keydown', event => { if (event.key === 'Escape' && drawer.classList.contains('open')) closeDrawer(); });
     document.addEventListener('click', event => {
-      if (event.target.closest('[data-tab-target]')) {
-        drawer.classList.remove('open');
-        drawer.setAttribute('aria-hidden', 'true');
-        state.selectedCell = null;
-      }
+      if (event.target.closest('[data-tab-target]') && state.popup) closeDrawer(false);
     });
 
     function dismissVisibleTooltips() {
@@ -712,6 +729,10 @@
     });
     transposeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
     update(false);
+    if (panel.classList.contains('active')) {
+      const coordinates = popupCoordinates();
+      if (coordinates) openDrawer(coordinates.row, coordinates.column, null, false);
+    }
 
   }
 

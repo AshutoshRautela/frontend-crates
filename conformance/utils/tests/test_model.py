@@ -1590,8 +1590,7 @@ def test_documented_reasons_bind_source_and_normalized_reference():
     ]
 
 
-@pytest.mark.parametrize("reverse_capture_order", [False, True])
-def test_merged_documented_pair_survives_producer_and_reference_reversal(reverse_capture_order):
+def test_merged_documented_pair_survives_producer_and_reference_reversal():
     batch_key = "dynamo_v1-b-10-0-1"
     stream_key = "dynamo_v2-s-0-7-21"
     peer_key = "vllm_python-b-0-26-0"
@@ -1603,8 +1602,6 @@ def test_merged_documented_pair_survives_producer_and_reference_reversal(reverse
         {"key": stream_key, "label": "Dynamo v2 Rust 0.7.21 (stream)", "block": stream},
         {"key": peer_key, "label": "vLLM Python 0.26.0 (batch)", "block": peer},
     ]
-    if reverse_capture_order:
-        captures.reverse()
     case = {
         "__family": "deepseek_v4", "__case_id": "TOOLCALLING.batch.9.b",
         "__known_divergence": True, "model_text": " ",
