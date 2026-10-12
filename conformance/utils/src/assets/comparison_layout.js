@@ -410,7 +410,12 @@
           else groupRuns.push({ key: column.group_key, span: 1 });
         });
         header = '<tr class="matrix-group-row"><th class="matrix-corner">Model family</th>'
-          + groupRuns.map(run => '<th colspan="' + run.span + '">' + escapeHtml((tab.column_groups || []).find(group => group.key === run.key)?.label || run.key) + '</th>').join('')
+          + groupRuns.map(run => {
+            const label = (tab.column_groups || []).find(group => group.key === run.key)?.label || run.key;
+            const labelClass = label.length > 28 ? ' matrix-group-label-long' : '';
+            return '<th colspan="' + run.span + '"><span class="matrix-group-label' + labelClass + '">'
+              + escapeHtml(label) + '</span></th>';
+          }).join('')
           + '<th class="matrix-summary-head">Conformance</th></tr><tr class="matrix-case-row"><th class="matrix-corner">'
           + (state.layout === 'split' ? visibleCandidates.map(engineLabel).join(' · ') : 'Engine') + '</th>'
           + columns.map(column => caseHeading(column, tab.columns.indexOf(column), false)).join('') + '<th class="matrix-summary-head"></th></tr>';

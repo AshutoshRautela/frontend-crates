@@ -1230,6 +1230,10 @@ body.view-details .case-schema-indicator { display: inline; }
 .comparison-matrix th,.comparison-matrix td { padding: 0; border: 0; }
 .comparison-matrix thead th { position: sticky; z-index: 3; background: var(--panel-bg); color: var(--ink-muted); white-space: nowrap; }
 .comparison-matrix .matrix-group-row th { top: 0; height: 29px; padding: 0 7px; border-bottom: 1px solid var(--line); border-left: 1px solid var(--line); text-align: left; font-size: 11px; }
+.tab-panel#tab-unified .comparison-ui:not(.layout-vertical) .matrix-group-row th:not(.matrix-corner):not(.matrix-summary-head) { height: 50px; white-space: normal; vertical-align: middle; }
+.tab-panel#tab-unified .comparison-ui:not(.layout-vertical) .matrix-group-label { display: inline-block; max-width: 180px; max-height: 39px; overflow: hidden; white-space: normal; line-height: 13px; }
+.tab-panel#tab-unified .comparison-ui:not(.layout-vertical) .matrix-group-label-long { display: -webkit-box; width: 180px; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.tab-panel#tab-unified .comparison-ui:not(.layout-vertical) .matrix-case-row th { top: 50px; }
 .comparison-matrix .matrix-case-row th { top: 29px; height: 26px; max-width: 60px; overflow: hidden; border-bottom: 1px solid var(--line-strong); color: var(--ink-soft); text-align: center; font: 10px ui-monospace,monospace; }
 .comparison-matrix .matrix-corner { left: 0; z-index: 6 !important; min-width: 220px; border-left: 0 !important; padding-left: 12px !important; background: var(--panel-bg); }
 .comparison-matrix .matrix-summary-head { right: 0; z-index: 7 !important; min-width: 140px; border-left: 1px solid var(--line-strong); background: var(--panel-bg); }

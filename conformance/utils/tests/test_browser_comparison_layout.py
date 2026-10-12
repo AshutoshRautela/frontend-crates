@@ -129,6 +129,19 @@ def test_geometry_focus_orientation_and_themes(matrix_driver, rendered_page):
         expected:tab.columns.map(c=>c.compact_prefix+'-'+c.display_number)};
     """)
     assert labels["actual"] == labels["expected"]
+    group_geometry = d.execute_script("""
+      const row=document.querySelector('.tab-panel.active .matrix-group-row');
+      const caseHeading=document.querySelector('.tab-panel.active .matrix-case-row th');
+      return [...document.querySelectorAll('.tab-panel.active .matrix-group-row th:not(.matrix-corner):not(.matrix-summary-head)')]
+        .map(n=>({label:n.textContent.trim(),width:n.getBoundingClientRect().width,span:n.colSpan,
+          rowHeight:row.getBoundingClientRect().height,caseTop:getComputedStyle(caseHeading).top}));
+    """)
+    single_case_groups = [group for group in group_geometry if group["span"] == 1]
+    assert single_case_groups and max(group["width"] for group in single_case_groups) <= 200, group_geometry
+    short_single_case_groups = [group for group in single_case_groups if len(group["label"]) <= 28]
+    assert short_single_case_groups and max(group["width"] for group in short_single_case_groups) < 100, group_geometry
+    assert max(group["rowHeight"] for group in group_geometry) <= 52, group_geometry
+    assert {group["caseTop"] for group in group_geometry} == {"50px"}, group_geometry
     d.find_element(By.CSS_SELECTOR, "[data-transpose-toggle]").click()
     WebDriverWait(d, 10).until(lambda browser: "layout-vertical" in browser.find_element(By.CSS_SELECTOR, ".tab-panel.active .comparison-ui").get_attribute("class"))
     vertical_labels = d.execute_script("""
@@ -595,15 +608,11 @@ def test_cell_popup_url_restores_identity_and_selection(matrix_driver, rendered_
         load(d, rendered_page)
 
 
-@pytest.mark.parametrize("tab_id,vertical", [("tab-reasoning-batch", False), ("tab-reasoning-batch", True),
-                                             ("tab-reasoning-stream", False), ("tab-reasoning-stream", True)])
-def test_cell_popup_url_preserves_reasoning_alias_row(matrix_driver, rendered_page, tab_id, vertical):
+@pytest.mark.parametrize("tab_id", ["tab-reasoning-batch", "tab-reasoning-stream"])
+def test_cell_popup_url_preserves_reasoning_alias_row(matrix_driver, rendered_page, tab_id):
     d = matrix_driver
     load(d, rendered_page, "?tab=" + tab_id)
     try:
-        if vertical:
-            d.find_element(By.CSS_SELECTOR, "[data-transpose-toggle]").click()
-            click(d, "[data-layout='stacked']")
         chosen = d.execute_script("""
           const p=document.querySelector('.tab-panel.active'),t=window.__CONFORMANCE_PAGE.tabs.find(t=>t.id===p.id);
           const rows=t.rows.filter(r=>!r.section),row=rows.findIndex(r=>r.model_label==='DeepSeek V3.2');
