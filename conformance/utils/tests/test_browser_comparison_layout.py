@@ -57,6 +57,7 @@ def test_geometry_focus_orientation_and_themes(matrix_driver, rendered_page):
     d = matrix_driver
     load(d, rendered_page)
     assert d.find_element(By.CSS_SELECTOR, ".tab-button.active").get_attribute("data-tab-target") == "tab-unified"
+    assert d.execute_script("return [...document.querySelectorAll('.tabs .tab-button')].at(-1)?.dataset.tabTarget") == "tab-unified"
     assert len(d.find_elements(By.CSS_SELECTOR, ".tab-panel.active .engine-card")) == 3
     assert "matches GOLDEN" in d.find_element(By.CSS_SELECTOR, ".tab-panel.active .engine-score").text
     assert not d.find_elements(By.CSS_SELECTOR, ".model-summary-bar")
@@ -302,10 +303,28 @@ def test_cell_and_case_popup_renderer_parity_and_drawer(matrix_driver, rendered_
     assert not hovered_popup
     cell.click()
     WebDriverWait(d, 10).until(lambda browser: browser.find_elements(By.CSS_SELECTOR, ".comparison-drawer.open"))
+    WebDriverWait(d, 10).until(lambda browser: browser.execute_script("return getComputedStyle(document.querySelector('.comparison-drawer.open .drawer-panel')).transform === 'none'"))
+    drawer_geometry = d.execute_script("const r=document.querySelector('.comparison-drawer.open .drawer-panel').getBoundingClientRect();return {width:r.width,left:r.left,right:innerWidth-r.right,viewport:innerWidth,clientWidth:document.documentElement.clientWidth};")
+    assert drawer_geometry["width"] == pytest.approx(drawer_geometry["viewport"] - 24, abs=2), drawer_geometry
+    assert drawer_geometry["left"] + drawer_geometry["right"] == pytest.approx(drawer_geometry["viewport"] - drawer_geometry["width"], abs=1), drawer_geometry
+    assert drawer_geometry["right"] == pytest.approx(drawer_geometry["viewport"] - drawer_geometry["clientWidth"], abs=1), drawer_geometry
     assert not d.find_elements(By.CSS_SELECTOR, ".ttip-pinned")
     assert d.find_elements(By.CSS_SELECTOR, ".comparison-drawer.open .cand-golden.cand-on,.comparison-drawer.open [data-cand=golden]:not(.col-hidden),.comparison-drawer.open .golden-out-cap,.comparison-drawer.open .oracle-output")
-    d.find_element(By.CSS_SELECTOR, ".comparison-drawer .drawer-scrim").click()
+    scrim = d.find_element(By.CSS_SELECTOR, ".comparison-drawer.open .drawer-scrim")
+    scrim_width = d.execute_script("return arguments[0].getBoundingClientRect().width", scrim)
+    ActionChains(d).move_to_element_with_offset(scrim, -int(scrim_width / 2) + 2, 0).click().perform()
     assert not d.find_elements(By.CSS_SELECTOR, ".comparison-drawer.open")
+    d.set_window_size(540, 900)
+    cell = d.find_element(By.CSS_SELECTOR, ".tab-panel.active .matrix-cell")
+    cell.click()
+    WebDriverWait(d, 10).until(lambda browser: browser.find_elements(By.CSS_SELECTOR, ".comparison-drawer.open"))
+    WebDriverWait(d, 10).until(lambda browser: browser.execute_script("return getComputedStyle(document.querySelector('.comparison-drawer.open .drawer-panel')).transform === 'none'"))
+    narrow_geometry = d.execute_script("const r=document.querySelector('.comparison-drawer.open .drawer-panel').getBoundingClientRect();return {width:r.width,left:r.left,right:innerWidth-r.right,viewport:innerWidth,clientWidth:document.documentElement.clientWidth};")
+    assert narrow_geometry["width"] == pytest.approx(narrow_geometry["viewport"] - 24, abs=2), narrow_geometry
+    assert narrow_geometry["left"] + narrow_geometry["right"] == pytest.approx(narrow_geometry["viewport"] - narrow_geometry["width"], abs=1), narrow_geometry
+    assert narrow_geometry["right"] == pytest.approx(narrow_geometry["viewport"] - narrow_geometry["clientWidth"], abs=1), narrow_geometry
+    d.find_element(By.CSS_SELECTOR, ".comparison-drawer.open .drawer-close").click()
+    d.set_window_size(2400, 1200)
     for vertical in (False, True):
         if vertical:
             d.find_element(By.CSS_SELECTOR, "[data-transpose-toggle]").click()
@@ -327,13 +346,13 @@ def test_cell_and_case_popup_renderer_parity_and_drawer(matrix_driver, rendered_
         """)
         assert grammar["same"] and grammar["families"] > 1 and grammar["golden"], grammar
         assert not grammar["focusOpened"], grammar
-        case_header = d.find_element(By.CSS_SELECTOR, f".matrix-case-heading[data-case-column='{grammar['column']}']")
+        case_header = d.find_element(By.CSS_SELECTOR, f".tab-panel.active .matrix-case-heading[data-case-column='{grammar['column']}']")
         ActionChains(d).move_to_element(case_header).perform()
         hovered_popup = d.execute_async_script("const done=arguments[0];setTimeout(()=>done(!!document.querySelector('.ttip-visible')),900);")
         assert not hovered_popup
         case_header.click()
         assert d.find_elements(By.CSS_SELECTOR, ".ttip-pinned")
-        d.find_element(By.CSS_SELECTOR, ".matrix-corner").click()
+        d.find_element(By.CSS_SELECTOR, ".tab-panel.active .matrix-corner").click()
         assert not d.find_elements(By.CSS_SELECTOR, ".ttip-pinned")
     load(d, rendered_page, "?tab=tab-toolcalling-streamv1")
     chunks = d.execute_script("""

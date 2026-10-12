@@ -275,9 +275,9 @@ def test_v2_blob_is_compacted_and_hydrates_clean(model_v2_raw):
 def test_v2_all_tabs_present(model_v2):
     ids = [t["id"] for t in model_v2["tabs"]]
     assert ids == [
-        "tab-unified",
         "tab-toolcalling-batch", "tab-toolcalling-streamv1",
         "tab-reasoning-batch", "tab-reasoning-stream",
+        "tab-unified",
     ], ids
 
 
@@ -334,7 +334,8 @@ def test_unified_duplicate_notes_and_deepseek_prefilled_captures(model_v2):
 
 def test_v2_exactly_one_active_tab(model_v2):
     assert sum(1 for t in model_v2["tabs"] if t.get("active")) == 1
-    assert model_v2["tabs"][0]["active"] is True
+    assert model_v2["tabs"][-1]["id"] == "tab-unified"
+    assert model_v2["tabs"][-1]["active"] is True
 
 
 # ---- candidates (compare bar) -------------------------------------------------

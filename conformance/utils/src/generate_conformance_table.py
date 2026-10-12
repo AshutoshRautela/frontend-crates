@@ -3096,12 +3096,12 @@ def build_combined_model(output_path: Path | None = None,
     # --- Unified (reasoning + tools) tab: golden oracle vs Dynamo (LIVE) + vLLM ---
     unified_tab = _unified_tab_model(artifact_root, hrefs)
     if unified_tab:
-        # Unified is the main report entry point; explicit `?tab=` selection still
-        # belongs to conformance.js and can activate any tab from this ordered model.
-        tabs.insert(0, unified_tab)
+        tabs.append(unified_tab)
 
     if tabs:
-        tabs[0]["active"] = True
+        default_tab = next((tab for tab in tabs if tab["id"] == "tab-unified"), tabs[0])
+        for tab in tabs:
+            tab["active"] = tab is default_tab
 
     meta = {
         "title": "Dynamo Parser v2 Conformance Table",
