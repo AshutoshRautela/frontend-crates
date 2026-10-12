@@ -76,6 +76,13 @@ def test_geometry_focus_orientation_and_themes(matrix_driver, rendered_page):
         tints = d.execute_script("return [...document.querySelectorAll('.tab-panel.active .stacked-row')].slice(0,3).map(row=>[...row.children].map(cell=>getComputedStyle(cell).backgroundColor));")
         assert len({row[0] for row in tints}) == 3, [sorted(set(row)) for row in tints]
         assert all(len(set(row)) == 1 for row in tints)
+        family_border = d.execute_script("""
+          const row=document.querySelector('.tab-panel.active .matrix-model-row.family-start');
+          const style=getComputedStyle(row.firstElementChild);
+          return {count:document.querySelectorAll('.tab-panel.active .matrix-model-row.family-start').length,width:style.borderTopWidth,color:style.borderTopColor};
+        """)
+        assert family_border["count"] > 1 and family_border["width"] == "2px", family_border
+        assert family_border["color"] == ("rgb(17, 24, 39)" if theme == "light" else "rgb(232, 237, 243)"), family_border
         score = d.find_element(By.CSS_SELECTOR, ".tab-panel.active .engine-score").text
         click(d, "[data-focus='disagreements']")
         cells = d.execute_script("return [...document.querySelectorAll('.tab-panel.active .matrix-cell')].map(c=>({r:c.dataset.row,c:c.dataset.column,disagree:c.dataset.disagreement==='true',dim:c.classList.contains('focus-dim')}));")
@@ -88,6 +95,13 @@ def test_geometry_focus_orientation_and_themes(matrix_driver, rendered_page):
         assert d.find_element(By.CSS_SELECTOR, ".tab-panel.active .legacy-report-details").get_dom_attribute("open") is None
         vertical = d.execute_script("return [...document.querySelectorAll('.tab-panel.active .matrix-cell')].map(c=>({r:c.dataset.row,c:c.dataset.column,disagree:c.dataset.disagreement==='true',dim:c.classList.contains('focus-dim')}));")
         assert sorted(cells, key=lambda x: (x["r"], x["c"])) == sorted(vertical, key=lambda x: (x["r"], x["c"]))
+        vertical_border = d.execute_script("""
+          const cell=document.querySelector('.tab-panel.active .comparison-matrix td.family-start');
+          const style=getComputedStyle(cell);
+          return {count:document.querySelectorAll('.tab-panel.active .comparison-matrix td.family-start').length,width:style.borderLeftWidth,color:style.borderLeftColor};
+        """)
+        assert vertical_border["count"] > 1 and vertical_border["width"] == "2px", vertical_border
+        assert vertical_border["color"] == ("rgb(17, 24, 39)" if theme == "light" else "rgb(232, 237, 243)"), vertical_border
         click(d, "[data-layout='split']")
         assert len(d.find_elements(By.CSS_SELECTOR, ".tab-panel.active .matrix-segments")) * 3 == len(cells)
         d.find_element(By.CSS_SELECTOR, "[data-transpose-toggle]").click()

@@ -1147,6 +1147,7 @@ body.view-details .case-schema-indicator { display: inline; }
   --page-bg: #f6f7f9; --panel-bg: #fff; --panel-alt: #f1f3f6; --ink: #111827;
   --ink-muted: #596575; --ink-soft: #8a94a3; --line: #e2e6eb; --line-strong: #cfd5dc;
   --tint-dynamo: #edf6e5; --tint-sglang: #fff0e5; --tint-vllm: #eaf1ff;
+  --family-divider: #111827;
   --engine-dynamo: #76b900; --engine-sglang: #d9661f; --engine-vllm: #2f6fe4;
   --status-pass: #3fa34d; --status-documented: #7fa8e8; --status-diverge: #f0a92a;
   --status-leak: #e0484b; --status-error: #9b4fd6; --status-expected: #7353ba;
@@ -1158,6 +1159,7 @@ body.view-details .case-schema-indicator { display: inline; }
   --page-bg: #0d1014; --panel-bg: #151a20; --panel-alt: #1b2128; --ink: #e8edf3;
   --ink-muted: #a5b0bd; --ink-soft: #788391; --line: #262d36; --line-strong: #38414d;
   --tint-dynamo: #1b291a; --tint-sglang: #302219; --tint-vllm: #19263b;
+  --family-divider: #e8edf3;
   --status-pass: #3f9e4c; --status-documented: #5b86c9; --status-diverge: #d9952a;
   --status-leak: #d9474a; --status-error: #a465dc; --status-expected: #8768d0;
   --status-unsupported: repeating-linear-gradient(135deg,#232a33 0 3px,#1a1f26 3px 6px);
@@ -1233,6 +1235,9 @@ body.view-details .case-schema-indicator { display: inline; }
 .comparison-matrix .matrix-corner { left: 0; z-index: 6 !important; min-width: 220px; border-left: 0 !important; padding-left: 12px !important; background: var(--panel-bg); }
 .comparison-matrix .matrix-summary-head { right: 0; z-index: 7 !important; min-width: 140px; border-left: 1px solid var(--line-strong); background: var(--panel-bg); }
 .comparison-matrix .matrix-model { position: sticky; left: 0; z-index: 2; width: 220px; min-width: 220px; max-width: 220px; padding: 5px 10px !important; border-right: 1px solid var(--line-strong); border-bottom: 1px solid var(--line); background: var(--panel-bg); text-align: left; }
+.comparison-matrix .matrix-model-row.family-start > *, .comparison-matrix td.family-start { border-top: 2px solid var(--family-divider) !important; }
+.comparison-matrix thead .family-start, .comparison-matrix td.family-start { border-left: 2px solid var(--family-divider) !important; }
+.layout-vertical .comparison-matrix td.family-start { border-top: 0 !important; }
 .comparison-matrix .matrix-model strong,.comparison-matrix .matrix-model small { display: block; max-width: 205px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .comparison-matrix .matrix-model small { color: var(--ink-soft); font: 10px ui-monospace,monospace; }
 .comparison-matrix .matrix-cell { width: 30px; min-width: 30px; padding: 3px 1px !important; border-bottom: 1px solid var(--line); cursor: pointer; outline-offset: -2px; }

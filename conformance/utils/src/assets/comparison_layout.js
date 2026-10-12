@@ -334,12 +334,12 @@
       };
     }
 
-    function statusCell(row, column, visibleCandidates, reference, rowIndex, columnIndex, engineOnly, focus) {
+    function statusCell(row, column, visibleCandidates, reference, rowIndex, columnIndex, engineOnly, focus, familyStart = false) {
       const codes = cellCodes(row, column, visibleCandidates, reference);
       const focused = state.focus === 'all' || (state.focus === 'disagreements' ? focus.disagreement : focus.problem);
       const segments = codes.map(code => '<i class="matrix-status status-' + code.status + '"></i>').join('');
       const label = tab.columns[columnIndex];
-      return '<td class="matrix-cell' + (focused ? '' : ' focus-dim') + (engineOnly ? ' stacked-cell' : '') + '" tabindex="0" role="button"'
+      return '<td class="matrix-cell' + (focused ? '' : ' focus-dim') + (engineOnly ? ' stacked-cell' : '') + (familyStart ? ' family-start' : '') + '" tabindex="0" role="button"'
         + ' data-disagreement="' + focus.disagreement + '" data-row="' + rowIndex + '" data-column="' + columnIndex + '" aria-label="' + escapeHtml((row.model_label || row.family) + ', ' + label.label + ': '
         + codes.map(code => (code.candidate.label || code.candidate.key) + ' ' + statusNames[code.status]).join('; ')) + '">'
         + '<span class="matrix-segments">' + segments + '</span><div class="ttip"></div></td>';
@@ -356,24 +356,26 @@
       const visibleCandidates = activeCandidates();
       const reference = state.reference;
       const allRows = (tab.rows || []).filter(row => !row.section);
-      const coordinates = (row, column, projection, stacked) => statusCell(row, column, projection, reference,
-        allRows.indexOf(row), tab.columns.indexOf(column), stacked, comparisonFocus(row, column, visibleCandidates, reference));
+      const coordinates = (row, column, projection, stacked, familyStart = false) => statusCell(row, column, projection, reference,
+        allRows.indexOf(row), tab.columns.indexOf(column), stacked, comparisonFocus(row, column, visibleCandidates, reference), familyStart);
+      const familyName = row => row.model_label || row.family || '';
+      const startsFamily = index => index === 0 || familyName(rows[index - 1]) !== familyName(rows[index]);
       const engineLabel = candidate => engineButton(candidate, state.slots.indexOf(candidate.key));
       let header = '';
       let body = '';
       if (state.vertical) {
         const span = state.layout === 'stacked' ? Math.max(1, visibleCandidates.length) : 1;
         header = '<tr class="matrix-group-row"><th class="matrix-corner">Case / model family</th>'
-          + rows.map(row => '<th colspan="' + span + '">' + escapeHtml(row.model_label || row.family) + '</th>').join('') + '</tr>';
+          + rows.map((row, index) => '<th class="' + (startsFamily(index) ? 'family-start' : '') + '" colspan="' + span + '">' + escapeHtml(row.model_label || row.family) + '</th>').join('') + '</tr>';
         header += '<tr class="matrix-case-row"><th class="matrix-corner">Conformance</th>'
-          + rows.map(row => {
+          + rows.map((row, rowIndex) => {
             const summaries = rowSummaries(row, columns, visibleCandidates, reference);
-            return state.layout === 'stacked' ? visibleCandidates.map((candidate, index) => '<th class="engine-tint-' + engineKey(candidate) + '">'
-              + engineLabel(candidate) + summaries[index] + '</th>').join('') : '<th>' + summaries.join('') + '</th>';
+            return state.layout === 'stacked' ? visibleCandidates.map((candidate, index) => '<th class="engine-tint-' + engineKey(candidate) + (index === 0 && startsFamily(rowIndex) ? ' family-start' : '') + '">'
+              + engineLabel(candidate) + summaries[index] + '</th>').join('') : '<th class="' + (startsFamily(rowIndex) ? 'family-start' : '') + '">' + summaries.join('') + '</th>';
           }).join('') + '</tr>';
         body = columns.map(column => '<tr>' + caseHeading(column, tab.columns.indexOf(column), true)
-          + rows.map(row => state.layout === 'stacked' ? visibleCandidates.map(candidate => coordinates(row, column, [candidate], true).replace('class="matrix-cell', 'class="engine-tint-' + engineKey(candidate) + ' matrix-cell')).join('')
-            : coordinates(row, column, visibleCandidates, false)).join('') + '</tr>').join('');
+          + rows.map((row, rowIndex) => state.layout === 'stacked' ? visibleCandidates.map((candidate, index) => coordinates(row, column, [candidate], true, index === 0 && startsFamily(rowIndex)).replace('class="matrix-cell', 'class="engine-tint-' + engineKey(candidate) + ' matrix-cell')).join('')
+            : coordinates(row, column, visibleCandidates, false, startsFamily(rowIndex))).join('') + '</tr>').join('');
       } else {
         const groupRuns = [];
         columns.forEach(column => {
@@ -386,15 +388,16 @@
           + '<th class="matrix-summary-head">Conformance</th></tr><tr class="matrix-case-row"><th class="matrix-corner">'
           + (state.layout === 'split' ? visibleCandidates.map(engineLabel).join(' · ') : 'Engine') + '</th>'
           + columns.map(column => caseHeading(column, tab.columns.indexOf(column), false)).join('') + '<th class="matrix-summary-head"></th></tr>';
-        rows.forEach(row => {
+        rows.forEach((row, rowIndex) => {
+          const familyStart = startsFamily(rowIndex);
           const summaries = rowSummaries(row, columns, visibleCandidates, reference);
           if (state.layout === 'split') {
-            body += '<tr class="matrix-model-row"><th scope="row" class="matrix-model"><strong>' + escapeHtml(row.model_label || row.family)
+            body += '<tr class="matrix-model-row' + (familyStart ? ' family-start' : '') + '"><th scope="row" class="matrix-model"><strong>' + escapeHtml(row.model_label || row.family)
               + '</strong><small>' + escapeHtml(row.parser_label || row.family) + '</small></th>'
               + columns.map(column => coordinates(row, column, visibleCandidates, false)).join('') + '<td class="matrix-summary">' + summaries.join('') + '</td></tr>';
           } else {
             visibleCandidates.forEach((candidate, index) => {
-              body += '<tr class="matrix-model-row stacked-row engine-tint-' + engineKey(candidate) + '"><th scope="row" class="matrix-model">'
+              body += '<tr class="matrix-model-row stacked-row engine-tint-' + engineKey(candidate) + (familyStart && index === 0 ? ' family-start' : '') + '"><th scope="row" class="matrix-model">'
                 + (index === 0 ? '<strong>' + escapeHtml(row.model_label || row.family) + '</strong>' : '') + engineLabel(candidate) + '</th>'
                 + columns.map(column => coordinates(row, column, [candidate], true)).join('') + '<td class="matrix-summary">' + summaries[index] + '</td></tr>';
             });
