@@ -1,0 +1,2666 @@
+provenance:
+  status: legacy
+  captured_with:
+    vllm_python: 0.27.1
+document:
+  mode: unified
+changes:
+  arg_json_null_anyof:
+    case_key: UNIFIED.7-4.anyof
+    stimulus:
+      ref: current
+      semantic_sha256: 79730a377d89e03c0c31247a4780d580fb3a335df28ee6af1192683e2c3faf29
+    observation:
+      value:
+        assembled:
+        - kind: tool_call
+          name: get_weather
+          arguments:
+            city: null
+        chunks:
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: get_weather
+            arguments: null
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '{"city": null}'
+        - expected: []
+  arg_json_null_const:
+    case_key: UNIFIED.7-4.const
+    stimulus:
+      ref: current
+      semantic_sha256: 875434f435ff4934fd4667ff147537b553e2f7bf7eb76a7a50cd2378cfec7ff4
+    observation:
+      value:
+        assembled:
+        - kind: tool_call
+          name: get_weather
+          arguments:
+            city: 'null'
+        chunks:
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: get_weather
+            arguments: null
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '{"city": "null"}'
+        - expected: []
+  arg_json_null_nullable:
+    case_key: UNIFIED.7-4.nullable
+    stimulus:
+      ref: current
+      semantic_sha256: 7fdaeb6fa559418757e5e3dc1bdb0b031a033d55a19b48fa9e478ef1d0171d4e
+    observation:
+      value:
+        assembled:
+        - kind: tool_call
+          name: get_weather
+          arguments:
+            city: 'null'
+        chunks:
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: get_weather
+            arguments: null
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '{"city": "null"}'
+        - expected: []
+  arg_json_null_oneof:
+    case_key: UNIFIED.7-4.oneof
+    stimulus:
+      ref: current
+      semantic_sha256: 68957721407c90f778fc5f3909d97d89a2680f0ad8dccbc095cd9ae46725143b
+    observation:
+      value:
+        assembled:
+        - kind: tool_call
+          name: get_weather
+          arguments:
+            city: null
+        chunks:
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: get_weather
+            arguments: null
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '{"city": null}'
+        - expected: []
+  arg_string_null:
+    case_key: UNIFIED.7-5
+    stimulus:
+      ref: current
+      semantic_sha256: 257d8ef1c9d8b94c9377aa8818d09d2de51de729c7a35e868bc5947b5cb42842
+    observation:
+      value:
+        assembled:
+        - kind: tool_call
+          name: get_weather
+          arguments:
+            city: 'null'
+        chunks:
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: get_weather
+            arguments: null
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '{"city": "'
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: 'null'
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '"}'
+        - expected: []
+  arg_string_null_const:
+    case_key: UNIFIED.7-5.const
+    stimulus:
+      ref: current
+      semantic_sha256: e6dc6007e3cf38f67da44c06fa3f9060489dd8c0a6efb3a5fb76e41c189af70a
+    observation:
+      value:
+        assembled:
+        - kind: tool_call
+          name: get_weather
+          arguments:
+            city: 'null'
+        chunks:
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: get_weather
+            arguments: null
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '{"city": '
+        - expected: []
+        - expected: []
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '"null"}'
+        - expected: []
+  arg_string_null_enum:
+    case_key: UNIFIED.7-5.enum
+    stimulus:
+      ref: current
+      semantic_sha256: 99e4a0bdb7508c721b9611445df8194457247a4ae2fa750eb311b4f4af625882
+    observation:
+      value:
+        assembled:
+        - kind: tool_call
+          name: get_weather
+          arguments:
+            city: null
+        chunks:
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: get_weather
+            arguments: null
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '{"city": '
+        - expected: []
+        - expected: []
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: null}
+        - expected: []
+  arg_string_null_sibling_anyof:
+    case_key: UNIFIED.7-5.sibling_anyof
+    stimulus:
+      ref: current
+      semantic_sha256: 6574fdcaaa5fcafa6b076160c977535195e946500ec595720b27aba89a6d027c
+    observation:
+      value:
+        assembled:
+        - kind: tool_call
+          name: get_weather
+          arguments:
+            city: null
+        chunks:
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: get_weather
+            arguments: null
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '{"city": '
+        - expected: []
+        - expected: []
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: null}
+        - expected: []
+  arg_string_null_sibling_oneof:
+    case_key: UNIFIED.7-5.sibling_oneof
+    stimulus:
+      ref: current
+      semantic_sha256: d9a6453012f68c0c859e867f2c0fc7c01d889031af4796e305b3b96e21d50b51
+    observation:
+      value:
+        assembled:
+        - kind: tool_call
+          name: get_weather
+          arguments:
+            city: null
+        chunks:
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: get_weather
+            arguments: null
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '{"city": '
+        - expected: []
+        - expected: []
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: null}
+        - expected: []
+  arg_string_null_union:
+    case_key: UNIFIED.7-5.union
+    stimulus:
+      ref: current
+      semantic_sha256: a1dc15f13d95adf096438d8f12711550e8786b6d9902c302ae3f0fef20239ba3
+    observation:
+      value:
+        assembled:
+        - kind: tool_call
+          name: get_weather
+          arguments:
+            city: 'null'
+        chunks:
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: get_weather
+            arguments: null
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '{"city": '
+        - expected: []
+        - expected: []
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '"null"}'
+        - expected: []
+  arg_string_null_untyped_branch:
+    case_key: UNIFIED.7-5.untyped_branch
+    stimulus:
+      ref: current
+      semantic_sha256: 9ff0ea6b63ca2f8212a8a9924800b47ef488e70a4ad6f4678632ed5105ccb5c7
+    observation:
+      value:
+        assembled:
+        - kind: tool_call
+          name: get_weather
+          arguments:
+            city: null
+        chunks:
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: get_weather
+            arguments: null
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '{"city": '
+        - expected: []
+        - expected: []
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: null}
+        - expected: []
+  deepseek_v41_mixed_control_text_in_string:
+    case_key: UNIFIED.7-3
+    stimulus:
+      ref: current
+      semantic_sha256: ed5e273e9a72d6ea46f569a1e79193f5d8545d5fc83d960605c709600e9fa176
+    observation:
+      value:
+        assembled:
+        - kind: reasoning
+          text: quoted
+        - kind: tool_call
+          name: f
+          arguments:
+            x: '  <|tool_call>'
+        chunks:
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: f
+            arguments: null
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '{"x": "'
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: ' <|channel>'
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: thought\nquoted<channel|>
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: ' <|tool_call>'
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '"}'
+        - expected:
+          - kind: text
+            text: " &amp; \"x\"\\\n "
+        - expected:
+          - kind: text
+            text: <|"|>
+        - expected:
+          - kind: text
+            text: '}'
+        - expected: []
+        - expected: []
+  glm_ref_encoded_targets:
+    case_key: UNIFIED.7-11
+    stimulus:
+      ref: current
+      semantic_sha256: aea6e9c28d188bc2b6933fe5fd4ef79168e0bd6c43554fd6ca18352b35f44dbe
+    observation:
+      value:
+        assembled:
+        - kind: tool_call
+          name: capture_payload
+          arguments:
+            space: '42'
+            utf8_plus: '42'
+            pointer: '42'
+        chunks:
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: capture_payload
+            arguments: null
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '{"space": "42", "utf8_plus": "42", "pointer": "42"}'
+        - expected: []
+  glm_ref_json_looking_strings:
+    case_key: UNIFIED.7-12
+    stimulus:
+      ref: current
+      semantic_sha256: 0448d4bba536a0b5ef09639fa8d266ab63db3a6e89c51c0c6b146cdf142f0911
+    observation:
+      value:
+        assembled:
+        - kind: tool_call
+          name: capture_payload
+          arguments:
+            object_text: '{"x":1}'
+            array_text: '[1,2]'
+            quoted_text: '"hello"'
+            inline_text: '{"x":1}'
+        chunks:
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: capture_payload
+            arguments: null
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '{"object_text": "'
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '{\"x\":1'
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '}'
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '", "array_text": "'
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '[1,2]'
+        - expected: []
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '", "quoted_text": "'
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: \"hello\"
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '", "inline_text": "'
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '{\"x\":1'
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '}'
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '"}'
+        - expected: []
+  glm_ref_object:
+    case_key: UNIFIED.7-9
+    stimulus:
+      ref: current
+      semantic_sha256: edc443a20ef6d73a84e45da7e46acd0ff53c68e1d4a6820cfa8fc18498aa29ca
+    observation:
+      value:
+        assembled:
+        - kind: tool_call
+          name: capture_payload
+          arguments:
+            payload:
+              x: '1'
+        chunks:
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: capture_payload
+            arguments: '{"payload": '
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '{"x": "1"}}'
+        - expected: []
+  glm_ref_scalar_types:
+    case_key: UNIFIED.7-13
+    stimulus:
+      ref: current
+      semantic_sha256: 0a07669ea0593004bec44e5c5fa94dd28739c053b0794988c3aca5121a48cc07
+    observation:
+      value:
+        assembled:
+        - kind: tool_call
+          name: capture_payload
+          arguments:
+            count: '42'
+            ratio: '3.5'
+            flag: 'true'
+            narrowed: 42
+        chunks:
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: capture_payload
+            arguments: null
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '{"count": "42", "ratio": "3.5", "flag": "true", "narrowed": 42}'
+        - expected: []
+  guided_quoted_reasoning_closer_named:
+    case_key: UNIFIED.34-8
+    stimulus:
+      ref: current
+      semantic_sha256: 51b5c2a871283dd5b62e0690ca1ebb90117ca8bb6d95c0252eafbffebff20426
+    observation:
+      value:
+        assembled:
+        - kind: reasoning
+          text: The literal 'doesn't
+        - kind: text
+          text: ' marker'' stays quoted.{"city": "Paris"}'
+        chunks:
+        - expected:
+          - kind: reasoning
+            text: The literal 'doesn't
+        - expected: []
+        - expected:
+          - kind: text
+            text: ' marker'' stays quoted.'
+        - expected: []
+        - expected:
+          - kind: text
+            text: '{"city": "Paris"}'
+        - expected: []
+  guided_quoted_reasoning_closer_required:
+    case_key: UNIFIED.34-9
+    stimulus:
+      ref: current
+      semantic_sha256: b348ad16ff780b42f3ca7304c79b251d2863e63d23f8d987ef24705fd1285666
+    observation:
+      value:
+        assembled:
+        - kind: reasoning
+          text: The literal 'doesn't
+        - kind: text
+          text: ' marker'' stays quoted.{"name": "get_weather", "arguments": {"city": "Paris"}}'
+        chunks:
+        - expected:
+          - kind: reasoning
+            text: The literal 'doesn't
+        - expected: []
+        - expected:
+          - kind: text
+            text: ' marker'' stays quoted.'
+        - expected: []
+        - expected:
+          - kind: text
+            text: '{"name": "get_weather", "arguments": {"city": "Paris"}}'
+        - expected: []
+  guided_response_quoted_control_braces_named:
+    case_key: UNIFIED.35-3
+    stimulus:
+      ref: current
+      semantic_sha256: 9281cf51cf6688061f08561e117b6cb15c8f69174d987ac091f30aad761928b1
+    observation:
+      value:
+        assembled:
+        - kind: text
+          text: 'The literal "<|tool_call> { example }" stays visible. {"city": "Paris"}'
+        chunks:
+        - expected:
+          - kind: text
+            text: The literal "
+        - expected: []
+        - expected: []
+        - expected: []
+  guided_response_quoted_control_braces_required:
+    case_key: UNIFIED.35-4
+    stimulus:
+      ref: current
+      semantic_sha256: 24c1b9fd2268b585d947594b40e6076676fe7174d142ff72150ce89b489648f2
+    observation:
+      value:
+        assembled:
+        - kind: text
+          text: 'The literal "<|tool_call> { example }" stays visible. {"name": "get_weather", "arguments": {"city": "Paris"}}'
+        chunks:
+        - expected:
+          - kind: text
+            text: The literal "
+        - expected: []
+        - expected: []
+        - expected: []
+  local_schema_id_preserves_type:
+    case_key: UNIFIED.7-16
+    stimulus:
+      ref: current
+      semantic_sha256: 178ab8660857356ca182aaee587b3cb712f9ef72b3ee1f07628c432567f7345e
+    observation:
+      value:
+        assembled:
+        - kind: tool_call
+          name: capture_payload
+          arguments:
+            count: 42
+        chunks:
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: capture_payload
+            arguments: null
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '{"count": 42}'
+        - expected: []
+  malformed_json_then_two_valid_calls:
+    case_key: UNIFIED.5-4
+    stimulus:
+      ref: current
+      semantic_sha256: 1f44f2373df80ee7f4cd7c29c6a0305efe6064847cb22a0f451574d1ae99196c
+    observation:
+      value:
+        assembled:
+        - kind: tool_call
+          name: bad
+          arguments:
+            value:
+              x: unfinished}
+        - kind: tool_call
+          name: echo
+          arguments:
+            value: é
+        - kind: tool_call
+          name: echo
+          arguments:
+            value: Café
+        chunks:
+        - expected:
+          - kind: tool_call
+            name: bad
+            arguments: '{"value": {"x": "unfinished}"}}'
+          - kind: tool_call
+            name: echo
+            arguments: '{"value": "é"}'
+          - kind: tool_call
+            name: echo
+            arguments: '{"value": "Café"}'
+        - expected: []
+  native_quoted_control_in_reasoning:
+    case_key: UNIFIED.40-5
+    stimulus:
+      ref: current
+      semantic_sha256: bc7858e169c9a0257be1faaa10e0d3bcf22341379cac2ca3be755aaa1809f29b
+    observation:
+      value:
+        assembled:
+        - kind: reasoning
+          text: The literal "
+        chunks:
+        - expected:
+          - kind: reasoning
+            text: The literal "
+        - expected: []
+        - expected: []
+        - expected: []
+  native_quoted_control_in_response:
+    case_key: UNIFIED.8-6
+    stimulus:
+      ref: current
+      semantic_sha256: 2045e2019bd341cdb201d694560bb6d6e7493fe39be9e2eff1613f6f9ba5fde8
+    observation:
+      value:
+        assembled:
+        - kind: text
+          text: The literal "<|tool_call>" marker is part of the explanation.
+        chunks:
+        - expected:
+          - kind: text
+            text: The literal "
+        - expected: []
+        - expected: []
+        - expected: []
+  native_quoted_control_then_call:
+    case_key: UNIFIED.8-8
+    stimulus:
+      ref: current
+      semantic_sha256: d58d94ef6a101b3b7aae905904069813a4c0d2dfd9d69ca602c53d398cb6f081
+    observation:
+      value:
+        assembled:
+        - kind: text
+          text: The literal "
+        - kind: tool_call
+          name: get_weather
+          arguments:
+            city: Paris
+        chunks:
+        - expected:
+          - kind: text
+            text: The literal "
+        - expected: []
+        - expected: []
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: get_weather
+            arguments: null
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '{"city": "'
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: Paris
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '"}'
+        - expected: []
+  native_quoted_incomplete_header:
+    case_key: UNIFIED.8-10
+    stimulus:
+      ref: current
+      semantic_sha256: f042ce8f86c34947487f99876e81802d36262bbb3f4173c09b78f597ea6fcb05
+    observation:
+      value:
+        assembled:
+        - kind: text
+          text: The literal `
+        - kind: tool_call
+          name: get_weather
+          arguments:
+            city: '` header is part of the explanation.'
+        chunks:
+        - expected:
+          - kind: text
+            text: The literal `
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: get_weather
+            arguments: null
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '{"city": "'
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '` header is part of the explanation."}'
+  native_single_quote_contraction_reasoning:
+    case_key: UNIFIED.40-6
+    stimulus:
+      ref: current
+      semantic_sha256: 602b3218f624a2ec8eb3f8df773ec83d7bc1678dbc5e04a1435ec9ce0a33b00f
+    observation:
+      value:
+        assembled:
+        - kind: reasoning
+          text: The literal 'doesn't
+        chunks:
+        - expected:
+          - kind: reasoning
+            text: The literal 'doesn't
+        - expected: []
+        - expected: []
+        - expected: []
+  native_single_quote_contraction_response:
+    case_key: UNIFIED.8-11
+    stimulus:
+      ref: current
+      semantic_sha256: 0bc6378eee6d141fdedb57ad461d745436a32d6a8dd56fbdf8211f2f66d916c8
+    observation:
+      value:
+        assembled:
+        - kind: text
+          text: The literal 'doesn't <|tool_call> marker' stays quoted.
+        chunks:
+        - expected:
+          - kind: text
+            text: 'The literal ''doesn''t '
+        - expected: []
+        - expected: []
+        - expected: []
+  native_single_quoted_word_control:
+    case_key: UNIFIED.8-7
+    stimulus:
+      ref: current
+      semantic_sha256: 4961d36eac601e405dfcac5aae2d2141ba3767bed8138b8b10aaedb85268b667
+    observation:
+      value:
+        assembled:
+        - kind: text
+          text: The literal 'example <|tool_call> marker' is part of the explanation.
+        chunks:
+        - expected:
+          - kind: text
+            text: 'The literal ''example '
+        - expected: []
+        - expected: []
+        - expected: []
+  native_unmatched_quote_then_call:
+    case_key: UNIFIED.8-9
+    stimulus:
+      ref: current
+      semantic_sha256: 0ba915b753b2a79ece06cef1c8a604d2e2b6607b8d745a8a3bc050527b397279
+    observation:
+      value:
+        assembled:
+        - kind: text
+          text: He said "maybe
+        - kind: tool_call
+          name: get_weather
+          arguments:
+            city: Paris
+        chunks:
+        - expected:
+          - kind: text
+            text: He said "maybe
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: get_weather
+            arguments: null
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '{"city": "'
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: Paris
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '"}'
+        - expected: []
+  nullable_reference_alias_literals:
+    case_key: UNIFIED.7-15
+    stimulus:
+      ref: current
+      semantic_sha256: b061c15a46a3642291e56722a190a4e4cf0f9d26ccfcc27f2f2cd63e62fbe7e7
+    observation:
+      value:
+        assembled:
+        - kind: tool_call
+          name: capture_payload
+          arguments:
+            const_text: 'null'
+            enum_text: 'null'
+        chunks:
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: capture_payload
+            arguments: null
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '{"const_text": "'
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: 'null'
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '", "enum_text": "'
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: 'null'
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '"}'
+        - expected: []
+  qwen_string_null:
+    case_key: UNIFIED.7-4
+    stimulus:
+      ref: current
+      semantic_sha256: 4993eaab006cf48a7de172299dd1f037c45c1194b856c0e39a5fc9b320ef2fba
+    observation:
+      value:
+        assembled:
+        - kind: tool_call
+          name: get_weather
+          arguments:
+            city: null
+        chunks:
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: get_weather
+            arguments: null
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '{"city": null}'
+        - expected: []
+  unused_reference_graph_parameter_types:
+    case_key: UNIFIED.7-14
+    stimulus:
+      ref: current
+      semantic_sha256: 9603cdf67cd25be8e223b8f32b68a6a93db72d7f7ce42e33e78c82f9b96a7b55
+    observation:
+      value:
+        assembled:
+        - kind: tool_call
+          name: capture_payload
+          arguments:
+            count: 42
+            flag: false
+            text: 'null'
+        chunks:
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: capture_payload
+            arguments: null
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '{"count": 42, "flag": false, "text": "'
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: 'null'
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: null
+            arguments: '"}'
+        - expected: []
+metadata_changes:
+  arg_json_null_anyof: {}
+  arg_json_null_const: {}
+  arg_json_null_nullable: {}
+  arg_json_null_oneof: {}
+  arg_string_null: {}
+  arg_string_null_const: {}
+  arg_string_null_enum: {}
+  arg_string_null_sibling_anyof: {}
+  arg_string_null_sibling_oneof: {}
+  arg_string_null_union: {}
+  arg_string_null_untyped_branch: {}
+  deepseek_v41_mixed_control_text_in_string: {}
+  glm_ref_encoded_targets: {}
+  glm_ref_json_looking_strings: {}
+  glm_ref_object: {}
+  glm_ref_scalar_types: {}
+  guided_quoted_reasoning_closer_named: {}
+  guided_quoted_reasoning_closer_required: {}
+  guided_response_quoted_control_braces_named: {}
+  guided_response_quoted_control_braces_required: {}
+  local_schema_id_preserves_type: {}
+  malformed_json_then_two_valid_calls: {}
+  native_quoted_control_in_reasoning: {}
+  native_quoted_control_in_response: {}
+  native_quoted_control_then_call: {}
+  native_quoted_incomplete_header: {}
+  native_single_quote_contraction_reasoning: {}
+  native_single_quote_contraction_response: {}
+  native_single_quoted_word_control: {}
+  native_unmatched_quote_then_call: {}
+  nullable_reference_alias_literals: {}
+  qwen_string_null: {}
+  schema_const_array_allof:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_array_bare:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_array_ref:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_array_typed:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_boolean_allof:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_boolean_bare:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_boolean_ref:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_boolean_typed:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_entity_allof:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_entity_bare:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_entity_ref:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_entity_typed:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_null_allof:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_null_bare:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_null_ref:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_null_typed:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_number_allof:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_number_bare:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_number_ref:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_number_typed:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_object_allof:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_object_bare:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_object_ref:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_object_typed:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_plain_allof:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_plain_bare:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_plain_ref:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_plain_typed:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_quoted_allof:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_quoted_bare:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_quoted_ref:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_quoted_typed:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_space_allof:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_space_bare:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_space_ref:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_space_typed:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_unicode_allof:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_unicode_bare:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_unicode_ref:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_const_unicode_typed:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_declared_array:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_declared_boolean:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_declared_integer:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_declared_null:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_declared_number:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_declared_object:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_declared_string:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_enum_integer:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_enum_string:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_escaped_ref_const:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_id_direct_integer:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_integer_const_ambiguous:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_intersection_anyof:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_intersection_oneof:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_null_union_ambiguous:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_nullable_string:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_object_const_union:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_percent_ref_const:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_ref_sibling_integer:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_ref_union_anyof_integer:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_ref_union_anyof_string:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_ref_union_oneof_integer:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_ref_union_oneof_string:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_type_array_integer_null:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_type_array_integer_null_null:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_type_array_string_integer:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_anyof_array_reverse_string:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_anyof_array_reverse_typed:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_anyof_array_string:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_anyof_array_typed:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_anyof_boolean_reverse_string:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_anyof_boolean_reverse_typed:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_anyof_boolean_string:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_anyof_boolean_typed:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_anyof_integer_reverse_string:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_anyof_integer_reverse_typed:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_anyof_integer_string:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_anyof_integer_typed:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_anyof_null_reverse_string:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_anyof_null_reverse_typed:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_anyof_null_string:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_anyof_null_typed:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_anyof_number_reverse_string:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_anyof_number_reverse_typed:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_anyof_number_string:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_anyof_number_typed:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_anyof_object_reverse_string:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_anyof_object_reverse_typed:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_anyof_object_string:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_anyof_object_typed:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_oneof_array_reverse_string:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_oneof_array_reverse_typed:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_oneof_array_string:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_oneof_array_typed:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_oneof_boolean_reverse_string:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_oneof_boolean_reverse_typed:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_oneof_boolean_string:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_oneof_boolean_typed:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_oneof_integer_reverse_string:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_oneof_integer_reverse_typed:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_oneof_integer_string:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_oneof_integer_typed:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_oneof_null_reverse_string:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_oneof_null_reverse_typed:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_oneof_null_string:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_oneof_null_typed:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_oneof_number_reverse_string:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_oneof_number_reverse_typed:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_oneof_number_string:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_oneof_number_typed:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_oneof_object_reverse_string:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_oneof_object_reverse_typed:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_oneof_object_string:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  schema_union_oneof_object_typed:
+    vllm_capture_provenance:
+      implementation: vllm_python
+      version: 0.27.1
+      source_sha256: 68e9656a0286a3de12f052e11ec9bbb9a8ee2418a8a884afcf45885479bd80b5
+      adapter_sha256: a0fe09ef6c5ec9fb3053917ee0a8de387bcd775d026993a792c4dfa11305cf88
+      job_sha256: 603b43455eb26a350f464dd7737c6f7241ba42ea79abfe8c4b8f9a939f0080f3
+  unused_reference_graph_parameter_types: {}
+document_overrides:
+  arg_json_null_anyof:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  arg_json_null_const:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  arg_json_null_nullable:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  arg_json_null_oneof:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  arg_string_null:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  arg_string_null_const:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  arg_string_null_enum:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  arg_string_null_sibling_anyof:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  arg_string_null_sibling_oneof:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  arg_string_null_union:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  arg_string_null_untyped_branch:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  deepseek_v41_mixed_control_text_in_string:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  glm_ref_encoded_targets:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  glm_ref_json_looking_strings:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  glm_ref_object:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  glm_ref_scalar_types:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  guided_quoted_reasoning_closer_named:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  guided_quoted_reasoning_closer_required:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  guided_response_quoted_control_braces_named:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  guided_response_quoted_control_braces_required:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  local_schema_id_preserves_type:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  malformed_json_then_two_valid_calls:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  native_quoted_control_in_reasoning:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  native_quoted_control_in_response:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  native_quoted_control_then_call:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  native_quoted_incomplete_header:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  native_single_quote_contraction_reasoning:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  native_single_quote_contraction_response:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  native_single_quoted_word_control:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  native_unmatched_quote_then_call:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  nullable_reference_alias_literals:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  qwen_string_null:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_array_allof:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_array_bare:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_array_ref:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_array_typed:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_boolean_allof:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_boolean_bare:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_boolean_ref:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_boolean_typed:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_entity_allof:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_entity_bare:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_entity_ref:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_entity_typed:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_null_allof:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_null_bare:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_null_ref:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_null_typed:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_number_allof:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_number_bare:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_number_ref:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_number_typed:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_object_allof:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_object_bare:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_object_ref:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_object_typed:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_plain_allof:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_plain_bare:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_plain_ref:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_plain_typed:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_quoted_allof:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_quoted_bare:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_quoted_ref:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_quoted_typed:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_space_allof:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_space_bare:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_space_ref:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_space_typed:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_unicode_allof:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_unicode_bare:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_unicode_ref:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_const_unicode_typed:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_declared_array:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_declared_boolean:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_declared_integer:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_declared_null:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_declared_number:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_declared_object:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_declared_string:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_enum_integer:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_enum_string:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_escaped_ref_const:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_id_direct_integer:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_integer_const_ambiguous:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_intersection_anyof:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_intersection_oneof:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_null_union_ambiguous:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_nullable_string:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_object_const_union:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_percent_ref_const:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_ref_sibling_integer:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_ref_union_anyof_integer:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_ref_union_anyof_string:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_ref_union_oneof_integer:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_ref_union_oneof_string:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_type_array_integer_null:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_type_array_integer_null_null:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_type_array_string_integer:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_anyof_array_reverse_string:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_anyof_array_reverse_typed:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_anyof_array_string:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_anyof_array_typed:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_anyof_boolean_reverse_string:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_anyof_boolean_reverse_typed:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_anyof_boolean_string:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_anyof_boolean_typed:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_anyof_integer_reverse_string:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_anyof_integer_reverse_typed:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_anyof_integer_string:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_anyof_integer_typed:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_anyof_null_reverse_string:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_anyof_null_reverse_typed:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_anyof_null_string:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_anyof_null_typed:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_anyof_number_reverse_string:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_anyof_number_reverse_typed:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_anyof_number_string:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_anyof_number_typed:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_anyof_object_reverse_string:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_anyof_object_reverse_typed:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_anyof_object_string:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_anyof_object_typed:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_oneof_array_reverse_string:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_oneof_array_reverse_typed:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_oneof_array_string:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_oneof_array_typed:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_oneof_boolean_reverse_string:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_oneof_boolean_reverse_typed:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_oneof_boolean_string:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_oneof_boolean_typed:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_oneof_integer_reverse_string:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_oneof_integer_reverse_typed:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_oneof_integer_string:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_oneof_integer_typed:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_oneof_null_reverse_string:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_oneof_null_reverse_typed:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_oneof_null_string:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_oneof_null_typed:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_oneof_number_reverse_string:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_oneof_number_reverse_typed:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_oneof_number_string:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_oneof_number_typed:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_oneof_object_reverse_string:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_oneof_object_reverse_typed:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_oneof_object_string:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  schema_union_oneof_object_typed:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
+  unused_reference_graph_parameter_types:
+    capture_provenance:
+      captured_with:
+        vllm_python: 0.27.1
+      capture_origin: null
+      inherited_from: null
