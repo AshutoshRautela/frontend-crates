@@ -1249,9 +1249,8 @@ body.view-details .case-schema-indicator { display: inline; }
 .matrix-status { display: block; flex: 1 1 0; min-width: 2px; height: 100%; }
 .focus-dim .matrix-segments { opacity: .14; }
 .matrix-summary { position: sticky; right: 0; z-index: 2; min-width: 140px; padding: 3px 8px !important; border-left: 1px solid var(--line-strong) !important; border-bottom: 1px solid var(--line); background: var(--panel-bg); }
-.model-summary { display: inline-grid; grid-template-columns: 12px 32px; align-items: center; gap: 5px; margin: 2px 5px; color: var(--ink-muted); font-size: 10px; }
-.model-summary b { color: var(--engine-color); }
-.model-summary span:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+.model-summary { display: inline-flex; align-items: baseline; gap: 3px; margin: 2px 5px; color: var(--engine-color); font-size: 10px; white-space: nowrap; }
+.model-summary span:last-child { font-variant-numeric: tabular-nums; }
 .stacked-row .matrix-model { padding-top: 2px !important; padding-bottom: 2px !important; }
 .stacked-row .matrix-model strong:empty { display: none; }
 .stacked-cell .matrix-segments { height: 15px; }

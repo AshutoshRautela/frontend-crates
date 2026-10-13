@@ -115,11 +115,29 @@ def test_status_mapping_and_capture_denominators(matrix_driver, rendered_page):
 def test_geometry_focus_orientation_and_themes(matrix_driver, rendered_page):
     d = matrix_driver
     load(d, rendered_page)
+    click(d, "[data-layout='split']")
     assert d.find_element(By.CSS_SELECTOR, ".tab-button.active").get_attribute("data-tab-target") == "tab-unified"
     assert d.execute_script("return [...document.querySelectorAll('.tabs .tab-button')].at(-1)?.dataset.tabTarget") == "tab-unified"
     assert len(d.find_elements(By.CSS_SELECTOR, ".tab-panel.active .engine-card")) == 3
     assert "matches GOLDEN" in d.find_element(By.CSS_SELECTOR, ".tab-panel.active .engine-score").text
     assert not d.find_elements(By.CSS_SELECTOR, ".model-summary-bar")
+    summaries = d.execute_script("""
+      const cell=document.querySelector('.tab-panel.active .matrix-summary');
+      return [...cell.querySelectorAll('.model-summary')].map(node=>{
+        const label=node.querySelector('b'),value=node.querySelector('span');
+        const valueText=document.createRange();
+        valueText.selectNodeContents(value);
+        return {label:label.textContent.trim(),value:value.textContent.trim(),
+          labelColor:getComputedStyle(label).color,valueColor:getComputedStyle(value).color,
+          gap:valueText.getBoundingClientRect().left-label.getBoundingClientRect().right};
+      });
+    """)
+    assert len(summaries) >= 2, summaries
+    assert all(summary["label"] == summary["label"].upper() for summary in summaries), summaries
+    assert all(summary["labelColor"] == summary["valueColor"] for summary in summaries), summaries
+    colors_by_engine = {summary["label"]: summary["labelColor"] for summary in summaries}
+    assert len(set(colors_by_engine.values())) == len(colors_by_engine), summaries
+    assert max(summary["gap"] for summary in summaries) <= 5, summaries
     labels = d.execute_script("""
       const p=document.querySelector('.tab-panel.active'),tab=window.__CONFORMANCE_PAGE.tabs.find(t=>t.id===p.id);
       return {actual:[...p.querySelectorAll('.matrix-case-heading')].map(n=>{const c=n.cloneNode(true);c.querySelector('.ttip')?.remove();return c.textContent.trim()}),

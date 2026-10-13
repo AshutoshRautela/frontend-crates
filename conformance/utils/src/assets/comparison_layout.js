@@ -338,7 +338,8 @@
         const key = engineKey(candidate);
         return '<div class="model-summary" style="--engine-color:' + (engineColors[key] || 'var(--accent)') + '" title="'
           + escapeHtml(candidate.label + ': ' + pass + ' of ' + denominator + ' captured match the reference') + '"><b>'
-          + escapeHtml((engineNames[key] || candidate.label).slice(0, 1)) + '</b><span>' + (percentage == null ? '—' : percentage + '%') + '</span></div>';
+          + escapeHtml((engineNames[key] || candidate.label).slice(0, 1).toUpperCase()) + '</b><span>'
+          + (percentage == null ? '—' : percentage + '%') + '</span></div>';
 
       });
     }
