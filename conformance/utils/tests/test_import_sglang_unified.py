@@ -100,3 +100,13 @@ def test_batch_import_is_atomic_when_later_capture_is_invalid(tmp_path):
     with pytest.raises(ValueError, match="exact family job"):
         import_captures(store, [(job, capture, provenance), (job, bad_capture, provenance)])
     assert {path.relative_to(store): path.read_bytes() for path in store.rglob("*.yaml")} == before
+
+
+@pytest.mark.parametrize("identity", ["vllm_python", "vllm_rust", None])
+def test_sglang_rejects_explicit_conflicting_identity(tmp_path, identity):
+    store, job, capture, provenance = _setup(tmp_path)
+    provenance["implementation"] = identity
+    before = {path.relative_to(store): path.read_bytes() for path in store.rglob("*.yaml")}
+    with pytest.raises(ValueError, match="implementation"):
+        import_capture(store, job, capture, provenance)
+    assert {path.relative_to(store): path.read_bytes() for path in store.rglob("*.yaml")} == before

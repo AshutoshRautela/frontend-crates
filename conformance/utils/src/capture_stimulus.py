@@ -164,18 +164,25 @@ def original_capture_input(record: dict, raw: bytes, relative: str, bindings: di
     return original
 
 
+def validate_peer_capture_implementation(provenance: dict, implementation: str) -> None:
+    if implementation not in {"sglang_python", "vllm_python", "vllm_rust"}:
+        raise ValueError("capture provenance requires a supported peer implementation")
+    # Earlier SGLang receipts omitted this field; an explicit identity must still agree.
+    if implementation == "sglang_python" and "implementation" not in provenance:
+        return
+    if provenance.get("implementation") != implementation:
+        raise ValueError("capture provenance implementation differs from candidate")
+
+
 def select_peer_observation(record: dict, current: dict, *, implementation: str, version: str) -> dict:
     """Use a bound recapture while retaining the original historical observation."""
     recapture = record.get("verified_recapture")
     if recapture is None:
         return record
-    if implementation not in {"sglang_python", "vllm_python", "vllm_rust"}:
-        raise ValueError("verified recapture requires a supported peer implementation")
     if not isinstance(recapture, dict) or set(recapture) != {"result", "provenance", "resolution"}:
         raise ValueError("invalid verified recapture")
     provenance = recapture["provenance"]
-    if implementation != "sglang_python" and provenance.get("implementation") != implementation:
-        raise ValueError("verified recapture implementation differs from candidate")
+    validate_peer_capture_implementation(provenance, implementation)
     if provenance.get("version") != version:
         raise ValueError("verified recapture version differs from candidate")
     for key in ("source_sha256", "adapter_sha256", "job_sha256"):

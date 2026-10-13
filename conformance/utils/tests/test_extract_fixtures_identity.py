@@ -51,6 +51,17 @@ def test_history_format_change_invalidates_extracted_snapshot(monkeypatch):
     assert extract_fixtures.fixtures_identity(shards) != current
 
 
+def test_materializer_change_invalidates_cached_bytes(tmp_path, monkeypatch):
+    source = tmp_path / "unified_history.py"
+    source.write_text("def materialize_store(): return 'old recapture inheritance'\n")
+    monkeypatch.setattr(extract_fixtures.unified_history, "__file__", str(source))
+    shards = [_shard("fixtures-unified", "unchanged-capture-data")]
+    before = extract_fixtures.fixtures_identity(shards)
+    assert extract_fixtures.fixtures_identity(shards) == before
+    source.write_text("def materialize_store(): return 'version-scoped recapture'\n")
+    assert extract_fixtures.fixtures_identity(shards) != before
+
+
 def _fake_extract_tarball(_tarball_path, dest_dir, verbose=False):
     """Stand-in for the real tar extraction: writes one marker file so the
     directory is non-empty and distinguishable, without needing a real

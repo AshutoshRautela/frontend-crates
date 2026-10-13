@@ -13,7 +13,7 @@ import yaml
 import yaml_fast  # noqa: F401
 
 from capture_unified_job import build_job
-from capture_stimulus import capture_input, select_peer_observation
+from capture_stimulus import capture_input, select_peer_observation, validate_peer_capture_implementation
 from explode_unified_fixtures import _peer_cell
 from generate_conformance_table import _assemble_stream
 import unified_history
@@ -24,6 +24,7 @@ def digest(path: Path) -> str:
 
 
 def import_capture(store_root: Path, job_path: Path, capture_path: Path, provenance: dict, *, implementation="sglang_python", backfill_only=False, transaction_store=None) -> list[Path]:
+    validate_peer_capture_implementation(provenance, implementation)
     for key in ("source_sha256", "adapter_sha256", "job_sha256"):
         if not isinstance(provenance.get(key), str) or re.fullmatch(r"[0-9a-f]{64}", provenance[key]) is None:
             raise ValueError(f"invalid capture provenance: {key}")
@@ -49,7 +50,9 @@ def import_capture(store_root: Path, job_path: Path, capture_path: Path, provena
             result = {**result, "partial_chunks": result["chunks"]}
         if implementation != "vllm_python" and "error" not in result and "unavailable" not in result:
             result = {**result, "assembled": _assemble_stream(result["chunks"])}
-        records[case["scenario"]] = _peer_cell(result, len(case["chunks"]))
+        records[case["scenario"]] = _peer_cell(
+            result, len(case["chunks"]), require_assembled=implementation == "vllm_python",
+        )
 
     def mutate(store):
         fam = store.families[family]

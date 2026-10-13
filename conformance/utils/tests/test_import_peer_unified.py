@@ -243,3 +243,48 @@ def test_cli_verifies_each_frozen_bundle_format(peer_capture, tmp_path, monkeypa
         main()
         history = unified_history.load_store(store).histories[("gemma4", implementation)]
         assert "text_only" in history.resolve(f"{implementation}-0.25.1")
+
+
+@pytest.mark.parametrize("assembly", ["missing", None, "hello", {}, 1, False])
+def test_import_rejects_invalid_python_batch_output_and_keeps_stream_peers(peer_capture, assembly):
+    store, job, capture, provenance, implementation = peer_capture
+    payload = unified_history.load_yaml(capture)
+    result = payload["results"]["UNIFIED.text_only.gemma4"]
+    if assembly == "missing":
+        result.pop("assembled")
+    else:
+        result["assembled"] = assembly
+    capture.write_text(unified_history.dump_yaml(payload))
+    before = {path.relative_to(store): path.read_bytes() for path in store.rglob("*.yaml")}
+    if implementation == "vllm_python":
+        with pytest.raises(ValueError, match="assembled must be a list"):
+            import_capture(store, job, capture, provenance, implementation=implementation)
+        assert {path.relative_to(store): path.read_bytes() for path in store.rglob("*.yaml")} == before
+    else:
+        import_capture(store, job, capture, provenance, implementation=implementation)
+        history = unified_history.load_store(store).histories[("gemma4", implementation)]
+        assert history.resolve(f"{implementation}-0.25.1")["text_only"]["observation"]["value"]["assembled"] == [{"kind": "text", "text": "stream"}]
+
+
+def test_empty_python_batch_output_remains_distinct_from_stream_output(peer_capture):
+    store, job, capture, provenance, implementation = peer_capture
+    payload = unified_history.load_yaml(capture)
+    payload["results"]["UNIFIED.text_only.gemma4"]["assembled"] = []
+    capture.write_text(unified_history.dump_yaml(payload))
+    import_capture(store, job, capture, provenance, implementation=implementation)
+    history = unified_history.load_store(store).histories[("gemma4", implementation)]
+    expected = [] if implementation == "vllm_python" else [{"kind": "text", "text": "stream"}]
+    assert history.resolve(f"{implementation}-0.25.1")["text_only"]["observation"]["value"]["assembled"] == expected
+
+
+@pytest.mark.parametrize("identity", ["sglang_python", None, "missing"])
+def test_import_rejects_wrong_or_missing_engine_identity_without_writes(peer_capture, identity):
+    store, job, capture, provenance, implementation = peer_capture
+    if identity == "missing":
+        provenance.pop("implementation")
+    else:
+        provenance["implementation"] = identity
+    before = {path.relative_to(store): path.read_bytes() for path in store.rglob("*.yaml")}
+    with pytest.raises(ValueError, match="implementation"):
+        import_capture(store, job, capture, provenance, implementation=implementation)
+    assert {path.relative_to(store): path.read_bytes() for path in store.rglob("*.yaml")} == before

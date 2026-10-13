@@ -119,6 +119,8 @@ def fixtures_identity(shards, inactive=()):
     identity = {"shards": pinned, "inactive_shards": fixture_disposition.canonical_inactive_shards(inactive)}
     # A renamed materialized format must not reuse a snapshot with the old marker.
     identity["unified_history_format"] = unified_history.MATERIALIZED_FORMAT
+    # Reader fixes must not reuse materialized bytes produced by the earlier code.
+    identity["unified_materializer_sha256"] = sha256_file(Path(unified_history.__file__))
     return hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[:16]
 
 
