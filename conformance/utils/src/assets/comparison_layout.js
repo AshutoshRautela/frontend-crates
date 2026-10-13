@@ -135,6 +135,9 @@
   }
 
   function createUi(panel, tab) {
+    const goldenOracle = tab.id === 'tab-unified';
+    const statusLabel = status => goldenOracle && status === 'pass' ? 'Matches GOLDEN'
+      : goldenOracle && status === 'uncompared' ? 'GOLDEN unavailable' : statusNames[status];
     const candidates = candidatesFor(tab);
     const query = new URLSearchParams(window.location.search);
     const capturedKeys = new Set(candidates.filter(candidate => (tab.rows || []).some(row =>
@@ -155,7 +158,7 @@
       : hasLegacy ? legacyKeys : defaults;
     const groupKeys = (tab.column_groups || []).map(group => group.key);
     const state = {
-      slots: [null, null, null], reference: legacyReference,
+      slots: [null, null, null], reference: goldenOracle ? null : legacyReference,
       layout: query.get(param('layout')) === 'stacked' ? 'stacked' : 'split',
       focus: ['disagreements', 'problems'].includes(query.get(param('focus'))) ? query.get(param('focus')) : 'all',
       peerOnly: query.get(param('peer')) === '1', search: query.get(param('search')) || '',
@@ -169,7 +172,7 @@
     initialKeys.slice(0, 3).forEach((key, index) => {
       if (key && !initialSeen.has(key)) { state.slots[index] = key; initialSeen.add(key); }
     });
-    if (!state.slots.includes(state.reference)) state.reference = state.slots.find(Boolean) || null;
+    if (!goldenOracle && !state.slots.includes(state.reference)) state.reference = state.slots.find(Boolean) || null;
     const caseTooltips = new Map();
     function activeCandidates() { return state.slots.filter(Boolean).map(key => byKey.get(key)); }
     function engineAvailable(key) { return candidatesByEngine.get(key).some(candidate => capturedKeys.has(candidate.key)); }
@@ -197,7 +200,7 @@
     const legend = document.createElement('div');
     legend.className = 'comparison-legend';
     legend.innerHTML = statusClasses.map(status => '<span><i class="legend-swatch status-' + status + '"></i>'
-      + escapeHtml(statusNames[status]) + '</span>').join('');
+      + escapeHtml(statusLabel(status)) + '</span>').join('');
     const categories = document.createElement('div');
     categories.className = 'category-chips';
     categories.setAttribute('aria-label', 'Case categories');
@@ -280,16 +283,18 @@
         const bar = statusClasses.map(status => totalCases
           ? '<span class="bar-' + status + '" style="width:' + (counts[status] / totalCases * 100) + '%"></span>' : '').join('');
         const options = items.map(item => captureOption(item, selectedKey, slot)).join('');
+        const referenceControl = goldenOracle ? '' : '<div class="engine-card-controls"><label><input type="radio" name="reference-'
+          + escapeHtml(tab.id) + '" data-slot-reference="' + slot + '"'
+          + (reference === selected.key ? ' checked' : '') + '> Reference</label></div>';
         return '<article class="engine-card" style="--engine-color:' + (engineColors[key] || 'var(--accent)') + '">'
           + '<div class="engine-card-head"><div class="engine-name">'
           + engineButton(selected, slot, true) + '</div><select data-slot-version="' + slot + '" aria-label="Slot ' + (slot + 1) + ' capture version">' + options + '</select></div>'
           + '<div class="engine-score"><strong>' + (percent == null ? '—' : percent + '%') + '</strong><span>'
           + escapeHtml(tab.id === 'tab-unified' ? 'matches GOLDEN' : 'matches reference') + ' · ' + success + ' of ' + captured + ' captured</span></div>'
-          + '<div class="engine-status-bar" role="img" aria-label="' + statusClasses.map(status => statusNames[status] + ': ' + counts[status]).join(', ') + '">' + bar + '</div>'
+          + '<div class="engine-status-bar" role="img" aria-label="' + statusClasses.map(status => statusLabel(status) + ': ' + counts[status]).join(', ') + '">' + bar + '</div>'
           + '<div class="engine-counts">' + statusClasses.filter(status => counts[status] > 0).map(status => '<span><i class="legend-swatch status-' + status + '"></i>'
-            + counts[status] + ' ' + escapeHtml(statusNames[status].toLowerCase()) + '</span>').join('') + '</div>'
-          + '<div class="engine-card-controls"><label><input type="radio" name="reference-' + escapeHtml(tab.id) + '" data-slot-reference="' + slot + '"'
-          + (reference === selected.key ? ' checked' : '') + '> Reference</label></div></article>';
+            + counts[status] + ' ' + escapeHtml(statusLabel(status).toLowerCase()) + '</span>').join('') + '</div>'
+          + referenceControl + '</article>';
       }).join('');
     }
 
@@ -336,8 +341,9 @@
         }
         const percentage = denominator ? Math.round(pass / denominator * 100) : null;
         const key = engineKey(candidate);
+        const oracleName = goldenOracle ? 'GOLDEN' : 'reference';
         return '<div class="model-summary" style="--engine-color:' + (engineColors[key] || 'var(--accent)') + '" title="'
-          + escapeHtml(candidate.label + ': ' + pass + ' of ' + denominator + ' captured match the reference') + '"><b>'
+          + escapeHtml(candidate.label + ': ' + pass + ' of ' + denominator + ' captured match ' + oracleName) + '"><b>'
           + escapeHtml((engineNames[key] || candidate.label).slice(0, 1).toUpperCase()) + '</b><span>'
           + (percentage == null ? '—' : percentage + '%') + '</span></div>';
 
@@ -464,9 +470,11 @@
         url.searchParams.delete(param(name));
         if (!isDefault) url.searchParams.set(param(name), value);
       };
-      const defaultSelection = state.slots.every((key, index) => key === defaults[index]) && state.reference === (defaults.find(Boolean) || null);
+      const defaultReference = goldenOracle ? null : (defaults.find(Boolean) || null);
+      const defaultSelection = state.slots.every((key, index) => key === defaults[index]) && state.reference === defaultReference;
       set('slots', state.slots.map(key => key || '').join(','), defaultSelection);
-      set('base', state.reference || '', state.reference === (defaults.find(Boolean) || null));
+      if (goldenOracle) url.searchParams.delete(param('base'));
+      else set('base', state.reference || '', state.reference === defaultReference);
       set('cmp', state.slots.filter(key => key && key !== state.reference).join(','), defaultSelection);
       set('groups', groupKeys.filter(key => state.groups.has(key)).join(','), state.groups.size === groupKeys.length);
       set('layout', state.layout, state.layout === 'split');
@@ -487,10 +495,11 @@
       const focusTarget = pickerFocus !== null ? { attribute: 'data-slot-picker', value: String(pickerFocus) }
         : attribute ? { attribute, value: focused.getAttribute(attribute) } : null;
       const keys = state.slots.filter(Boolean);
-      if (!keys.includes(state.reference)) state.reference = keys[0] || null;
+      if (goldenOracle) state.reference = null;
+      else if (!keys.includes(state.reference)) state.reference = keys[0] || null;
       panel._comparisonSelection.keys = keys;
       panel._comparisonSelection.reference = state.reference;
-      window.__applyConformanceSelection(panel, keys, state.reference);
+      window.__applyConformanceSelection(panel, keys, goldenOracle ? referenceKey(panel) : state.reference);
       const { columns, categoryColumns, rows } = filteredView();
       renderCards(columns, rows);
       renderCategories(columns, categoryColumns);
@@ -529,7 +538,7 @@
         const keys = available(selectedKeys(panel));
         if (target.matches('.cmp-ref') && !keys.includes(target.value)) keys.unshift(target.value);
         state.slots = [...keys.slice(0, 3), null, null, null].slice(0, 3);
-        state.reference = referenceKey(panel);
+        state.reference = goldenOracle ? null : referenceKey(panel);
         update();
       },
     };

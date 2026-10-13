@@ -240,6 +240,10 @@ def test_interchangeable_slots_reference_empty_and_legacy_urls(matrix_driver, re
     d = matrix_driver
     load(d, rendered_page)
     defaults = selection(d)
+    assert defaults["reference"] is None
+    assert not d.find_elements(By.CSS_SELECTOR, ".tab-panel.active [data-slot-reference]")
+    card_scores = [node.text.lower() for node in d.find_elements(By.CSS_SELECTOR, ".tab-panel.active .engine-score span")]
+    assert card_scores and all(text.startswith("matches golden") for text in card_scores)
     click(d, ".engine-card .engine-mark")
     assert d.find_elements(By.CSS_SELECTOR, "dialog[open]")
     placement = d.execute_script("""
@@ -269,18 +273,19 @@ def test_interchangeable_slots_reference_empty_and_legacy_urls(matrix_driver, re
     missing = d.execute_script("return [...document.querySelectorAll('dialog[open] [data-picker-version] option')].filter(o=>o.textContent.includes('no captured results')).map(o=>({key:o.value,disabled:o.disabled}))")
     assert missing and all(item["disabled"] for item in missing)
     d.find_element(By.CSS_SELECTOR, "dialog[open]").send_keys(Keys.ESCAPE)
-    click(d, "[data-slot-reference='2']")
     changed = selection(d)
     assert changed["keys"] == defaults["keys"]
+    assert changed["reference"] is None
     d.refresh()
     assert selection(d) == changed
+    assert "base_tab-unified" not in d.current_url
     versions = d.execute_script("return window.__CONFORMANCE_PAGE.tabs.find(t=>t.id==='tab-unified').candidates.filter(c=>c.impl.startsWith('dynamo')).map(c=>c.key)")
     other = next(key for key in versions if key not in changed["keys"])
     choose_slot(d, 1, "dynamo", other)
     assert selection(d)["keys"][:2] == [defaults["keys"][0], other]
-    assert selection(d)["reference"] == defaults["keys"][1]
+    assert selection(d)["reference"] is None
     choose_slot(d, 2, "none")
-    assert selection(d)["reference"] == defaults["keys"][0]
+    assert selection(d)["reference"] is None
     click(d, ".engine-card [data-slot-picker='2']")
     d.execute_script("const e=document.querySelector('dialog[open] [data-picker-engine]');e.value='dynamo';e.dispatchEvent(new Event('change',{bubbles:true}));")
     disabled = d.execute_script("return [...document.querySelectorAll('dialog[open] [data-picker-version] option:disabled')].map(o=>o.value)")
@@ -309,13 +314,14 @@ def test_interchangeable_slots_reference_empty_and_legacy_urls(matrix_driver, re
     d.refresh()
     assert selection(d) == {"keys": [], "reference": None}
     choose_slot(d, 2, "dynamo", other)
-    assert selection(d) == {"keys": [other], "reference": other}
+    assert selection(d) == {"keys": [other], "reference": None}
     click(d, "[data-focus='disagreements']")
     assert d.find_elements(By.CSS_SELECTOR, ".tab-panel.active .matrix-cell[data-disagreement='true']:not(.focus-dim)")
     keys = [versions[1], versions[0], defaults["keys"][1], versions[2]]
     query = "?tab=tab-unified&transpose=1&base_tab-unified=" + keys[0] + "&cmp_tab-unified=" + ",".join(keys[1:])
     load(d, rendered_page, query)
     assert selection(d)["keys"] == keys[:3]
+    assert selection(d)["reference"] is None
     assert "three-slot limit" in d.find_element(By.CSS_SELECTOR, ".tab-panel.active .comparison-notice").text
     assert d.find_element(By.CSS_SELECTOR, ".tab-panel.active .legacy-report-details").get_dom_attribute("open") is None
     load(d, rendered_page)
@@ -463,14 +469,19 @@ def test_native_picker_focus_schema_and_reference_disclosure(matrix_driver, rend
     d = matrix_driver
     load(d, rendered_page, "?vertical=1")
     initial = selection(d)
+    assert initial["reference"] is None
+    assert not d.find_elements(By.CSS_SELECTOR, ".tab-panel.active [data-slot-reference]")
     version = d.find_element(By.CSS_SELECTOR, ".tab-panel.active [data-slot-version='0']")
     previous = version.get_attribute("value")
     version.send_keys(Keys.ARROW_DOWN)
     assert d.switch_to.active_element.get_attribute("data-slot-version") == "0"
     assert d.switch_to.active_element.get_attribute("value") != previous
-    reference = d.find_element(By.CSS_SELECTOR, ".tab-panel.active [data-slot-reference='2']")
+    load(d, rendered_page, "?tab=tab-toolcalling-batch")
+    batch_initial = selection(d)
+    reference = d.find_element(By.CSS_SELECTOR, ".tab-panel.active [data-slot-reference='1']")
     reference.send_keys(Keys.SPACE)
-    assert d.switch_to.active_element.get_attribute("data-slot-reference") == "2"
+    assert d.switch_to.active_element.get_attribute("data-slot-reference") == "1"
+    assert selection(d)["reference"] == selection(d)["keys"][1]
     chip = d.find_elements(By.CSS_SELECTOR, ".tab-panel.active .category-chip")[1]
     group = chip.get_attribute("data-group")
     chip.send_keys(Keys.ENTER)
@@ -481,7 +492,7 @@ def test_native_picker_focus_schema_and_reference_disclosure(matrix_driver, rend
     engine = d.find_element(By.CSS_SELECTOR, "dialog[open] [data-picker-engine]")
     engine.send_keys(Keys.END)
     assert not d.find_elements(By.CSS_SELECTOR, "dialog[open] [data-picker-apply], dialog[open] button[value='cancel']")
-    assert selection(d)["keys"] == initial["keys"][1:]
+    assert selection(d)["keys"] == batch_initial["keys"][1:]
     assert d.switch_to.active_element.get_attribute("data-picker-engine") is not None
     d.find_element(By.CSS_SELECTOR, "dialog[open]").send_keys(Keys.ESCAPE)
     assert d.switch_to.active_element.get_attribute("data-slot-picker") == "0"
