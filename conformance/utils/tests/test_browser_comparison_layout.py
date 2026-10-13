@@ -394,7 +394,7 @@ def test_cell_and_case_popup_renderer_parity_and_drawer(matrix_driver, rendered_
     cell.click()
     wait_for_popup(d)
     drawer_geometry = d.execute_script("const r=document.querySelector('.comparison-drawer.open .drawer-panel').getBoundingClientRect();return {width:r.width,left:r.left,right:innerWidth-r.right,viewport:innerWidth,clientWidth:document.documentElement.clientWidth};")
-    assert drawer_geometry["width"] == pytest.approx(1600, abs=2), drawer_geometry
+    assert drawer_geometry["width"] == pytest.approx(drawer_geometry["viewport"] * 0.97, abs=2), drawer_geometry
     assert drawer_geometry["left"] + drawer_geometry["right"] == pytest.approx(drawer_geometry["viewport"] - drawer_geometry["width"], abs=1), drawer_geometry
     assert drawer_geometry["left"] == pytest.approx((drawer_geometry["clientWidth"] - drawer_geometry["width"]) / 2, abs=2), drawer_geometry
     assert not d.find_elements(By.CSS_SELECTOR, ".ttip-pinned")
@@ -409,7 +409,7 @@ def test_cell_and_case_popup_renderer_parity_and_drawer(matrix_driver, rendered_
     cell.click()
     wait_for_popup(d)
     narrow_geometry = d.execute_script("const r=document.querySelector('.comparison-drawer.open .drawer-panel').getBoundingClientRect();return {width:r.width,left:r.left,right:innerWidth-r.right,viewport:innerWidth,clientWidth:document.documentElement.clientWidth};")
-    assert narrow_geometry["width"] == pytest.approx(narrow_geometry["viewport"] - 48, abs=2), narrow_geometry
+    assert narrow_geometry["width"] == pytest.approx(narrow_geometry["viewport"] * 0.97, abs=2), narrow_geometry
     assert narrow_geometry["left"] + narrow_geometry["right"] == pytest.approx(narrow_geometry["viewport"] - narrow_geometry["width"], abs=1), narrow_geometry
     assert narrow_geometry["left"] == pytest.approx((narrow_geometry["clientWidth"] - narrow_geometry["width"]) / 2, abs=2), narrow_geometry
     d.find_element(By.CSS_SELECTOR, ".comparison-drawer.open .drawer-close").click()

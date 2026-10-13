@@ -1261,7 +1261,7 @@ body.view-details .case-schema-indicator { display: inline; }
 .comparison-drawer.open { display: block; }
 .drawer-scrim { position: absolute; inset: 0; background: rgba(10,14,20,.3); opacity: 0; transition: opacity .18s; }
 .comparison-drawer.open .drawer-scrim { opacity: 1; }
-.drawer-panel { position: absolute; inset: 0; margin: auto; box-sizing: border-box; display: flex; flex-direction: column; width: min(1600px, calc(100vw - 48px)); height: fit-content; max-height: 80vh; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-bg); box-shadow: 0 12px 40px rgba(0,0,0,.25); transform: translateY(8px); opacity: 0; transition: transform .2s, opacity .2s; }
+.drawer-panel { position: absolute; inset: 0; margin: auto; box-sizing: border-box; display: flex; flex-direction: column; width: 97vw; height: fit-content; max-height: 80vh; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-bg); box-shadow: 0 12px 40px rgba(0,0,0,.25); transform: translateY(8px); opacity: 0; transition: transform .2s, opacity .2s; }
 .comparison-drawer.open .drawer-panel { transform: none; opacity: 1; }
 .drawer-header { display: flex; flex-shrink: 0; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 15px 18px; border-bottom: 1px solid var(--line); }
 .drawer-header > div { min-width: 0; overflow-wrap: anywhere; }
