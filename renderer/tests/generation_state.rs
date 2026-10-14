@@ -93,6 +93,7 @@ fn existing_constructors_and_custom_formatters_make_no_state_claim() {
     for prompt in [
         RenderedPrompt::text("<think>".into()),
         RenderedPrompt::segmented(segments.clone()),
+        RenderedPrompt::segmented_with_pending(segments.clone(), 1),
     ] {
         assert_eq!(prompt.generation_state(), GenerationState::Unknown);
         let known = prompt
@@ -101,6 +102,7 @@ fn existing_constructors_and_custom_formatters_make_no_state_claim() {
         assert_ne!(prompt, known); // Equality includes the continuation contract.
         assert_eq!(prompt.as_str(), known.as_str());
         assert_eq!(prompt.segments(), known.segments());
+        assert_eq!(prompt.pending_segments(), known.pending_segments());
         assert_eq!(
             known.with_generation_state(GenerationState::Unknown),
             prompt
@@ -220,6 +222,21 @@ fn kimi_channels_and_partial_prefix_preserve_segments() {
             },
         );
         assert!(prompt.segments().is_some());
+        assert_eq!(prompt.pending_segments(), 3);
+        let pending: String = prompt
+            .pending_encode_segments()
+            .unwrap()
+            .iter()
+            .map(|segment| segment.text)
+            .collect();
+        assert_eq!(
+            pending,
+            if thinking {
+                "<|open|>think<|sep|>"
+            } else {
+                "<|open|>response<|sep|>"
+            }
+        );
         assert!(prompt.as_str().ends_with(if thinking {
             "<|open|>think<|sep|>"
         } else {
@@ -231,13 +248,15 @@ fn kimi_channels_and_partial_prefix_preserve_segments() {
     for add in [true, false] {
         request.generation_prompt = add;
         let prompt = check(&formatter, &request, GenerationState::Response);
+        assert_eq!(prompt.pending_segments(), 0);
         let last = prompt.segments().unwrap().last().unwrap();
         assert_eq!(last.text, "<|open|>think<|sep|>");
         assert!(!last.allow_special);
     }
     request = user_request();
     request.generation_prompt = false;
-    check(&formatter, &request, GenerationState::Unknown);
+    let prompt = check(&formatter, &request, GenerationState::Unknown);
+    assert_eq!(prompt.pending_segments(), 0);
 }
 
 #[test]
