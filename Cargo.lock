@@ -1225,6 +1225,7 @@ dependencies = [
  "async-openai",
  "derive_builder",
  "futures",
+ "indexmap 2.14.0",
  "jsonschema",
  "serde",
  "serde_json",
