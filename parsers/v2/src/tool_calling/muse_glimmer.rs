@@ -113,6 +113,12 @@ fn outside_parameter(text: &str, marker: &str, at_eof: bool) -> Option<usize> {
     }
 }
 
+enum InvokeScan {
+    Complete { start: usize, end: usize },
+    PendingRecovery,
+    Absent,
+}
+
 /// The channel the scanner is currently inside.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum State {
@@ -914,15 +920,41 @@ impl MuseChannelScanner {
             .unwrap_or(self.buffer.len())
     }
 
-    /// Bounds of the first COMPLETE `<atem:invoke ...>...</atem:invoke>` block
-    /// inside `buffer[..limit]`. An invoke without its close is not complete: both
-    /// engines require the literal close, so it waits for more input.
-    fn next_invoke(&self, limit: usize) -> Option<(usize, usize)> {
+    /// Find a complete invoke without letting a later invoke's parameter closer
+    /// complete a malformed earlier call. Recovery waits until EOF.
+    fn next_invoke(&self, limit: usize, at_eof: bool) -> InvokeScan {
         let body = &self.buffer[..limit];
-        let open = invoke_open_re().captures(body)?;
-        let whole = open.get(0).expect("regex match has group 0");
-        let close = outside_parameter(&body[whole.end()..], INVOKE_CLOSE, false)?;
-        Some((whole.start(), whole.end() + close + INVOKE_CLOSE.len()))
+        let mut cursor = 0;
+        loop {
+            let Some(open) = invoke_open_re().find_at(body, cursor) else {
+                return InvokeScan::Absent;
+            };
+            let value_start = open.end();
+            let Some(close) = body[value_start..].find(INVOKE_CLOSE) else {
+                return InvokeScan::Absent;
+            };
+            let first_close = value_start + close;
+            // A close followed by another invoke separates candidates even if an
+            // unclosed parameter hides that close. Bound parameter matching here
+            // so the next candidate cannot donate its closer to this one.
+            let next_open = invoke_open_re().find_at(body, first_close + INVOKE_CLOSE.len());
+            let candidate_end = next_open.map_or(body.len(), |next| next.start());
+            if let Some(close) =
+                outside_parameter(&body[value_start..candidate_end], INVOKE_CLOSE, false)
+            {
+                return InvokeScan::Complete {
+                    start: open.start(),
+                    end: value_start + close + INVOKE_CLOSE.len(),
+                };
+            }
+            let Some(next_open) = next_open else {
+                return InvokeScan::Absent;
+            };
+            if !at_eof {
+                return InvokeScan::PendingRecovery;
+            }
+            cursor = next_open.start();
+        }
     }
 
     /// Drive the state machine over the buffer, appending routed deltas.
@@ -1004,9 +1036,15 @@ impl MuseChannelScanner {
 
             // A complete invoke inside the OPEN tool body emits as soon as its
             // close has streamed, before the channel terminator arrives.
-            if self.state == State::InToolChannel
-                && let Some((start, end)) = self.next_invoke(self.tool_body_limit(flush))
-            {
+            let invoke = if self.state == State::InToolChannel {
+                self.next_invoke(self.tool_body_limit(flush), flush)
+            } else {
+                InvokeScan::Absent
+            };
+            if matches!(invoke, InvokeScan::PendingRecovery) {
+                return Ok(());
+            }
+            if let InvokeScan::Complete { start, end } = invoke {
                 let invoke = self.buffer[start..end].to_string();
                 self.buffer.drain(..end);
                 if let Some(delta) = self.emitter.parse_invoke(&invoke, self.next_index)? {
@@ -1712,6 +1750,34 @@ mod tests {
         ));
         assert!(out.calls.is_empty());
         assert_eq!(out.normal_text, "");
+    }
+
+    #[test]
+    fn eof_recovery_projects_only_the_valid_later_call() {
+        for parameter in ["", "<atem:parameter name=\"city\">Paris</atem:parameter>"] {
+            let input = format!(
+                " to=tools<|message|><atem:invoke name=\"f\">\
+                 <atem:parameter name=\"x\">bad</atem:invoke>\
+                 <atem:invoke name=\"g\">{parameter}</atem:invoke><|eom|>"
+            );
+            let mut parser = MuseGlimmerToolStreamParser::new(&[]);
+            for ch in input.chars() {
+                assert!(parser.push(&ch.to_string()).expect("push").calls.is_empty());
+            }
+            let out = parser.finish().expect("finish");
+            assert_eq!(out.calls.len(), 1);
+            assert_eq!(name(&out, 0), "g");
+            assert_eq!(out.calls[0].tool_index, 0);
+            assert_eq!(
+                args(&out, 0),
+                if parameter.is_empty() {
+                    serde_json::json!({})
+                } else {
+                    serde_json::json!({"city": "Paris"})
+                }
+            );
+            assert!(out.normal_text.is_empty());
+        }
     }
 
     #[test]

@@ -345,6 +345,34 @@ mod tests {
     }
 
     #[test]
+    fn unterminated_parameter_recovers_later_invokes_at_eof() {
+        for later in [
+            "<atem:invoke name=\"g\"></atem:invoke>".to_string(),
+            "<atem:invoke name=\"g\"><atem:parameter name=\"city\">Paris</atem:parameter></atem:invoke>".to_string(),
+        ] {
+            let input = channel("tools", &format!(
+                "<atem:invoke name=\"f\"><atem:parameter name=\"x\">bad</atem:invoke>{later}"
+            ));
+            let args = if later.contains("parameter") {
+                serde_json::json!({"city": "Paris"})
+            } else {
+                serde_json::json!({})
+            };
+            let want = vec![call("g", args)];
+            assert_eq!(batch(&input), want);
+            for split in 0..=input.len() {
+                let mut parser = muse_glimmer_unified(&tools());
+                assert!(parser.push(&input[..split]).expect("prefix").is_empty());
+                assert!(parser.push(&input[split..]).expect("suffix").is_empty());
+                assert_eq!(assemble(&parser.finish().expect("finish").events), want, "split {split}");
+            }
+            let chunks: Vec<_> = input.char_indices()
+                .map(|(at, ch)| &input[at..at + ch.len_utf8()]).collect();
+            assert_eq!(events(&chunks), want);
+        }
+    }
+
+    #[test]
     fn malformed_guided_invoke_header_recovers_as_text_at_every_split() {
         let input = concat!(
             "Hello <atem:invoke name=\"get_weather\"",
