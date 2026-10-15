@@ -1406,12 +1406,14 @@ dependencies = [
 
 [[package]]
 name = "fastokens"
-version = "0.3.1"
+version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "35ff8cf975d8f772e7d4c3be439659b0b23b1ae1086ebee7204573807053ff7f"
+checksum = "a54c07b9d1217010ec476249998b23430d0f4f85a4504114d81f55f2a43d1610"
 dependencies = [
+ "aho-corasick",
  "daachorse",
  "fancy-regex 0.17.0",
+ "fastrand",
  "hf-hub 0.4.3",
  "icu_normalizer",
  "libc",
@@ -1423,6 +1425,7 @@ dependencies = [
  "serde_json",
  "strum",
  "thiserror 2.0.18",
+ "unicode-normalization-alignments",
  "ureq",
 ]
 
