@@ -157,6 +157,8 @@ UNIFIED_TAX = {
     "guided_json_quoted_bare_header_in_answer": (35, "1"),
     "guided_json_quoted_bare_header_after_payload": (35, "2"),
     "guided_json_quoted_bare_tool_header_in_answer": ("muse", "1"),
+    "muse_unterminated_parameter_then_empty_call": ("muse", "7"),
+    "muse_unterminated_parameter_then_call": ("muse", "8"),
     # 31-29 and 31-30 remain reserved for the historical Gemma-only cases.
     # TODO: restore 31-31 through 31-40 in the follow-up to PR #232 (deferred-cases). Completed below; FAMILY_LEGACY_CASE_LABELS preserves family-specific IDs.
     "qwen3_guided_non_ascii_header_in_truncated_reasoning": ("qwen3", "1"),
