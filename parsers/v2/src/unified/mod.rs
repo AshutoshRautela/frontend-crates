@@ -5544,7 +5544,7 @@ unified_registry! {
     "deepseek_v41" => deepseek_v41::deepseek_v41_unified,
     "gemma4" => gemma4::gemma4_unified,
     "glm47" => glm47::glm47_unified,
-    "qwen3" | "qwen3_coder" => qwen3::qwen3_unified,
+    "qwen3" | "qwen3_coder" | "nemotron3" | "nemotron_v3" => qwen3::qwen3_unified,
     "muse_glimmer" => muse_glimmer::muse_glimmer_unified,
     "kimi_k2"               => kimi_k2::kimi_k2_unified,
     "kimi_k3" | "kimi-k3"   => kimi_k3::kimi_k3_unified,

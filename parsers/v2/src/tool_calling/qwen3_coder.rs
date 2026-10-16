@@ -144,6 +144,7 @@ pub(crate) struct Qwen3Emitter {
 struct PartialStringArgument {
     tool_index: usize,
     name: String,
+    name_emitted: bool,
     emitted_json: String,
     scan_cursor: usize,
     seen_parameters: HashSet<String>,
@@ -182,6 +183,7 @@ impl InvokeEmitter for Qwen3Emitter {
             self.partial = Some(PartialStringArgument {
                 tool_index,
                 name: name.to_string(),
+                name_emitted: false,
                 emitted_json: String::new(),
                 scan_cursor: header_end + 1,
                 seen_parameters: HashSet::new(),
@@ -315,10 +317,11 @@ impl InvokeEmitter for Qwen3Emitter {
             });
             continue;
         }
-        if arguments.is_empty() {
+        if arguments.is_empty() && partial.name_emitted {
             return Ok(None);
         }
-        let first = partial.emitted_json.is_empty();
+        let first = !partial.name_emitted;
+        partial.name_emitted = true;
         partial.emitted_json.push_str(&arguments);
         Ok(Some(ToolCallDelta {
             tool_index,
@@ -379,7 +382,8 @@ impl InvokeEmitter for Qwen3Emitter {
             tool_index,
             // The streaming opener already supplied the name. The close carries
             // only the argument suffix, matching OpenAI delta semantics.
-            name: (!streamed).then_some(call.function.name),
+            name: (!partial.as_ref().is_some_and(|partial| partial.name_emitted))
+                .then_some(call.function.name),
             arguments,
             complete: true,
         }))
@@ -929,7 +933,7 @@ mod tests {
             ],
         );
         assert_eq!(out.normal_text, "I will check the weather. ");
-        assert_eq!(out.calls.len(), 1);
+        assert_eq!(out.coalesce_calls().calls.len(), 1);
     }
 
     #[test]
@@ -1004,8 +1008,10 @@ mod tests {
         for split in (0..=input.len()).filter(|&index| input.is_char_boundary(index)) {
             let out = parse_chunks(&weather_tools(), &[&input[..split], &input[split..]]);
             assert!(
-                out.calls.is_empty(),
-                "split {split} emitted without a value"
+                out.calls
+                    .iter()
+                    .all(|call| call.arguments.is_empty() && !call.complete),
+                "split {split} emitted arguments or completed without a value"
             );
             assert!(
                 out.coalesce_calls().calls.is_empty(),
@@ -1220,7 +1226,11 @@ mod tests {
         }];
         let mut parser = Qwen3CoderToolStreamParser::new(&tools);
         let open = "<tool_call><function=set_count><parameter=count>42</parameter>";
-        assert!(parser.push(open).unwrap().calls.is_empty());
+        let opened = parser.push(open).unwrap();
+        assert_eq!(opened.calls.len(), 1);
+        assert_eq!(opened.calls[0].name.as_deref(), Some("set_count"));
+        assert!(opened.calls[0].arguments.is_empty());
+        assert!(!opened.calls[0].complete);
         let closed = parser.push("</function></tool_call>").unwrap();
         assert_eq!(closed.calls.len(), 1);
         assert_eq!(closed.calls[0].arguments, r#"{"count":42}"#);
