@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [10.0.6](https://github.com/ai-dynamo/frontend-crates/compare/dynamo-parsers-v10.0.5...dynamo-parsers-v10.0.6) - 2026-10-16
+
+### Bug fixes
+
+- *(parsers)* Keep dotted tool names whole in the harmony parser ([#416](https://github.com/ai-dynamo/frontend-crates/pull/416))
+
 ## [10.0.5](https://github.com/ai-dynamo/frontend-crates/compare/dynamo-parsers-v10.0.4...dynamo-parsers-v10.0.5) - 2026-10-15
 
 ### Bug fixes
