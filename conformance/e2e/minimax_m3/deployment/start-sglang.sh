@@ -3,6 +3,7 @@ set -euo pipefail
 interval=${1:-1}
 nohup setsid python3 -m sglang.launch_server \
   --model-path MiniMaxAI/MiniMax-M3-MXFP8 \
+  --revision c5454eb03678d8710e54a4e0fc681b9f3b4a3dba \
   --served-model-name MiniMaxAI/MiniMax-M3-MXFP8 \
   --reasoning-parser minimax-m3 --tool-call-parser minimax-m3 \
   --tp 4 --attention-backend fa4 --moe-runner-backend deep_gemm \

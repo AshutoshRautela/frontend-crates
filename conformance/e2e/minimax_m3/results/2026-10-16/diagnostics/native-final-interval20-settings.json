@@ -1,0 +1,14 @@
+{
+  "version": "0.0.0.dev1+g56e290315",
+  "server_args": {
+    "model_path": "MiniMaxAI/MiniMax-M3-MXFP8",
+    "served_model_name": "MiniMaxAI/MiniMax-M3-MXFP8",
+    "tp_size": 4,
+    "tool_call_parser": "minimax-m3",
+    "reasoning_parser": "minimax-m3",
+    "stream_interval": 20,
+    "disable_cuda_graph": true,
+    "attention_backend": "fa4",
+    "moe_runner_backend": "deep_gemm"
+  }
+}

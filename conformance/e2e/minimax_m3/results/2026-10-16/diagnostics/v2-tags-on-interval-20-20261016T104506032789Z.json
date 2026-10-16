@@ -1,0 +1,1357 @@
+{
+  "configuration": {
+    "url": "http://127.0.0.1:27800",
+    "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+    "started_at": "2026-10-16T10:45:06.032630+00:00",
+    "concurrency": 4,
+    "max_tokens": 2048,
+    "timeout_seconds": 300.0,
+    "suite_sha256": "a19bc490c33800b183989b4d085d1eedf8993aad40b2bb2bd917f01c1622dab3",
+    "provenance": {
+      "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+      "model_revision": "c5454eb03678d8710e54a4e0fc681b9f3b4a3dba",
+      "weights_bytes": 451543283200,
+      "gpus": "4 NVIDIA B200",
+      "engine_image": "docker.io/lmsysorg/sglang@sha256:de63ac56df5d7b064451e21147eaab89634a02332d830ca8c01cb8c033b3a78f",
+      "engine_packages": {
+        "sglang": "0.0.0.dev1+g56e290315",
+        "torch": "2.11.0+cu130",
+        "xgrammar": "0.2.8",
+        "apache-tvm-ffi": "0.1.14.post1",
+        "ai-dynamo-runtime": "1.5.1"
+      },
+      "frontend_base_commit": "8f07af1eb9",
+      "dynamo_base_commit": "178cc2f3f7",
+      "parser_versions": {
+        "v1": "10.0.6",
+        "v2": "0.8.0"
+      },
+      "local_validation": {
+        "v2_authored_cases": 236,
+        "v2_chunk_schedules": 36236,
+        "v1_batch_matches": 155,
+        "v1_batch_total": 236,
+        "v2_native_tests_passed": 829,
+        "harness_tests_passed": 3,
+        "table_model_tests_passed": 157,
+        "unified_history_tests_passed": 87,
+        "v1_batch_comparable_total": 182,
+        "v1_batch_unsupported_modes": 54,
+        "xgrammar_production_checks_passed": 9
+      },
+      "suite_sha256": "71763edf558462ebc34ae7894984e46581136a16825aff2b73db794085907008",
+      "scenario_count": 23,
+      "planned_rows_per_implementation": 368,
+      "notes": [
+        "SGLang structural-tag export uses ReasoningBoundary::External because SGLang owns the reasoning gate.",
+        "Aborted double-reasoning setup runs are excluded from scored configurations.",
+        "Each result retains the actual request, response and SSE timing.",
+        "The v1 batch adapter cannot express some guided/request modes; unavailable modes count separately from mismatches in supported modes.",
+        "M3 parallel invocations share one native tool_call wrapper; production grammar accepts the complete parallel sequence.",
+        "M3 XML separator whitespace is bounded to2; string-value whitespace is preserved (compiler checks)."
+      ],
+      "m3_stream_source_sha256": "1d059a90494f6421aa00142fb05745161ad540946b0f9d49c6f3dfc1403979af",
+      "core_sha256": {
+        "worker_and_v1": "51aba278720c1bc5c7f78f8e5234f7824cbe3b7fae05b533b38e015bbaeb4305",
+        "v2": "8c229448378d6c816ee7959f60b5e732ad7a86d251736f77e5e7c78499a935ea"
+      },
+      "deployment_adapter": "Dynamo registration omits unsupported tokenizer= when constructing the pinned native ReasoningParser; parser source unchanged.",
+      "structural_tag_support": {
+        "v1": "M3 structural_tag_builder is None in published10.0.6; requested enable flag falls back to existing JSON/native modes.",
+        "v2": "Native minimax_m3_xml where lossless; incompatible schema constraints use existing JSON guidance.",
+        "sglang": "Native M3 parser receives the production v2 native XML constraint via response_format for tagged runs."
+      },
+      "sources": {
+        "xgrammar_native_layout": "https://github.com/mlc-ai/xgrammar/blob/v0.2.8/python/xgrammar/builtin_structural_tag.py"
+      }
+    }
+  },
+  "results": [
+    {
+      "id": "long_string_streaming",
+      "reasoning": "enabled",
+      "stream": false,
+      "structural_tags": true,
+      "stream_interval": 20,
+      "implementation": "v2",
+      "turns": [
+        {
+          "request": {
+            "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+            "messages": [
+              {
+                "role": "system",
+                "content": "Follow the requested tool names and argument values exactly. Keep reasoning brief."
+              },
+              {
+                "role": "user",
+                "content": "Call echo with text exactly the following string, preserving every character: abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789"
+              }
+            ],
+            "temperature": 0,
+            "max_tokens": 2048,
+            "stream": false,
+            "chat_template_kwargs": {
+              "thinking_mode": "enabled"
+            },
+            "tools": [
+              {
+                "type": "function",
+                "function": {
+                  "name": "echo",
+                  "description": "Execute echo with the supplied arguments.",
+                  "strict": true,
+                  "parameters": {
+                    "type": "object",
+                    "properties": {
+                      "text": {
+                        "type": "string",
+                        "minLength": 288,
+                        "maxLength": 288
+                      }
+                    },
+                    "required": [
+                      "text"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              }
+            ],
+            "tool_choice": "required"
+          },
+          "events": [],
+          "status": 200,
+          "response": {
+            "id": "chatcmpl-8d9296fd-c763-4387-ad9e-16833071d4a8",
+            "choices": [
+              {
+                "index": 0,
+                "message": {
+                  "content": null,
+                  "refusal": null,
+                  "tool_calls": [
+                    {
+                      "id": "call-fb70febe-bf49-4471-afa3-7deb570e12c0",
+                      "type": "function",
+                      "function": {
+                        "name": "echo",
+                        "arguments": "{\"text\": \"abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789\"}"
+                      }
+                    }
+                  ],
+                  "role": "assistant",
+                  "reasoning_content": "The user wants me to call echo with a specific text. Let me count the characters to make sure I have the right string.\n\nThe string is: abcdefghijklmnopqrstuvwxyz0123456789 repeated 8 times.\n\nLet me count: \"abcdefghijklmnopqrstuvwxyz0123456789\" is 36 characters.\n36 × 8 = 288 characters.\n\nThe maxLength is 288, so this should fit exactly.\n\nLet me verify the string:\nabcdefghijklmnopqrstuvwxyz0123456789 (36 chars)\nabcdefghijklmnopqrstuvwxyz0123456789 (36 chars)\nabcdefghijklmnopqrstuvwxyz0123456789 (36 chars)\nabcdefghijklmnopqrstuvwxyz0123456789 (36 chars)\nabcdefghijklmnopqrstuvwxyz0123456789 (36 chars)\nabcdefghijklmnopqrstuvwxyz0123456789 (36 chars)\nabcdefghijklmnopqrstuvwxyz0123456789 (36 chars)\nabcdefghijklmnopqrstuvwxyz0123456789 (36 chars)\n\nTotal: 288 characters. Good."
+                },
+                "finish_reason": "tool_calls",
+                "logprobs": null
+              }
+            ],
+            "created": 1792147506,
+            "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+            "object": "chat.completion",
+            "usage": {
+              "prompt_tokens": 563,
+              "completion_tokens": 403,
+              "total_tokens": 966,
+              "prompt_tokens_details": {
+                "cached_tokens": 128
+              },
+              "completion_tokens_details": {
+                "reasoning_tokens": 281
+              }
+            }
+          },
+          "message": {
+            "content": "",
+            "reasoning_content": "The user wants me to call echo with a specific text. Let me count the characters to make sure I have the right string.\n\nThe string is: abcdefghijklmnopqrstuvwxyz0123456789 repeated 8 times.\n\nLet me count: \"abcdefghijklmnopqrstuvwxyz0123456789\" is 36 characters.\n36 × 8 = 288 characters.\n\nThe maxLength is 288, so this should fit exactly.\n\nLet me verify the string:\nabcdefghijklmnopqrstuvwxyz0123456789 (36 chars)\nabcdefghijklmnopqrstuvwxyz0123456789 (36 chars)\nabcdefghijklmnopqrstuvwxyz0123456789 (36 chars)\nabcdefghijklmnopqrstuvwxyz0123456789 (36 chars)\nabcdefghijklmnopqrstuvwxyz0123456789 (36 chars)\nabcdefghijklmnopqrstuvwxyz0123456789 (36 chars)\nabcdefghijklmnopqrstuvwxyz0123456789 (36 chars)\nabcdefghijklmnopqrstuvwxyz0123456789 (36 chars)\n\nTotal: 288 characters. Good.",
+            "tool_calls": [
+              {
+                "id": "call-fb70febe-bf49-4471-afa3-7deb570e12c0",
+                "type": "function",
+                "function": {
+                  "name": "echo",
+                  "arguments": "{\"text\": \"abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789\"}"
+                }
+              }
+            ],
+            "refusal": null,
+            "role": "assistant"
+          },
+          "fragments": {},
+          "finish_reason": "tool_calls"
+        }
+      ],
+      "passed": true,
+      "seconds": 42.764
+    },
+    {
+      "id": "long_string_streaming",
+      "reasoning": "enabled",
+      "stream": true,
+      "structural_tags": true,
+      "stream_interval": 20,
+      "implementation": "v2",
+      "turns": [
+        {
+          "request": {
+            "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+            "messages": [
+              {
+                "role": "system",
+                "content": "Follow the requested tool names and argument values exactly. Keep reasoning brief."
+              },
+              {
+                "role": "user",
+                "content": "Call echo with text exactly the following string, preserving every character: abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789"
+              }
+            ],
+            "temperature": 0,
+            "max_tokens": 2048,
+            "stream": true,
+            "chat_template_kwargs": {
+              "thinking_mode": "enabled"
+            },
+            "tools": [
+              {
+                "type": "function",
+                "function": {
+                  "name": "echo",
+                  "description": "Execute echo with the supplied arguments.",
+                  "strict": true,
+                  "parameters": {
+                    "type": "object",
+                    "properties": {
+                      "text": {
+                        "type": "string",
+                        "minLength": 288,
+                        "maxLength": 288
+                      }
+                    },
+                    "required": [
+                      "text"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              }
+            ],
+            "tool_choice": "required"
+          },
+          "events": [
+            {
+              "ms": 1291.817,
+              "event": {
+                "id": "chatcmpl-f79224b8-f1e5-4b45-9554-f8eb8a9cd124",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "role": "assistant",
+                      "reasoning_content": "The"
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 3367.292,
+              "event": {
+                "id": "chatcmpl-f79224b8-f1e5-4b45-9554-f8eb8a9cd124",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "reasoning_content": " user wants me to call echo with a specific text. Let me count the characters to make sure I"
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 5425.426,
+              "event": {
+                "id": "chatcmpl-f79224b8-f1e5-4b45-9554-f8eb8a9cd124",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "reasoning_content": " have the right string.\n\nThe string is: abcdefghijklmnopqrstuvw"
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 7479.945,
+              "event": {
+                "id": "chatcmpl-f79224b8-f1e5-4b45-9554-f8eb8a9cd124",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "reasoning_content": "xyz0123456789 repeated.\n\nLet me count: \"abcdefghijklmnopqrst"
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 9527.9,
+              "event": {
+                "id": "chatcmpl-f79224b8-f1e5-4b45-9554-f8eb8a9cd124",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "reasoning_content": "uvwxyz0123456789\" is 36 characters.\n\nThe user provided: abcdefgh"
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 11594.328,
+              "event": {
+                "id": "chatcmpl-f79224b8-f1e5-4b45-9554-f8eb8a9cd124",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "reasoning_content": "ijklmnopqrstuvwxyz0123456789abcdefghijklmnopqr"
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 13652.147,
+              "event": {
+                "id": "chatcmpl-f79224b8-f1e5-4b45-9554-f8eb8a9cd124",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "reasoning_content": "stuvwxyz0123456789abcdefghijklmnopqrstuvwxyz012"
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 15804.61,
+              "event": {
+                "id": "chatcmpl-f79224b8-f1e5-4b45-9554-f8eb8a9cd124",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "reasoning_content": "3456789abcdefghijklmnopqrstuvwxyz0123456789abcdefgh"
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 17767.97,
+              "event": {
+                "id": "chatcmpl-f79224b8-f1e5-4b45-9554-f8eb8a9cd124",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "reasoning_content": "ijklmnopqrstuvwxyz0123456789abcdefghijklmnopqr"
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 19826.862,
+              "event": {
+                "id": "chatcmpl-f79224b8-f1e5-4b45-9554-f8eb8a9cd124",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "reasoning_content": "stuvwxyz0123456789abcdefghijklmnopqrstuvwxyz012"
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 21911.502,
+              "event": {
+                "id": "chatcmpl-f79224b8-f1e5-4b45-9554-f8eb8a9cd124",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "reasoning_content": "3456789abcdefghijklmnopqrstuvwxyz0123456789\n\nLet"
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 24312.52,
+              "event": {
+                "id": "chatcmpl-f79224b8-f1e5-4b45-9554-f8eb8a9cd124",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "reasoning_content": " me count the repetitions:\n1. abcdefghijklmnopqrstuvwxyz012"
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 26039.409,
+              "event": {
+                "id": "chatcmpl-f79224b8-f1e5-4b45-9554-f8eb8a9cd124",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "reasoning_content": "3456789\n2. abcdefghijklmnopqrstuvwxyz012345"
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 28740.66,
+              "event": {
+                "id": "chatcmpl-f79224b8-f1e5-4b45-9554-f8eb8a9cd124",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "reasoning_content": "6789\n3. abcdefghijklmnopqrstuvwxyz012345678"
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 30184.152,
+              "event": {
+                "id": "chatcmpl-f79224b8-f1e5-4b45-9554-f8eb8a9cd124",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "reasoning_content": "9\n4. abcdefghijklmnopqrstuvwxyz0123456789"
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 32546.535,
+              "event": {
+                "id": "chatcmpl-f79224b8-f1e5-4b45-9554-f8eb8a9cd124",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "reasoning_content": "\n5. abcdefghijklmnopqrstuvwxyz0123456789\n"
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 34286.819,
+              "event": {
+                "id": "chatcmpl-f79224b8-f1e5-4b45-9554-f8eb8a9cd124",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "reasoning_content": "6. abcdefghijklmnopqrstuvwxyz0123456789\n7"
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 36389.136,
+              "event": {
+                "id": "chatcmpl-f79224b8-f1e5-4b45-9554-f8eb8a9cd124",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "reasoning_content": ". abcdefghijklmnopqrstuvwxyz0123456789\n8."
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 38415.152,
+              "event": {
+                "id": "chatcmpl-f79224b8-f1e5-4b45-9554-f8eb8a9cd124",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "reasoning_content": " abcdefghijklmnopqrstuvwxyz0123456789\n\nThat's 8"
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 40857.788,
+              "event": {
+                "id": "chatcmpl-f79224b8-f1e5-4b45-9554-f8eb8a9cd124",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "reasoning_content": " repetitions × 36 = 288 characters.\n\nThe echo tool requires text with minLength 288 and"
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 42539.218,
+              "event": {
+                "id": "chatcmpl-f79224b8-f1e5-4b45-9554-f8eb8a9cd124",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "reasoning_content": " maxLength 288, so this matches perfectly.\n\nLet me construct the exact string and call echo."
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 45265.737,
+              "event": {
+                "id": "chatcmpl-f79224b8-f1e5-4b45-9554-f8eb8a9cd124",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "tool_calls": [
+                        {
+                          "index": 0,
+                          "id": "call-25e91d67-964d-46dc-94fd-0cbd3de86521",
+                          "type": "function",
+                          "function": {
+                            "name": "echo",
+                            "arguments": ""
+                          }
+                        }
+                      ]
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 45265.8,
+              "event": {
+                "id": "chatcmpl-f79224b8-f1e5-4b45-9554-f8eb8a9cd124",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "tool_calls": [
+                        {
+                          "index": 0,
+                          "function": {
+                            "arguments": "{\"text\": \"abcdefghijklmn"
+                          }
+                        }
+                      ]
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 46638.237,
+              "event": {
+                "id": "chatcmpl-f79224b8-f1e5-4b45-9554-f8eb8a9cd124",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "tool_calls": [
+                        {
+                          "index": 0,
+                          "function": {
+                            "arguments": "opqrstuvwxyz0123456789abcdefghijklmnopqrstuvw"
+                          }
+                        }
+                      ]
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 48716.693,
+              "event": {
+                "id": "chatcmpl-f79224b8-f1e5-4b45-9554-f8eb8a9cd124",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "tool_calls": [
+                        {
+                          "index": 0,
+                          "function": {
+                            "arguments": "xyz0123456789abcdefghijklmnopqrstuvwxyz0123456789"
+                          }
+                        }
+                      ]
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 50763.437,
+              "event": {
+                "id": "chatcmpl-f79224b8-f1e5-4b45-9554-f8eb8a9cd124",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "tool_calls": [
+                        {
+                          "index": 0,
+                          "function": {
+                            "arguments": "abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmn"
+                          }
+                        }
+                      ]
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 52784.853,
+              "event": {
+                "id": "chatcmpl-f79224b8-f1e5-4b45-9554-f8eb8a9cd124",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "tool_calls": [
+                        {
+                          "index": 0,
+                          "function": {
+                            "arguments": "opqrstuvwxyz0123456789abcdefghijklmnopqrstuvw"
+                          }
+                        }
+                      ]
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 55054.458,
+              "event": {
+                "id": "chatcmpl-f79224b8-f1e5-4b45-9554-f8eb8a9cd124",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "tool_calls": [
+                        {
+                          "index": 0,
+                          "function": {
+                            "arguments": "xyz0123456789abcdefghijklmnopqrstuvwxyz0123456789"
+                          }
+                        }
+                      ]
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 56667.468,
+              "event": {
+                "id": "chatcmpl-f79224b8-f1e5-4b45-9554-f8eb8a9cd124",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "tool_calls": [
+                        {
+                          "index": 0,
+                          "function": {
+                            "arguments": "abcdefghijklmnopqrstuvwxyz0123456789\"}"
+                          }
+                        }
+                      ]
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 56667.541,
+              "event": {
+                "id": "chatcmpl-f79224b8-f1e5-4b45-9554-f8eb8a9cd124",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "tool_calls": [
+                        {
+                          "index": 0,
+                          "function": {
+                            "arguments": ""
+                          }
+                        }
+                      ]
+                    },
+                    "finish_reason": "tool_calls",
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            }
+          ],
+          "status": 200,
+          "message": {
+            "content": "",
+            "reasoning_content": "The user wants me to call echo with a specific text. Let me count the characters to make sure I have the right string.\n\nThe string is: abcdefghijklmnopqrstuvwxyz0123456789 repeated.\n\nLet me count: \"abcdefghijklmnopqrstuvwxyz0123456789\" is 36 characters.\n\nThe user provided: abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789\n\nLet me count the repetitions:\n1. abcdefghijklmnopqrstuvwxyz0123456789\n2. abcdefghijklmnopqrstuvwxyz0123456789\n3. abcdefghijklmnopqrstuvwxyz0123456789\n4. abcdefghijklmnopqrstuvwxyz0123456789\n5. abcdefghijklmnopqrstuvwxyz0123456789\n6. abcdefghijklmnopqrstuvwxyz0123456789\n7. abcdefghijklmnopqrstuvwxyz0123456789\n8. abcdefghijklmnopqrstuvwxyz0123456789\n\nThat's 8 repetitions × 36 = 288 characters.\n\nThe echo tool requires text with minLength 288 and maxLength 288, so this matches perfectly.\n\nLet me construct the exact string and call echo.",
+            "tool_calls": [
+              {
+                "id": "call-25e91d67-964d-46dc-94fd-0cbd3de86521",
+                "type": "function",
+                "function": {
+                  "name": "echo",
+                  "arguments": "{\"text\": \"abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789\"}"
+                }
+              }
+            ]
+          },
+          "fragments": {
+            "0": 7
+          },
+          "finish_reason": "tool_calls"
+        }
+      ],
+      "passed": true,
+      "seconds": 56.686
+    },
+    {
+      "id": "long_string_streaming",
+      "reasoning": "disabled",
+      "stream": false,
+      "structural_tags": true,
+      "stream_interval": 20,
+      "implementation": "v2",
+      "turns": [
+        {
+          "request": {
+            "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+            "messages": [
+              {
+                "role": "system",
+                "content": "Follow the requested tool names and argument values exactly. Keep reasoning brief."
+              },
+              {
+                "role": "user",
+                "content": "Call echo with text exactly the following string, preserving every character: abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789"
+              }
+            ],
+            "temperature": 0,
+            "max_tokens": 2048,
+            "stream": false,
+            "chat_template_kwargs": {
+              "thinking_mode": "disabled"
+            },
+            "tools": [
+              {
+                "type": "function",
+                "function": {
+                  "name": "echo",
+                  "description": "Execute echo with the supplied arguments.",
+                  "strict": true,
+                  "parameters": {
+                    "type": "object",
+                    "properties": {
+                      "text": {
+                        "type": "string",
+                        "minLength": 288,
+                        "maxLength": 288
+                      }
+                    },
+                    "required": [
+                      "text"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              }
+            ],
+            "tool_choice": "required"
+          },
+          "events": [],
+          "status": 200,
+          "response": {
+            "id": "chatcmpl-16788fce-232c-471b-a38c-a8216e4e4dc7",
+            "choices": [
+              {
+                "index": 0,
+                "message": {
+                  "content": null,
+                  "refusal": null,
+                  "tool_calls": [
+                    {
+                      "id": "call-703c5d8a-a99e-46bd-9f81-b169242298c8",
+                      "type": "function",
+                      "function": {
+                        "name": "echo",
+                        "arguments": "{\"text\": \"abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789\"}"
+                      }
+                    }
+                  ],
+                  "role": "assistant"
+                },
+                "finish_reason": "tool_calls",
+                "logprobs": null
+              }
+            ],
+            "created": 1792147506,
+            "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+            "object": "chat.completion",
+            "usage": {
+              "prompt_tokens": 553,
+              "completion_tokens": 137,
+              "total_tokens": 690,
+              "prompt_tokens_details": {
+                "cached_tokens": 128
+              },
+              "completion_tokens_details": {
+                "reasoning_tokens": 0
+              }
+            }
+          },
+          "message": {
+            "content": "",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "id": "call-703c5d8a-a99e-46bd-9f81-b169242298c8",
+                "type": "function",
+                "function": {
+                  "name": "echo",
+                  "arguments": "{\"text\": \"abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789\"}"
+                }
+              }
+            ],
+            "refusal": null,
+            "role": "assistant"
+          },
+          "fragments": {},
+          "finish_reason": "tool_calls"
+        }
+      ],
+      "passed": true,
+      "seconds": 15.777
+    },
+    {
+      "id": "long_string_streaming",
+      "reasoning": "disabled",
+      "stream": true,
+      "structural_tags": true,
+      "stream_interval": 20,
+      "implementation": "v2",
+      "turns": [
+        {
+          "request": {
+            "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+            "messages": [
+              {
+                "role": "system",
+                "content": "Follow the requested tool names and argument values exactly. Keep reasoning brief."
+              },
+              {
+                "role": "user",
+                "content": "Call echo with text exactly the following string, preserving every character: abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789"
+              }
+            ],
+            "temperature": 0,
+            "max_tokens": 2048,
+            "stream": true,
+            "chat_template_kwargs": {
+              "thinking_mode": "disabled"
+            },
+            "tools": [
+              {
+                "type": "function",
+                "function": {
+                  "name": "echo",
+                  "description": "Execute echo with the supplied arguments.",
+                  "strict": true,
+                  "parameters": {
+                    "type": "object",
+                    "properties": {
+                      "text": {
+                        "type": "string",
+                        "minLength": 288,
+                        "maxLength": 288
+                      }
+                    },
+                    "required": [
+                      "text"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              }
+            ],
+            "tool_choice": "required"
+          },
+          "events": [
+            {
+              "ms": 1291.655,
+              "event": {
+                "id": "chatcmpl-6368b79e-1e41-4153-84a9-9c609eca1bcd",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "role": "assistant"
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 3366.956,
+              "event": {
+                "id": "chatcmpl-6368b79e-1e41-4153-84a9-9c609eca1bcd",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "tool_calls": [
+                        {
+                          "index": 0,
+                          "id": "call-e4f2f20d-42d5-40c3-ad90-1b1befcea53d",
+                          "type": "function",
+                          "function": {
+                            "name": "echo",
+                            "arguments": ""
+                          }
+                        }
+                      ]
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 3367.112,
+              "event": {
+                "id": "chatcmpl-6368b79e-1e41-4153-84a9-9c609eca1bcd",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "tool_calls": [
+                        {
+                          "index": 0,
+                          "function": {
+                            "arguments": "{\"text\": \"abcdefghijklmnopqr"
+                          }
+                        }
+                      ]
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 5425.479,
+              "event": {
+                "id": "chatcmpl-6368b79e-1e41-4153-84a9-9c609eca1bcd",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "tool_calls": [
+                        {
+                          "index": 0,
+                          "function": {
+                            "arguments": "stuvwxyz0123456789abcdefghijklmnopqrstuvwxyz012"
+                          }
+                        }
+                      ]
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 7480.303,
+              "event": {
+                "id": "chatcmpl-6368b79e-1e41-4153-84a9-9c609eca1bcd",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "tool_calls": [
+                        {
+                          "index": 0,
+                          "function": {
+                            "arguments": "3456789abcdefghijklmnopqrstuvwxyz0123456789abcdefgh"
+                          }
+                        }
+                      ]
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 9527.906,
+              "event": {
+                "id": "chatcmpl-6368b79e-1e41-4153-84a9-9c609eca1bcd",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "tool_calls": [
+                        {
+                          "index": 0,
+                          "function": {
+                            "arguments": "ijklmnopqrstuvwxyz0123456789abcdefghijklmnopqr"
+                          }
+                        }
+                      ]
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 11594.599,
+              "event": {
+                "id": "chatcmpl-6368b79e-1e41-4153-84a9-9c609eca1bcd",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "tool_calls": [
+                        {
+                          "index": 0,
+                          "function": {
+                            "arguments": "stuvwxyz0123456789abcdefghijklmnopqrstuvwxyz012"
+                          }
+                        }
+                      ]
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 13652.515,
+              "event": {
+                "id": "chatcmpl-6368b79e-1e41-4153-84a9-9c609eca1bcd",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "tool_calls": [
+                        {
+                          "index": 0,
+                          "function": {
+                            "arguments": "3456789abcdefghijklmnopqrstuvwxyz0123456789abcdefgh"
+                          }
+                        }
+                      ]
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 15757.237,
+              "event": {
+                "id": "chatcmpl-6368b79e-1e41-4153-84a9-9c609eca1bcd",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "tool_calls": [
+                        {
+                          "index": 0,
+                          "function": {
+                            "arguments": "ijklmnopqrstuvwxyz0123456789\"}"
+                          }
+                        }
+                      ]
+                    },
+                    "finish_reason": null,
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            },
+            {
+              "ms": 15757.304,
+              "event": {
+                "id": "chatcmpl-6368b79e-1e41-4153-84a9-9c609eca1bcd",
+                "choices": [
+                  {
+                    "index": 0,
+                    "delta": {
+                      "tool_calls": [
+                        {
+                          "index": 0,
+                          "function": {
+                            "arguments": ""
+                          }
+                        }
+                      ]
+                    },
+                    "finish_reason": "tool_calls",
+                    "logprobs": null
+                  }
+                ],
+                "created": 1792147506,
+                "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+                "object": "chat.completion.chunk"
+              }
+            }
+          ],
+          "status": 200,
+          "message": {
+            "content": "",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "id": "call-e4f2f20d-42d5-40c3-ad90-1b1befcea53d",
+                "type": "function",
+                "function": {
+                  "name": "echo",
+                  "arguments": "{\"text\": \"abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789\"}"
+                }
+              }
+            ]
+          },
+          "fragments": {
+            "0": 7
+          },
+          "finish_reason": "tool_calls"
+        }
+      ],
+      "passed": true,
+      "seconds": 15.776
+    }
+  ]
+}

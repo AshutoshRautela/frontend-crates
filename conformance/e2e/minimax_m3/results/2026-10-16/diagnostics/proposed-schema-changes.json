@@ -1,0 +1,25 @@
+[
+  {
+    "case": "long_string_streaming",
+    "path": "tools[0].function.parameters.properties.text",
+    "before": {
+      "type": "string"
+    },
+    "after": {
+      "type": "string",
+      "minLength": 288,
+      "maxLength": 288
+    }
+  },
+  {
+    "case": "json_escaping",
+    "path": "tools[0].function.parameters.properties.text",
+    "before": {
+      "type": "string"
+    },
+    "after": {
+      "type": "string",
+      "const": "line1\n\"quoted\"\\path\tend"
+    }
+  }
+]

@@ -1,0 +1,20 @@
+   Compiling dynamo-conformance-fixtures-v2 v0.1.0 (/Users/rmccormick/codex/frontend-crates/conformance)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.16s
+     Running tests/unified_render.rs (target/debug/deps/unified_render-8be9742d82d38a23)
+
+running 1 test
+wrote /Users/rmccormick/codex/frontend-crates/conformance/unified/golden_spec/deepseek_v4.yaml (232 cases)
+wrote /Users/rmccormick/codex/frontend-crates/conformance/unified/golden_spec/deepseek_v41.yaml (229 cases)
+wrote /Users/rmccormick/codex/frontend-crates/conformance/unified/golden_spec/gemma4.yaml (233 cases)
+wrote /Users/rmccormick/codex/frontend-crates/conformance/unified/golden_spec/glm47.yaml (231 cases)
+wrote /Users/rmccormick/codex/frontend-crates/conformance/unified/golden_spec/gpt_oss.yaml (159 cases)
+wrote /Users/rmccormick/codex/frontend-crates/conformance/unified/golden_spec/kimi.yaml (231 cases)
+wrote /Users/rmccormick/codex/frontend-crates/conformance/unified/golden_spec/kimi_k3.yaml (238 cases)
+wrote /Users/rmccormick/codex/frontend-crates/conformance/unified/golden_spec/minimax_m3.yaml (236 cases)
+wrote /Users/rmccormick/codex/frontend-crates/conformance/unified/golden_spec/muse_glimmer.yaml (240 cases)
+wrote /Users/rmccormick/codex/frontend-crates/conformance/unified/golden_spec/qwen3.yaml (236 cases)
+M3 chunk schedules checked: 36236
+test minimax_m3_authored_cases_are_chunk_invariant ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 16 filtered out; finished in 1.20s
+

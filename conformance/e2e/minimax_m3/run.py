@@ -167,7 +167,7 @@ def report(directory):
     runs = []
     for path in sorted(directory.glob("*.json")):
         run = json.loads(path.read_text())
-        if run.get("results"):
+        if run.get("results") and run.get("configuration", {}).get("started_at"):
             run["capture_file"] = path.name
             runs.append(run)
     latest = {}
@@ -188,7 +188,11 @@ def report(directory):
     configurations = []
     for (implementation, tags, interval), run in sorted(latest.items()):
         subset = run["results"]
-        configurations.append(f"<tr><td>{implementation}</td><td>{tags}</td><td>{interval}</td><td>{sum(row['passed'] for row in subset)}/{len(subset)}</td></tr>")
+        provenance = run["configuration"].get("provenance", {})
+        build = provenance.get("core_sha256", {}).get("v2" if implementation == "v2" else "worker_and_v1", "not recorded")
+        if implementation == "sglang":
+            build = provenance.get("engine_packages", {}).get("sglang", "see environment")
+        configurations.append(f"<tr><td>{implementation}</td><td>{tags}</td><td>{interval}</td><td>{sum(row['passed'] for row in subset)}/{len(subset)}</td><td>{html.escape(build[:24])}</td></tr>")
     history = []
     for run in runs:
         subset = run["results"]
@@ -213,7 +217,29 @@ def report(directory):
         lead = round(events[-1]["ms"] - first, 3) if first is not None else None
         progress.append(f"<tr><td>{html.escape(label)}</td><td>{len(times)}</td><td>{first}</td><td>{lead}</td></tr>")
     metadata_path = directory / "metadata.json"
-    metadata = ("<h2>Environment and local validation</h2><pre>" + html.escape(metadata_path.read_text()) + "</pre>") if metadata_path.exists() else ""
+    metadata = ""
+    if metadata_path.exists():
+        environment = json.loads(metadata_path.read_text())
+        checks = environment.get("local_validation", {})
+        validation = [
+            ("V2 authored parser cases", f"{checks.get('v2_authored_cases', '?')}/236"),
+            ("Additional M3 chunk schedules", checks.get("v2_chunk_schedules", "?")),
+            ("V1 batch matches / supported requests", f"{checks.get('v1_batch_matches', '?')}/{checks.get('v1_batch_comparable_total', '?')}"),
+            ("V1 batch unsupported request modes", checks.get("v1_batch_unsupported_modes", "?")),
+            ("Native Rust tests passed", checks.get("v2_native_tests_passed", "?")),
+            ("Production XGrammar checks passed", checks.get("xgrammar_production_checks_passed", "?")),
+        ]
+        findings = environment.get("findings", [])
+        metadata = "<h2>Findings and limits</h2><ul>" + "".join(
+            f"<li>{html.escape(finding)}</li>" for finding in findings) + "</ul>"
+        metadata += "<h2>Hermetic parser validation</h2><table>" + "".join(
+            f"<tr><td>{html.escape(label)}</td><td>{html.escape(str(value))}</td></tr>"
+            for label, value in validation) + "</table>"
+        evidence = [path for path in ("offline/v1-batch-score.json", "diagnostics/model-generation-raw-proof.json")
+                    if (directory / path).exists()]
+        if evidence:
+            metadata += "<p>Evidence: " + ", ".join(f'<a href="{path}">{path}</a>' for path in evidence) + "</p>"
+        metadata += "<h2>Environment and scope</h2><pre>" + html.escape(metadata_path.read_text()) + "</pre>"
     details = []
     for row in rows:
         name = f"{row['implementation']} / {row['id']} / reasoning={row['reasoning']} / tags={row['structural_tags']} / interval={row['stream_interval']} / stream={row['stream']}"
@@ -223,7 +249,7 @@ def report(directory):
             view["turns"].append({**{key:value for key,value in turn.items() if key != "events"},
                                   "event_count": len(events), "first_events": events[:2], "last_events": events[-2:]})
         details.append(f"<details><summary class={'pass' if row['passed'] else 'fail'}>{'PASS' if row['passed'] else 'FAIL'} {html.escape(name)}</summary><pre>{html.escape(json.dumps(view, indent=2, ensure_ascii=False))}</pre></details>")
-    (directory / "report.html").write_text("<!doctype html><meta charset=utf-8><title>MiniMax M3 parser validation</title><style>body{font:16px system-ui;max-width:1200px;margin:40px auto;padding:20px}table{border-collapse:collapse}th,td{padding:8px 16px;text-align:left;border-bottom:1px solid #ddd;vertical-align:top}pre{white-space:pre-wrap;overflow-wrap:anywhere}.pass{color:#246c27}.fail{color:#a22121}details{padding:6px}</style><h1>MiniMax M3 parser validation</h1><p>Scores use exact tool arguments, JSON Schema types, reasoning controls, tool IDs, finish reasons and incremental delivery. Request and SSE evidence is retained below.</p><table><tr><th>Implementation</th><th>Passed / executed</th></tr>" + "".join(summaries) + "</table><h2>Deployed configurations</h2><table><tr><th>Implementation</th><th>Structural tags</th><th>Stream interval</th><th>Passed / executed</th></tr>" + "".join(configurations) + "</table><h2>Observed SSE argument delivery</h2><table><tr><th>Long-string configuration</th><th>Argument frames</th><th>First argument (ms)</th><th>Time before terminal frame (ms)</th></tr>" + "".join(progress) + "</table><h2>All recorded iterations</h2><p>Earlier failures remain in immutable captures. Input hashes distinguish suite versions.</p><table><tr><th>Configuration</th><th>Passed</th><th>Started UTC</th><th>Concurrency</th><th>Suite SHA</th><th>Evidence</th></tr>" + "".join(history) + "</table>" + metadata + "<h2>Case evidence</h2><p>Full SSE events and timing are preserved in the adjacent JSON captures. Each disclosure includes the request, assembled response and first/last events.</p>" + "".join(details))
+    (directory / "report.html").write_text("<!doctype html><meta charset=utf-8><title>MiniMax M3 parser validation</title><style>body{font:16px system-ui;max-width:1200px;margin:40px auto;padding:20px}table{border-collapse:collapse}th,td{padding:8px 16px;text-align:left;border-bottom:1px solid #ddd;vertical-align:top}pre{white-space:pre-wrap;overflow-wrap:anywhere}.pass{color:#246c27}.fail{color:#a22121}details{padding:6px}</style><h1>MiniMax M3 parser validation</h1><p>Scores use exact tool arguments, JSON Schema types, reasoning controls, tool IDs, finish reasons and incremental delivery. Request and SSE evidence is retained below.</p><table><tr><th>Implementation</th><th>Passed / executed</th></tr>" + "".join(summaries) + "</table><h2>Deployed configurations</h2><table><tr><th>Implementation</th><th>Structural tags</th><th>Stream interval</th><th>Passed / executed</th><th>Build</th></tr>" + "".join(configurations) + "</table><h2>Observed SSE argument delivery</h2><table><tr><th>Long-string configuration</th><th>Argument frames</th><th>First argument (ms)</th><th>Time before terminal frame (ms)</th></tr>" + "".join(progress) + "</table><h2>All recorded iterations</h2><p>Earlier failures remain in immutable captures. Input hashes distinguish suite versions.</p><table><tr><th>Configuration</th><th>Passed</th><th>Started UTC</th><th>Concurrency</th><th>Suite SHA</th><th>Evidence</th></tr>" + "".join(history) + "</table>" + metadata + "<h2>Case evidence</h2><p>Full SSE events and timing are preserved in the adjacent JSON captures. Each disclosure includes the request, assembled response and first/last events.</p>" + "".join(details))
 
 
 def main():
@@ -255,7 +281,8 @@ def main():
     started_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
     run_id = args.run_id or datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     provenance = json.loads(args.provenance.read_text()) if args.provenance else {}
-    suite = yaml.safe_load(args.cases.read_text())
+    suite_bytes = args.cases.read_bytes()
+    suite = yaml.safe_load(suite_bytes)
     jobs = [(case, reasoning, stream) for case, reasoning, stream in itertools.product(suite["cases"], suite["matrix"]["reasoning"], suite["matrix"]["stream"]) if not args.case or case["id"] in args.case]
     name = f"{args.implementation}-tags-{args.structural_tags}-interval-{args.stream_interval}-{run_id}"
     results = [None] * len(jobs)
@@ -272,7 +299,7 @@ def main():
     with path.open("x") as output:
         json.dump({"configuration": {"url":args.url,"model":args.model or suite['model'],"started_at":started_at,
                   "concurrency":args.concurrency,"max_tokens":args.max_tokens,"timeout_seconds":args.timeout,
-                  "suite_sha256":hashlib.sha256(args.cases.read_bytes()).hexdigest(),"provenance":provenance},
+                  "suite_sha256":hashlib.sha256(suite_bytes).hexdigest(),"provenance":provenance},
                   "results": results}, output, indent=2, ensure_ascii=False)
     report(args.output)
     passed = sum(row["passed"] for row in results)

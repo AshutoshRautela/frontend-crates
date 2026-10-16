@@ -10,6 +10,7 @@ nohup setsid python3 -m dynamo.sglang \
   --dyn-tool-call-parser minimax_m3 --dyn-reasoning-parser minimax_m3 \
   --dyn-structural-tag "$tags" --reasoning-parser minimax-m3 \
   --model-path MiniMaxAI/MiniMax-M3-MXFP8 \
+  --revision c5454eb03678d8710e54a4e0fc681b9f3b4a3dba \
   --served-model-name MiniMaxAI/MiniMax-M3-MXFP8 \
   --tp 4 --attention-backend fa4 --moe-runner-backend deep_gemm \
   --context-length 8192 --chunked-prefill-size 4096 \

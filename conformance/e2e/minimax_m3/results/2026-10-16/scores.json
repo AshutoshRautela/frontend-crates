@@ -1,0 +1,1069 @@
+{
+  "generated_utc": "2026-10-16T10:58:50.748689+00:00",
+  "suite_sha256": "71763edf558462ebc34ae7894984e46581136a16825aff2b73db794085907008",
+  "overall": {
+    "sglang": {
+      "passed": 232,
+      "total": 368
+    },
+    "v1": {
+      "passed": 355,
+      "total": 368
+    },
+    "v2": {
+      "passed": 362,
+      "total": 368
+    }
+  },
+  "configurations": [
+    {
+      "implementation": "sglang",
+      "structural_tags_requested": false,
+      "stream_interval": 1,
+      "passed": 89,
+      "total": 92,
+      "capture_file": "sglang-tags-off-interval-1-20261016T080746902088Z.json",
+      "failures": [
+        {
+          "id": "literal_markup",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: control marker leaked into reasoning_content"
+        },
+        {
+          "id": "literal_markup",
+          "reasoning": "disabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'literal <mm:think>x</mm:think> & <tag>'}}]; got []"
+        },
+        {
+          "id": "literal_markup",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'literal <mm:think>x</mm:think> & <tag>'}}]; got [{'name': 'echo', 'arguments': {'text': 'literal  & <tag>'}}]"
+        }
+      ]
+    },
+    {
+      "implementation": "sglang",
+      "structural_tags_requested": false,
+      "stream_interval": 20,
+      "passed": 71,
+      "total": 92,
+      "capture_file": "sglang-tags-off-interval-20-20261016T082818015386Z.json",
+      "failures": [
+        {
+          "id": "required_integer",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "JSONDecodeError: Expecting value: line 1 column 1 (char 0)"
+        },
+        {
+          "id": "required_integer",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "JSONDecodeError: Expecting value: line 1 column 1 (char 0)"
+        },
+        {
+          "id": "named_integer",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "JSONDecodeError: Expecting value: line 1 column 1 (char 0)"
+        },
+        {
+          "id": "named_integer",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "JSONDecodeError: Expecting value: line 1 column 1 (char 0)"
+        },
+        {
+          "id": "local_ref",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "JSONDecodeError: Expecting value: line 1 column 1 (char 0)"
+        },
+        {
+          "id": "unicode",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "JSONDecodeError: Expecting value: line 1 column 1 (char 0)"
+        },
+        {
+          "id": "unicode",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "JSONDecodeError: Expecting value: line 1 column 1 (char 0)"
+        },
+        {
+          "id": "literal_markup",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'literal <mm:think>x</mm:think> & <tag>'}}]; got [{'name': 'echo', 'arguments': {'text': 'literal <mm:think>x</mm:think> & <tag>'}}, {'name': 'echo', 'arguments': {'text': 'literal <mm:think>x</mm:think> & <tag>'}}]"
+        },
+        {
+          "id": "literal_markup",
+          "reasoning": "disabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'literal <mm:think>x</mm:think> & <tag>'}}]; got []"
+        },
+        {
+          "id": "literal_markup",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'literal <mm:think>x</mm:think> & <tag>'}}]; got []"
+        },
+        {
+          "id": "parallel_distinct",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "JSONDecodeError: Expecting value: line 1 column 1 (char 0)"
+        },
+        {
+          "id": "parallel_distinct",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'add', 'arguments': {'a': 17, 'b': 25}}, {'name': 'get_weather', 'arguments': {'city': 'Paris'}}]; got [{'name': 'add', 'arguments': {'a': 17, 'b': 25}}]"
+        },
+        {
+          "id": "parallel_same_tool",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'get_weather', 'arguments': {'city': 'Paris'}}, {'name': 'get_weather', 'arguments': {'city': 'Tokyo'}}]; got [{'name': 'get_weather', 'arguments': {'city': 'Paris'}}]"
+        },
+        {
+          "id": "parallel_same_tool",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'get_weather', 'arguments': {'city': 'Paris'}}, {'name': 'get_weather', 'arguments': {'city': 'Tokyo'}}]; got [{'name': 'get_weather', 'arguments': {'city': 'Paris'}}]"
+        },
+        {
+          "id": "single_call_policy",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "JSONDecodeError: Expecting value: line 1 column 1 (char 0)"
+        },
+        {
+          "id": "multi_turn_second_tool",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "JSONDecodeError: Expecting value: line 1 column 1 (char 0)"
+        },
+        {
+          "id": "multi_turn_second_tool",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "JSONDecodeError: Expecting value: line 1 column 1 (char 0)"
+        },
+        {
+          "id": "long_string_streaming",
+          "reasoning": "disabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789'}}]; got [{'name': 'echo', 'arguments': {'text': 'abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789'}}]"
+        },
+        {
+          "id": "long_string_streaming",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789'}}]; got [{'name': 'echo', 'arguments': {'text': 'abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789'}}]"
+        },
+        {
+          "id": "parameterless",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "JSONDecodeError: Expecting value: line 1 column 1 (char 0)"
+        },
+        {
+          "id": "parameterless",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "JSONDecodeError: Expecting value: line 1 column 1 (char 0)"
+        }
+      ]
+    },
+    {
+      "implementation": "sglang",
+      "structural_tags_requested": true,
+      "stream_interval": 1,
+      "passed": 36,
+      "total": 92,
+      "capture_file": "sglang-tags-on-interval-1-20261016T105316367541Z.json",
+      "failures": [
+        {
+          "id": "required_integer",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'add', 'arguments': {'a': 17, 'b': 25}}]; got []"
+        },
+        {
+          "id": "required_integer",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'add', 'arguments': {'a': 17, 'b': 25}}]; got []"
+        },
+        {
+          "id": "required_integer",
+          "reasoning": "disabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'add', 'arguments': {'a': 17, 'b': 25}}]; got []"
+        },
+        {
+          "id": "required_integer",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'add', 'arguments': {'a': 17, 'b': 25}}]; got []"
+        },
+        {
+          "id": "named_integer",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'add', 'arguments': {'a': 17, 'b': 25}}]; got []"
+        },
+        {
+          "id": "named_integer",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'add', 'arguments': {'a': 17, 'b': 25}}]; got []"
+        },
+        {
+          "id": "named_integer",
+          "reasoning": "disabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'add', 'arguments': {'a': 17, 'b': 25}}]; got []"
+        },
+        {
+          "id": "named_integer",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'add', 'arguments': {'a': 17, 'b': 25}}]; got []"
+        },
+        {
+          "id": "typed_scalars",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'configure', 'arguments': {'ratio': 0.125, 'enabled': False, 'mode': 'safe'}}]; got []"
+        },
+        {
+          "id": "typed_scalars",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'configure', 'arguments': {'ratio': 0.125, 'enabled': False, 'mode': 'safe'}}]; got []"
+        },
+        {
+          "id": "typed_scalars",
+          "reasoning": "disabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'configure', 'arguments': {'ratio': 0.125, 'enabled': False, 'mode': 'safe'}}]; got []"
+        },
+        {
+          "id": "typed_scalars",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'configure', 'arguments': {'ratio': 0.125, 'enabled': False, 'mode': 'safe'}}]; got []"
+        },
+        {
+          "id": "nested_containers",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'record', 'arguments': {'items': [{'name': 'alpha', 'count': 2}, {'name': 'beta', 'count': 3}], 'tags': ['one', 'two']}}]; got []"
+        },
+        {
+          "id": "nested_containers",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'record', 'arguments': {'items': [{'name': 'alpha', 'count': 2}, {'name': 'beta', 'count': 3}], 'tags': ['one', 'two']}}]; got []"
+        },
+        {
+          "id": "nested_containers",
+          "reasoning": "disabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'record', 'arguments': {'items': [{'name': 'alpha', 'count': 2}, {'name': 'beta', 'count': 3}], 'tags': ['one', 'two']}}]; got []"
+        },
+        {
+          "id": "nested_containers",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'record', 'arguments': {'items': [{'name': 'alpha', 'count': 2}, {'name': 'beta', 'count': 3}], 'tags': ['one', 'two']}}]; got []"
+        },
+        {
+          "id": "local_ref",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'capture_payload', 'arguments': {'count': 42}}]; got []"
+        },
+        {
+          "id": "local_ref",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'capture_payload', 'arguments': {'count': 42}}]; got []"
+        },
+        {
+          "id": "local_ref",
+          "reasoning": "disabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'capture_payload', 'arguments': {'count': 42}}]; got []"
+        },
+        {
+          "id": "local_ref",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'capture_payload', 'arguments': {'count': 42}}]; got []"
+        },
+        {
+          "id": "unicode",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'S\u00e3o Paulo \u6771\u4eac \u4e16\u754c'}}]; got []"
+        },
+        {
+          "id": "unicode",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'S\u00e3o Paulo \u6771\u4eac \u4e16\u754c'}}]; got []"
+        },
+        {
+          "id": "unicode",
+          "reasoning": "disabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'S\u00e3o Paulo \u6771\u4eac \u4e16\u754c'}}]; got []"
+        },
+        {
+          "id": "unicode",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'S\u00e3o Paulo \u6771\u4eac \u4e16\u754c'}}]; got []"
+        },
+        {
+          "id": "literal_markup",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'literal <mm:think>x</mm:think> & <tag>'}}]; got []"
+        },
+        {
+          "id": "literal_markup",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'literal <mm:think>x</mm:think> & <tag>'}}]; got []"
+        },
+        {
+          "id": "literal_markup",
+          "reasoning": "disabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'literal <mm:think>x</mm:think> & <tag>'}}]; got []"
+        },
+        {
+          "id": "literal_markup",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'literal <mm:think>x</mm:think> & <tag>'}}]; got []"
+        },
+        {
+          "id": "parallel_distinct",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'add', 'arguments': {'a': 17, 'b': 25}}, {'name': 'get_weather', 'arguments': {'city': 'Paris'}}]; got []"
+        },
+        {
+          "id": "parallel_distinct",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'add', 'arguments': {'a': 17, 'b': 25}}, {'name': 'get_weather', 'arguments': {'city': 'Paris'}}]; got []"
+        },
+        {
+          "id": "parallel_distinct",
+          "reasoning": "disabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'add', 'arguments': {'a': 17, 'b': 25}}, {'name': 'get_weather', 'arguments': {'city': 'Paris'}}]; got []"
+        },
+        {
+          "id": "parallel_distinct",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'add', 'arguments': {'a': 17, 'b': 25}}, {'name': 'get_weather', 'arguments': {'city': 'Paris'}}]; got []"
+        },
+        {
+          "id": "parallel_same_tool",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'get_weather', 'arguments': {'city': 'Paris'}}, {'name': 'get_weather', 'arguments': {'city': 'Tokyo'}}]; got []"
+        },
+        {
+          "id": "parallel_same_tool",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'get_weather', 'arguments': {'city': 'Paris'}}, {'name': 'get_weather', 'arguments': {'city': 'Tokyo'}}]; got []"
+        },
+        {
+          "id": "parallel_same_tool",
+          "reasoning": "disabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'get_weather', 'arguments': {'city': 'Paris'}}, {'name': 'get_weather', 'arguments': {'city': 'Tokyo'}}]; got []"
+        },
+        {
+          "id": "parallel_same_tool",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'get_weather', 'arguments': {'city': 'Paris'}}, {'name': 'get_weather', 'arguments': {'city': 'Tokyo'}}]; got []"
+        },
+        {
+          "id": "single_call_policy",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'add', 'arguments': {'a': 17, 'b': 25}}]; got []"
+        },
+        {
+          "id": "single_call_policy",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'add', 'arguments': {'a': 17, 'b': 25}}]; got []"
+        },
+        {
+          "id": "single_call_policy",
+          "reasoning": "disabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'add', 'arguments': {'a': 17, 'b': 25}}]; got []"
+        },
+        {
+          "id": "single_call_policy",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'add', 'arguments': {'a': 17, 'b': 25}}]; got []"
+        },
+        {
+          "id": "multi_turn_second_tool",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'get_weather', 'arguments': {'city': 'Tokyo'}}]; got []"
+        },
+        {
+          "id": "multi_turn_second_tool",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'get_weather', 'arguments': {'city': 'Tokyo'}}]; got []"
+        },
+        {
+          "id": "multi_turn_second_tool",
+          "reasoning": "disabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'get_weather', 'arguments': {'city': 'Tokyo'}}]; got []"
+        },
+        {
+          "id": "multi_turn_second_tool",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'get_weather', 'arguments': {'city': 'Tokyo'}}]; got []"
+        },
+        {
+          "id": "long_string_streaming",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789'}}]; got []"
+        },
+        {
+          "id": "long_string_streaming",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789'}}]; got []"
+        },
+        {
+          "id": "long_string_streaming",
+          "reasoning": "disabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789'}}]; got []"
+        },
+        {
+          "id": "long_string_streaming",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789'}}]; got []"
+        },
+        {
+          "id": "parameterless",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'get_server_time', 'arguments': {}}]; got []"
+        },
+        {
+          "id": "parameterless",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'get_server_time', 'arguments': {}}]; got []"
+        },
+        {
+          "id": "parameterless",
+          "reasoning": "disabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'get_server_time', 'arguments': {}}]; got []"
+        },
+        {
+          "id": "parameterless",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'get_server_time', 'arguments': {}}]; got []"
+        },
+        {
+          "id": "json_escaping",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'line1\\n\"quoted\"\\\\path\\tend'}}]; got []"
+        },
+        {
+          "id": "json_escaping",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'line1\\n\"quoted\"\\\\path\\tend'}}]; got []"
+        },
+        {
+          "id": "json_escaping",
+          "reasoning": "disabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'line1\\n\"quoted\"\\\\path\\tend'}}]; got []"
+        },
+        {
+          "id": "json_escaping",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'line1\\n\"quoted\"\\\\path\\tend'}}]; got []"
+        }
+      ]
+    },
+    {
+      "implementation": "sglang",
+      "structural_tags_requested": true,
+      "stream_interval": 20,
+      "passed": 36,
+      "total": 92,
+      "capture_file": "sglang-tags-on-interval-20-20261016T104756872620Z.json",
+      "failures": [
+        {
+          "id": "required_integer",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'add', 'arguments': {'a': 17, 'b': 25}}]; got []"
+        },
+        {
+          "id": "required_integer",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'add', 'arguments': {'a': 17, 'b': 25}}]; got []"
+        },
+        {
+          "id": "required_integer",
+          "reasoning": "disabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'add', 'arguments': {'a': 17, 'b': 25}}]; got []"
+        },
+        {
+          "id": "required_integer",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'add', 'arguments': {'a': 17, 'b': 25}}]; got []"
+        },
+        {
+          "id": "named_integer",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'add', 'arguments': {'a': 17, 'b': 25}}]; got []"
+        },
+        {
+          "id": "named_integer",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'add', 'arguments': {'a': 17, 'b': 25}}]; got []"
+        },
+        {
+          "id": "named_integer",
+          "reasoning": "disabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'add', 'arguments': {'a': 17, 'b': 25}}]; got []"
+        },
+        {
+          "id": "named_integer",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'add', 'arguments': {'a': 17, 'b': 25}}]; got []"
+        },
+        {
+          "id": "typed_scalars",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'configure', 'arguments': {'ratio': 0.125, 'enabled': False, 'mode': 'safe'}}]; got []"
+        },
+        {
+          "id": "typed_scalars",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'configure', 'arguments': {'ratio': 0.125, 'enabled': False, 'mode': 'safe'}}]; got []"
+        },
+        {
+          "id": "typed_scalars",
+          "reasoning": "disabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'configure', 'arguments': {'ratio': 0.125, 'enabled': False, 'mode': 'safe'}}]; got []"
+        },
+        {
+          "id": "typed_scalars",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'configure', 'arguments': {'ratio': 0.125, 'enabled': False, 'mode': 'safe'}}]; got []"
+        },
+        {
+          "id": "nested_containers",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'record', 'arguments': {'items': [{'name': 'alpha', 'count': 2}, {'name': 'beta', 'count': 3}], 'tags': ['one', 'two']}}]; got []"
+        },
+        {
+          "id": "nested_containers",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'record', 'arguments': {'items': [{'name': 'alpha', 'count': 2}, {'name': 'beta', 'count': 3}], 'tags': ['one', 'two']}}]; got []"
+        },
+        {
+          "id": "nested_containers",
+          "reasoning": "disabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'record', 'arguments': {'items': [{'name': 'alpha', 'count': 2}, {'name': 'beta', 'count': 3}], 'tags': ['one', 'two']}}]; got []"
+        },
+        {
+          "id": "nested_containers",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'record', 'arguments': {'items': [{'name': 'alpha', 'count': 2}, {'name': 'beta', 'count': 3}], 'tags': ['one', 'two']}}]; got []"
+        },
+        {
+          "id": "local_ref",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'capture_payload', 'arguments': {'count': 42}}]; got []"
+        },
+        {
+          "id": "local_ref",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'capture_payload', 'arguments': {'count': 42}}]; got []"
+        },
+        {
+          "id": "local_ref",
+          "reasoning": "disabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'capture_payload', 'arguments': {'count': 42}}]; got []"
+        },
+        {
+          "id": "local_ref",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'capture_payload', 'arguments': {'count': 42}}]; got []"
+        },
+        {
+          "id": "unicode",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'S\u00e3o Paulo \u6771\u4eac \u4e16\u754c'}}]; got []"
+        },
+        {
+          "id": "unicode",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'S\u00e3o Paulo \u6771\u4eac \u4e16\u754c'}}]; got []"
+        },
+        {
+          "id": "unicode",
+          "reasoning": "disabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'S\u00e3o Paulo \u6771\u4eac \u4e16\u754c'}}]; got []"
+        },
+        {
+          "id": "unicode",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'S\u00e3o Paulo \u6771\u4eac \u4e16\u754c'}}]; got []"
+        },
+        {
+          "id": "literal_markup",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'literal <mm:think>x</mm:think> & <tag>'}}]; got []"
+        },
+        {
+          "id": "literal_markup",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'literal <mm:think>x</mm:think> & <tag>'}}]; got []"
+        },
+        {
+          "id": "literal_markup",
+          "reasoning": "disabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'literal <mm:think>x</mm:think> & <tag>'}}]; got []"
+        },
+        {
+          "id": "literal_markup",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'literal <mm:think>x</mm:think> & <tag>'}}]; got []"
+        },
+        {
+          "id": "parallel_distinct",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'add', 'arguments': {'a': 17, 'b': 25}}, {'name': 'get_weather', 'arguments': {'city': 'Paris'}}]; got []"
+        },
+        {
+          "id": "parallel_distinct",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'add', 'arguments': {'a': 17, 'b': 25}}, {'name': 'get_weather', 'arguments': {'city': 'Paris'}}]; got []"
+        },
+        {
+          "id": "parallel_distinct",
+          "reasoning": "disabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'add', 'arguments': {'a': 17, 'b': 25}}, {'name': 'get_weather', 'arguments': {'city': 'Paris'}}]; got []"
+        },
+        {
+          "id": "parallel_distinct",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'add', 'arguments': {'a': 17, 'b': 25}}, {'name': 'get_weather', 'arguments': {'city': 'Paris'}}]; got []"
+        },
+        {
+          "id": "parallel_same_tool",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'get_weather', 'arguments': {'city': 'Paris'}}, {'name': 'get_weather', 'arguments': {'city': 'Tokyo'}}]; got []"
+        },
+        {
+          "id": "parallel_same_tool",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'get_weather', 'arguments': {'city': 'Paris'}}, {'name': 'get_weather', 'arguments': {'city': 'Tokyo'}}]; got []"
+        },
+        {
+          "id": "parallel_same_tool",
+          "reasoning": "disabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'get_weather', 'arguments': {'city': 'Paris'}}, {'name': 'get_weather', 'arguments': {'city': 'Tokyo'}}]; got []"
+        },
+        {
+          "id": "parallel_same_tool",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'get_weather', 'arguments': {'city': 'Paris'}}, {'name': 'get_weather', 'arguments': {'city': 'Tokyo'}}]; got []"
+        },
+        {
+          "id": "single_call_policy",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'add', 'arguments': {'a': 17, 'b': 25}}]; got []"
+        },
+        {
+          "id": "single_call_policy",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'add', 'arguments': {'a': 17, 'b': 25}}]; got []"
+        },
+        {
+          "id": "single_call_policy",
+          "reasoning": "disabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'add', 'arguments': {'a': 17, 'b': 25}}]; got []"
+        },
+        {
+          "id": "single_call_policy",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'add', 'arguments': {'a': 17, 'b': 25}}]; got []"
+        },
+        {
+          "id": "multi_turn_second_tool",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'get_weather', 'arguments': {'city': 'Tokyo'}}]; got []"
+        },
+        {
+          "id": "multi_turn_second_tool",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'get_weather', 'arguments': {'city': 'Tokyo'}}]; got []"
+        },
+        {
+          "id": "multi_turn_second_tool",
+          "reasoning": "disabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'get_weather', 'arguments': {'city': 'Tokyo'}}]; got []"
+        },
+        {
+          "id": "multi_turn_second_tool",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'get_weather', 'arguments': {'city': 'Tokyo'}}]; got []"
+        },
+        {
+          "id": "long_string_streaming",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789'}}]; got []"
+        },
+        {
+          "id": "long_string_streaming",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789'}}]; got []"
+        },
+        {
+          "id": "long_string_streaming",
+          "reasoning": "disabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789'}}]; got []"
+        },
+        {
+          "id": "long_string_streaming",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789'}}]; got []"
+        },
+        {
+          "id": "parameterless",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'get_server_time', 'arguments': {}}]; got []"
+        },
+        {
+          "id": "parameterless",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'get_server_time', 'arguments': {}}]; got []"
+        },
+        {
+          "id": "parameterless",
+          "reasoning": "disabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'get_server_time', 'arguments': {}}]; got []"
+        },
+        {
+          "id": "parameterless",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'get_server_time', 'arguments': {}}]; got []"
+        },
+        {
+          "id": "json_escaping",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'line1\\n\"quoted\"\\\\path\\tend'}}]; got []"
+        },
+        {
+          "id": "json_escaping",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'line1\\n\"quoted\"\\\\path\\tend'}}]; got []"
+        },
+        {
+          "id": "json_escaping",
+          "reasoning": "disabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'line1\\n\"quoted\"\\\\path\\tend'}}]; got []"
+        },
+        {
+          "id": "json_escaping",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'line1\\n\"quoted\"\\\\path\\tend'}}]; got []"
+        }
+      ]
+    },
+    {
+      "implementation": "v1",
+      "structural_tags_requested": false,
+      "stream_interval": 1,
+      "passed": 89,
+      "total": 92,
+      "capture_file": "v1-tags-off-interval-1-20261016T083829037793Z.json",
+      "failures": [
+        {
+          "id": "literal_markup",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'literal <mm:think>x</mm:think> & <tag>'}}]; got [{'name': 'echo', 'arguments': {'text': 'literal  & <tag>'}}]"
+        },
+        {
+          "id": "literal_markup",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'literal <mm:think>x</mm:think> & <tag>'}}]; got [{'name': 'echo', 'arguments': {'text': 'literal  & <tag>'}}]"
+        },
+        {
+          "id": "long_string_streaming",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789'}}]; got [{'name': 'echo', 'arguments': {'text': 'abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789'}}]"
+        }
+      ]
+    },
+    {
+      "implementation": "v1",
+      "structural_tags_requested": false,
+      "stream_interval": 20,
+      "passed": 88,
+      "total": 92,
+      "capture_file": "v1-tags-off-interval-20-20261016T091332449011Z.json",
+      "failures": [
+        {
+          "id": "literal_markup",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'literal <mm:think>x</mm:think> & <tag>'}}]; got [{'name': 'echo', 'arguments': {'text': 'literal  & <tag>'}}]"
+        },
+        {
+          "id": "literal_markup",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'literal <mm:think>x</mm:think> & <tag>'}}]; got [{'name': 'echo', 'arguments': {'text': 'literal  & <tag>'}}]"
+        },
+        {
+          "id": "long_string_streaming",
+          "reasoning": "disabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789'}}]; got [{'name': 'echo', 'arguments': {'text': 'abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789'}}]"
+        },
+        {
+          "id": "long_string_streaming",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789'}}]; got [{'name': 'echo', 'arguments': {'text': 'abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789'}}]"
+        }
+      ]
+    },
+    {
+      "implementation": "v1",
+      "structural_tags_requested": true,
+      "stream_interval": 1,
+      "passed": 90,
+      "total": 92,
+      "capture_file": "v1-tags-on-interval-1-20261016T100847554737Z.json",
+      "failures": [
+        {
+          "id": "literal_markup",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'literal <mm:think>x</mm:think> & <tag>'}}]; got [{'name': 'echo', 'arguments': {'text': 'literal  & <tag>'}}]"
+        },
+        {
+          "id": "literal_markup",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'literal <mm:think>x</mm:think> & <tag>'}}]; got [{'name': 'echo', 'arguments': {'text': 'literal  & <tag>'}}]"
+        }
+      ]
+    },
+    {
+      "implementation": "v1",
+      "structural_tags_requested": true,
+      "stream_interval": 20,
+      "passed": 88,
+      "total": 92,
+      "capture_file": "v1-tags-on-interval-20-20261016T093016916451Z.json",
+      "failures": [
+        {
+          "id": "literal_markup",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'literal <mm:think>x</mm:think> & <tag>'}}]; got [{'name': 'echo', 'arguments': {'text': 'literal  & <tag>'}}]"
+        },
+        {
+          "id": "literal_markup",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'literal <mm:think>x</mm:think> & <tag>'}}]; got [{'name': 'echo', 'arguments': {'text': 'literal  & <tag>'}}]"
+        },
+        {
+          "id": "json_escaping",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'line1\\n\"quoted\"\\\\path\\tend'}}]; got [{'name': 'echo', 'arguments': {'text': 'line1\\n\"quoted\"\\\\\\tpath\\tend'}}]"
+        },
+        {
+          "id": "json_escaping",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'line1\\n\"quoted\"\\\\path\\tend'}}]; got [{'name': 'echo', 'arguments': {'text': 'line1\\n\"quoted\"\\\\\\tpath\\tend'}}]"
+        }
+      ]
+    },
+    {
+      "implementation": "v2",
+      "structural_tags_requested": false,
+      "stream_interval": 1,
+      "passed": 92,
+      "total": 92,
+      "capture_file": "v2-tags-off-interval-1-20261016T103002733158Z.json",
+      "failures": []
+    },
+    {
+      "implementation": "v2",
+      "structural_tags_requested": false,
+      "stream_interval": 20,
+      "passed": 92,
+      "total": 92,
+      "capture_file": "v2-tags-off-interval-20-20261016T103530668042Z.json",
+      "failures": []
+    },
+    {
+      "implementation": "v2",
+      "structural_tags_requested": true,
+      "stream_interval": 1,
+      "passed": 88,
+      "total": 92,
+      "capture_file": "v2-tags-on-interval-1-20261016T102441912295Z.json",
+      "failures": [
+        {
+          "id": "long_string_streaming",
+          "reasoning": "disabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789'}}]; got [{'name': 'echo', 'arguments': {'text': 'abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789'}}]"
+        },
+        {
+          "id": "long_string_streaming",
+          "reasoning": "disabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789'}}]; got [{'name': 'echo', 'arguments': {'text': 'abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789'}}]"
+        },
+        {
+          "id": "json_escaping",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'line1\\n\"quoted\"\\\\path\\tend'}}]; got [{'name': 'echo', 'arguments': {'text': 'line1\\\\n\\\\\"quoted\\\\\"\\\\\\\\path\\\\tend'}}]"
+        },
+        {
+          "id": "json_escaping",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'line1\\n\"quoted\"\\\\path\\tend'}}]; got [{'name': 'echo', 'arguments': {'text': 'line1\\\\n\\\\\"quoted\\\\\"\\\\\\\\path\\\\tend'}}]"
+        }
+      ]
+    },
+    {
+      "implementation": "v2",
+      "structural_tags_requested": true,
+      "stream_interval": 20,
+      "passed": 90,
+      "total": 92,
+      "capture_file": "v2-tags-on-interval-20-20261016T104055149687Z.json",
+      "failures": [
+        {
+          "id": "json_escaping",
+          "reasoning": "enabled",
+          "stream": false,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'line1\\n\"quoted\"\\\\path\\tend'}}]; got [{'name': 'echo', 'arguments': {'text': 'line1\\\\n\\\\\"quoted\\\\\"\\\\\\\\path\\\\tend'}}]"
+        },
+        {
+          "id": "json_escaping",
+          "reasoning": "enabled",
+          "stream": true,
+          "error": "AssertionError: calls: expected [{'name': 'echo', 'arguments': {'text': 'line1\\n\"quoted\"\\\\path\\tend'}}]; got [{'name': 'echo', 'arguments': {'text': 'line1\\\\n\\\\\"quoted\\\\\"\\\\\\\\path\\\\tend'}}]"
+        }
+      ]
+    }
+  ],
+  "acceptance": "V2 parser conformance is green;6 exact live value assertions remain. Proposed schema changes await approval."
+}

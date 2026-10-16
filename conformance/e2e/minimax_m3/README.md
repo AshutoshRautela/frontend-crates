@@ -43,3 +43,14 @@ On a Linux environment with XGrammar 0.2.8, verify that native parallel invocati
 ```
 
 M3's native XML cannot preserve every JSON Schema constraint. Unsupported unions and constrained strings retain the existing JSON-guidance path; tagged replay still checks the original schema and expected arguments.
+
+Recorded runs, original failures, build identifiers, raw SSE timing, and the HTML summary live under [`results/2026-10-16`](results/2026-10-16/report.html). The original suite is preserved; proposed schema changes under `diagnostics/` are unapproved and excluded from scored runs.
+
+The offline v1 comparison distinguishes unsupported request modes from mismatches in supported modes. Replay its pinned 10.0.6 adapter with:
+
+```bash
+RUSTUP_TOOLCHAIN=1.96.1 .venv/bin/python conformance/utils/src/capture_dynamo_unified_batch.py \
+  --version 10.0.6 \
+  --job conformance/e2e/minimax_m3/results/2026-10-16/offline/v1-batch-job.json \
+  --work-dir /tmp/m3-v1-replay-producer --output /tmp/m3-v1-replay.json
+```

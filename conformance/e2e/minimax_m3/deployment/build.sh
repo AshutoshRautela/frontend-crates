@@ -14,10 +14,11 @@ cd /work/dynamo
 patch -p1 < /tmp/dynamo-integration.patch
 patch -p1 < /tmp/pinned-engine-compat.patch
 patch -p1 < /tmp/dynamo-schema-fallback.patch
+cp /tmp/dynamo.Cargo.lock Cargo.lock
 export CARGO_TARGET_DIR=/work/target CARGO_BUILD_JOBS=10 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_DEV_OPT_LEVEL=1
 export PYO3_PYTHON=/usr/bin/python3
 cd lib/bindings/python
-cargo build --no-default-features
+cargo build --locked --no-default-features
 mkdir -p /work/overlay/dynamo
 cp -a src/dynamo/. /work/overlay/dynamo/
 cp -a /work/dynamo/components/src/dynamo/. /work/overlay/dynamo/

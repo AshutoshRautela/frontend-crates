@@ -1,0 +1,10 @@
+required_integer/native: PASS
+required_integer/empty: PASS
+required_integer/wrong_integer: PASS
+required_integer/whitespace_loop: PASS
+parallel_distinct/native: PASS
+parallel_same_tool/native: PASS
+parallel_same_tool/string_whitespace: PASS
+single_call_policy/native: PASS
+single_call_policy/parallel_forbidden: PASS
+M3 production grammar: 9/9 passed
