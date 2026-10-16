@@ -2,7 +2,7 @@
   "snapshot": "20261022_224310",
   "created_pt": "2026-10-22 22:43:10 America/Los_Angeles",
   "crates": {
-    "dynamo-parsers": "10.0.7",
+    "dynamo-parsers": "10.1.1",
     "dynamo-parsers-v2": "0.7.33"
   },
   "peers": {
