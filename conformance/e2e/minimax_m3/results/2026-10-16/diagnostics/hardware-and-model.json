@@ -1,9 +1,0 @@
-{
-  "model_revision": "c5454eb03678d8710e54a4e0fc681b9f3b4a3dba",
-  "gpus": [
-    "NVIDIA B200, 183359 MiB",
-    "NVIDIA B200, 183359 MiB",
-    "NVIDIA B200, 183359 MiB",
-    "NVIDIA B200, 183359 MiB"
-  ]
-}

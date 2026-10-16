@@ -1,9 +1,0 @@
-{
-  "verified_utc": "2026-10-16T11:01:23.156765+00:00",
-  "context": "owned development cluster; exact context recorded in local task state",
-  "namespace": "dyntest-rmccormick-bot-test",
-  "task_pods_remaining": [],
-  "preexisting_shared_model_cache_pvc_phase": "Bound",
-  "namespace_phase": "Active",
-  "created_services_or_pvcs": []
-}
