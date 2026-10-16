@@ -256,7 +256,9 @@ fn reference_argument_cases_preserve_results_at_every_split() {
         "local_schema_id_preserves_type",
     ];
     let mut checked = 0;
-    for file in load_native_golden() {
+    let files = load_native_golden();
+    let family_count = files.len();
+    for file in files {
         for (id, case) in &file.cases {
             if !scenarios
                 .iter()
@@ -285,11 +287,7 @@ fn reference_argument_cases_preserve_results_at_every_split() {
             checked += 1;
         }
     }
-    let native_families = common::unified_families()
-        .values()
-        .filter(|family| family.native)
-        .count();
-    assert_eq!(checked, native_families * scenarios.len());
+    assert_eq!(checked, family_count * scenarios.len());
 }
 
 /// I6: parsing the whole output at once assembles to the streamed result.

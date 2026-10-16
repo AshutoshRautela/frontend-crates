@@ -28,6 +28,15 @@ from schema_cases import ARGUMENT_SECTIONS, CONFORMANCE_CASES, SCHEMA_GROUPS, ar
 UNIFIED_TAX = {
     "default_reasoning_without_opener": (10, "6"),
     "default_reasoning_tool_without_closer": (12, "5"),
+    'harmony_guided_json_gt_in_argument_bare_opener': ("gpt_oss", "1"),
+    'harmony_guided_json_gt_in_argument_named_bare_opener': ("gpt_oss", "2"),
+    'harmony_guided_json_narrated_prefix_inside_reasoning': ("gpt_oss", "3"),
+    'harmony_guided_json_schema_error_nameless_element_bare_opener': ("gpt_oss", "4"),
+    'harmony_guided_json_schema_error_not_a_call_bare_opener': ("gpt_oss", "5"),
+    'harmony_guided_json_stray_prefix_before_reasoning': ("gpt_oss", "6"),
+    'harmony_guided_json_syntax_error_bare_opener': ("gpt_oss", "7"),
+    'harmony_guided_json_tool_open_before_payload': ("gpt_oss", "8"),
+
     # Group 1 — Single call
     "tool_only": (1, "1"),
     # TODO: restore 1-2 in the follow-up to PR #232 (deferred-cases). Completed below; the family-scoped alias retains its historical ID.
