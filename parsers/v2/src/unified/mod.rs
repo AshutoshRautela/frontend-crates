@@ -55,6 +55,7 @@ pub mod glm47;
 mod guided_cursor;
 pub mod kimi_k2;
 pub mod kimi_k3;
+pub mod minimax_m3;
 pub mod muse_glimmer;
 pub mod qwen3;
 #[cfg(test)]
@@ -774,9 +775,14 @@ impl<E: InvokeEmitter + Send> NativeUnified for ScannerUnified<E> {
     }
 
     fn guided_grammar(&self) -> GuidedGrammar {
+        let invoke_start = self.scanner.guided_invoke_start().to_string();
+        let mut control_markers = self.scanner.control_markers().to_vec();
+        if invoke_start != self.scanner.invoke_start() {
+            control_markers.push(invoke_start.clone());
+        }
         GuidedGrammar {
-            control_markers: self.scanner.control_markers().to_vec(),
-            invoke_start: self.scanner.invoke_start().to_string(),
+            control_markers,
+            invoke_start,
             invoke_end: self.scanner.invoke_end().to_string(),
             invoke_boundary_factory: self
                 .scanner
@@ -3846,8 +3852,7 @@ impl GuidedState {
                         // Native parameter values can themselves be valid guided
                         // JSON. Resolve their envelope before the response probe
                         // is allowed to select a payload from those bytes.
-                        if self.invoke_boundary.is_none()
-                            && is_prefix_form(&self.grammar.invoke_start)
+                        if is_prefix_form(&self.grammar.invoke_start)
                             && (!flush || self.json.is_empty())
                         {
                             if !self.json.is_empty() {
@@ -5544,6 +5549,7 @@ unified_registry! {
     "deepseek_v41" => deepseek_v41::deepseek_v41_unified,
     "gemma4" => gemma4::gemma4_unified,
     "glm47" => glm47::glm47_unified,
+    "minimax_m3" | "minimax-m3" => minimax_m3::minimax_m3_unified,
     "qwen3" | "qwen3_coder" => qwen3::qwen3_unified,
     "muse_glimmer" => muse_glimmer::muse_glimmer_unified,
     "kimi_k2"               => kimi_k2::kimi_k2_unified,

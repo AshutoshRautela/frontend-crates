@@ -1,0 +1,77 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: m3-unified-model
+  labels:
+    owner: rmccormick
+    purpose: m3-unified-parser-validation
+spec:
+  restartPolicy: Never
+  terminationGracePeriodSeconds: 20
+  tolerations:
+  - key: nvidia.com/gpu
+    operator: Exists
+    effect: NoSchedule
+  containers:
+  - name: model
+    image: docker.io/lmsysorg/sglang@sha256:de63ac56df5d7b064451e21147eaab89634a02332d830ca8c01cb8c033b3a78f
+    command:
+    - bash
+    - -lc
+    args:
+    - |
+      set -euo pipefail
+      python3 -m pip install --no-deps ai-dynamo-runtime==1.5.1
+      python3 -m pip install xgrammar==0.2.8 apache-tvm-ffi==0.1.14.post1 redis
+      interval=1
+      nohup setsid python3 -m sglang.launch_server \
+        --model-path MiniMaxAI/MiniMax-M3-MXFP8 \
+        --served-model-name MiniMaxAI/MiniMax-M3-MXFP8 \
+        --reasoning-parser minimax-m3 --tool-call-parser minimax-m3 \
+        --tp 4 --attention-backend fa4 --moe-runner-backend deep_gemm \
+        --context-length 8192 --chunked-prefill-size 4096 \
+        --mem-fraction-static 0.85 --max-running-requests 16 \
+        --disable-cuda-graph --stream-interval "$interval" \
+        --host 0.0.0.0 --port 8000 --trust-remote-code \
+        > "/weights/sglang-interval-${interval}.log" 2>&1 < /dev/null &
+      echo "$!" > /weights/server.pid
+      cat /weights/server.pid
+
+      exec sleep infinity
+    env:
+    - name: HF_HOME
+      value: /weights/huggingface
+    - name: PYTHONUNBUFFERED
+      value: '1'
+    ports:
+    - containerPort: 8000
+    resources:
+      requests:
+        cpu: '32'
+        memory: 512Gi
+        ephemeral-storage: 500Gi
+        nvidia.com/gpu: '4'
+      limits:
+        cpu: '64'
+        memory: 768Gi
+        ephemeral-storage: 650Gi
+        nvidia.com/gpu: '4'
+    volumeMounts:
+    - name: weights
+      mountPath: /weights
+    - name: shm
+      mountPath: /dev/shm
+    readinessProbe:
+      httpGet:
+        path: /health
+        port: 8000
+      periodSeconds: 15
+      timeoutSeconds: 5
+  volumes:
+  - name: weights
+    emptyDir:
+      sizeLimit: 600Gi
+  - name: shm
+    emptyDir:
+      medium: Memory
+      sizeLimit: 32Gi

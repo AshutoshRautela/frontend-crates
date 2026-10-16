@@ -41,6 +41,7 @@ impl DeepSeekDsmlFormat {
             .map(|tool| TagFormat {
                 begin: [INVOKE_BEGIN_PREFIX, &tool.name, INVOKE_BEGIN_SUFFIX].concat(),
                 content: Box::new(Format::JsonSchema(JsonSchemaFormat {
+                    max_whitespace_cnt: None,
                     json_schema: resolve_tool_schema(tool, policy.schema_mode),
                     style: JsonSchemaStyle::DeepseekXml,
                     any_order: tool_arguments_any_order,

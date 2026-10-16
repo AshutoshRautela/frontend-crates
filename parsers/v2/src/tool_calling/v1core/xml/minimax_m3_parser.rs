@@ -220,7 +220,7 @@ fn parse_invokes(
 }
 
 // Reads the `name` attribute from `<invoke ...>` using vLLM-compatible quoting variants.
-fn parse_invoke_name(tag_attrs: &str) -> Option<String> {
+pub(crate) fn parse_invoke_name(tag_attrs: &str) -> Option<String> {
     let attrs = tag_attrs.trim_start();
     let after_name = attrs.strip_prefix("name")?.trim_start();
     let value = after_name.strip_prefix('=')?.trim_start();
@@ -532,6 +532,21 @@ fn get_arguments_config<'a>(
     None
 }
 
+/// Whether scalar text can stream without a later null or numeric coercion.
+pub(crate) fn preserves_string_value(schema: &Value, root_schema: &Value) -> bool {
+    let mut schemas = SchemaWalker::new(root_schema);
+    (schemas.has_type(Some(schema), "string") || schemas.has_type(Some(schema), "enum"))
+        && schemas.permits_null(schema) == Some(false)
+        && schemas.type_hint(schema, "array") == Some(false)
+}
+
+/// Repeated M3 parameter tags collect into arrays; their first value is not final.
+pub(crate) fn preserves_single_parameter(schema: Option<&Value>, root_schema: &Value) -> bool {
+    schema.is_some_and(|schema| {
+        SchemaWalker::new(root_schema).type_hint(schema, "array") == Some(false)
+    })
+}
+
 // Converts a scalar XML text value into the schema-expected JSON type when possible.
 fn convert_scalar_value(raw: &str, schema: Option<&Value>, root_schema: &Value) -> Value {
     let mut schemas = SchemaWalker::new(root_schema);
@@ -661,29 +676,36 @@ impl<'a> SchemaWalker<'a> {
             {
                 return Some(schema);
             }
-            let Some(fragment) = reference.strip_prefix('#') else {
-                return Some(schema);
-            };
-            // percent_decode_str preserves invalid escapes, so reject them before lookup.
-            if fragment.as_bytes().iter().enumerate().any(|(index, byte)| {
-                *byte == b'%'
-                    && !fragment
-                        .as_bytes()
-                        .get(index + 1..index + 3)
-                        .is_some_and(|digits| digits.iter().all(u8::is_ascii_hexdigit))
-            }) {
-                return Some(schema);
-            }
-            let Ok(pointer) = percent_decode_str(fragment).decode_utf8() else {
-                return Some(schema);
-            };
-            let Some(target) = self.root.pointer(&pointer) else {
+            let Some(target) = self.local_ref_target(reference) else {
                 return Some(schema);
             };
             visited.push(reference);
             current = target;
         }
         Some(current)
+    }
+
+    fn local_ref_target(&self, reference: &str) -> Option<&'a Value> {
+        let fragment = reference.strip_prefix('#')?;
+        // Percent decoding preserves invalid escapes; reject those before lookup.
+        if fragment.as_bytes().iter().enumerate().any(|(index, byte)| {
+            *byte == b'%'
+                && !fragment
+                    .as_bytes()
+                    .get(index + 1..index + 3)
+                    .is_some_and(|digits| digits.iter().all(u8::is_ascii_hexdigit))
+        }) {
+            return None;
+        }
+        let pointer = percent_decode_str(fragment).decode_utf8().ok()?;
+        self.root.pointer(&pointer)
+    }
+
+    fn sibling_ref_target(&self, schema: &Value) -> Option<&'a Value> {
+        if schema.get("$id").is_some() {
+            return None;
+        }
+        self.local_ref_target(schema.get("$ref")?.as_str()?)
     }
 
     fn with_schema<T: Copy>(
@@ -802,9 +824,10 @@ impl<'a> SchemaWalker<'a> {
             {
                 return Some(false);
             }
-            // A remaining reference was not resolved, including refs with siblings.
             let mut result = if schema.get("$ref").is_some() {
-                None
+                walker
+                    .sibling_ref_target(schema)
+                    .and_then(|target| walker.permits_null(target))
             } else {
                 Some(true)
             };
@@ -849,28 +872,48 @@ impl<'a> SchemaWalker<'a> {
     }
 
     fn has_type(&mut self, schema: Option<&'a Value>, expected: &str) -> bool {
-        let Some(schema) = schema else {
-            return false;
-        };
-        self.with_schema(schema, false, |walker, schema| {
-            if let Some(ty) = schema.get("type")
-                && (ty.as_str() == Some(expected)
+        schema.and_then(|schema| self.type_hint(schema, expected)) == Some(true)
+    }
+
+    fn type_hint(&mut self, schema: &'a Value, expected: &str) -> Option<bool> {
+        self.with_schema(schema, None, |walker, schema| {
+            let mut hint = schema.get("type").map(|ty| {
+                ty.as_str() == Some(expected)
                     || ty
                         .as_array()
-                        .is_some_and(|types| types.iter().any(|ty| ty.as_str() == Some(expected))))
-            {
-                return true;
+                        .is_some_and(|types| types.iter().any(|ty| ty.as_str() == Some(expected)))
+            });
+            let reference = walker
+                .sibling_ref_target(schema)
+                .and_then(|target| walker.type_hint(target, expected));
+            hint = match (hint, reference) {
+                (Some(left), Some(right)) => Some(left && right),
+                (left, right) => left.or(right),
+            };
+            for keyword in ["allOf", "anyOf", "oneOf"] {
+                let Some(options) = schema.get(keyword).and_then(Value::as_array) else {
+                    continue;
+                };
+                let hints = options
+                    .iter()
+                    .map(|branch| walker.type_hint(branch, expected));
+                let branch = if keyword == "allOf" {
+                    hints.flatten().reduce(|left, right| left && right)
+                } else {
+                    hints
+                        .reduce(|left, right| match (left, right) {
+                            (Some(true), _) | (_, Some(true)) => Some(true),
+                            (Some(false), Some(false)) => Some(false),
+                            _ => None,
+                        })
+                        .flatten()
+                };
+                hint = match (hint, branch) {
+                    (Some(left), Some(right)) => Some(left && right),
+                    (left, right) => left.or(right),
+                };
             }
-            for key in ["anyOf", "oneOf"] {
-                if let Some(options) = schema.get(key).and_then(Value::as_array)
-                    && options
-                        .iter()
-                        .any(|option| walker.has_type(Some(option), expected))
-                {
-                    return true;
-                }
-            }
-            false
+            hint
         })
     }
 
@@ -894,7 +937,7 @@ impl<'a> SchemaWalker<'a> {
 }
 
 // Decodes common XML/HTML entities so tool arguments receive the intended literal text.
-fn html_unescape(s: &str) -> String {
+pub(crate) fn html_unescape(s: &str) -> String {
     s.replace("&lt;", "<")
         .replace("&gt;", ">")
         .replace("&amp;", "&")
@@ -952,6 +995,27 @@ mod tests {
             convert_scalar_value("null", Some(&reference), &root),
             json!(null)
         );
+    }
+
+    #[test]
+    fn nullable_reference_siblings_keep_the_intersection() {
+        let root = json!({"$defs":{"MaybeText":{"type":["string","null"]}}});
+        for (schema, expected) in [
+            (
+                json!({"$ref":"#/$defs/MaybeText","minLength":1}),
+                Value::Null,
+            ),
+            (
+                json!({"$ref":"#/$defs/MaybeText","type":"string"}),
+                json!("null"),
+            ),
+            (
+                json!({"$ref":"#/$defs/MaybeText","not":{"type":"null"}}),
+                json!("null"),
+            ),
+        ] {
+            assert_eq!(convert_scalar_value("null", Some(&schema), &root), expected);
+        }
     }
 
     #[test]

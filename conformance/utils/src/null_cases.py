@@ -37,7 +37,7 @@ NULL_VARIANTS = (
 )
 
 MIXED_CASE_FAMILIES = {
-    "7-4.mixed_labels": {"glm47"},
+    "7-4.mixed_labels": {"glm47", "minimax_m3"},
     "7-4.mixed_grep": {"minimax_m3"},
 }
 

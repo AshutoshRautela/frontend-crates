@@ -102,15 +102,16 @@ pub(crate) fn resolve_tool_calling<'a>(
 }
 
 pub(crate) fn resolve_tool_schema(tool: &Tool, schema_mode: StructuralTagSchemaMode) -> Value {
-    let enforce_schema =
-        schema_mode == StructuralTagSchemaMode::Strict || tool.strict.unwrap_or(false);
-
-    if enforce_schema && !tool.parameters.is_null() {
+    if enforces_tool_schema(tool, schema_mode) && !tool.parameters.is_null() {
         tool.parameters.clone()
     } else {
         // xgrammar uses `true` for syntactically valid, schema-unconstrained JSON.
         json!(true)
     }
+}
+
+pub(crate) fn enforces_tool_schema(tool: &Tool, schema_mode: StructuralTagSchemaMode) -> bool {
+    schema_mode == StructuralTagSchemaMode::Strict || tool.strict.unwrap_or(false)
 }
 
 #[cfg(test)]

@@ -1,0 +1,88 @@
+diff --git a/lib/llm/src/preprocessor/structural_tag.rs b/lib/llm/src/preprocessor/structural_tag.rs
+index d3228acc7c..7b9a5babdd 100644
+--- a/lib/llm/src/preprocessor/structural_tag.rs
++++ b/lib/llm/src/preprocessor/structural_tag.rs
+@@ -73,6 +73,13 @@ impl SelectedStructuralTagBuilder {
+         v1::StructuralTagBuilder::for_parser(parser_name).map(Self::V1)
+     }
+ 
++    fn supports_request(self, request: &StructuralTagBuildRequest<'_>) -> anyhow::Result<bool> {
++        match self {
++            Self::V1(_) => Ok(true),
++            Self::V2(builder) => builder.supports_request(request),
++        }
++    }
++
+     fn build(
+         self,
+         request: &StructuralTagBuildRequest<'_>,
+@@ -236,6 +243,31 @@ pub(crate) fn structural_tag_decision(
+         return Ok(StructuralTagDecision::NotApplicable);
+     };
+ 
++    let schema_probe = StructuralTagBuildRequest {
++        tool_choice,
++        tools,
++        parallel_tool_calls,
++        schema_mode: config.map_or_else(Default::default, |config| config.schema),
++        exclude_special_tokens: None,
++        reasoning_boundary: ResolvedReasoningBoundary::Backend,
++        tool_arguments_any_order: false,
++        starts_in_reasoning: false,
++        structured_output_schema: None,
++    };
++    if !builder.supports_request(&schema_probe).map_err(|error| {
++        DynamoError::builder()
++            .error_type(ErrorType::InvalidArgument)
++            .message(error.to_string())
++            .build()
++    })? {
++        if requires_tool_calls_with_structured_output {
++            return Err(DynamoError::builder().error_type(ErrorType::InvalidArgument)
++                .message("The native tool grammar cannot preserve the requested schemas with structured output")
++                .build());
++        }
++        return Ok(StructuralTagDecision::NotApplicable);
++    }
++
+     if matches!(tool_choice, ToolChoice::None) {
+         if tools.is_empty() {
+             return Ok(StructuralTagDecision::NotApplicable);
+diff --git a/lib/llm/src/preprocessor/structural_tag/v2.rs b/lib/llm/src/preprocessor/structural_tag/v2.rs
+index fc54150f5d..6b7e916f0a 100644
+--- a/lib/llm/src/preprocessor/structural_tag/v2.rs
++++ b/lib/llm/src/preprocessor/structural_tag/v2.rs
+@@ -25,6 +25,33 @@ impl StructuralTagBuilder {
+         .map(Self)
+     }
+ 
++    pub(super) fn supports_request(
++        self,
++        request: &StructuralTagBuildRequest<'_>,
++    ) -> anyhow::Result<bool> {
++        if matches!(request.tool_choice, ToolChoice::None) {
++            return Ok(true);
++        }
++        let enforce_all = matches!(
++            request.schema_mode,
++            dynamo_parsers::tool_calling::StructuralTagSchemaMode::Strict
++        );
++        Ok(request
++            .tools
++            .iter()
++            .filter(|tool| match request.tool_choice {
++                ToolChoice::Named(name) => &tool.name == name,
++                _ => true,
++            })
++            .all(|tool| {
++                (!enforce_all && !tool.strict.unwrap_or(true))
++                    || tool
++                        .parameters
++                        .as_ref()
++                        .is_none_or(|schema| self.0.supports_schema(schema))
++            }))
++    }
++
+     pub(super) fn build(
+         self,
+         request: &StructuralTagBuildRequest<'_>,

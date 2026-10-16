@@ -24,14 +24,20 @@
 //! `HashMap` whose key order is non-deterministic.
 
 use crate::tool_calling::scan::{
-    BareRecoveryLatch, InvokeEmitter, InvokeLatch, WrappedBlockScanner, WrappedBlockSpec,
+    BareRecoveryLatch, GuidedInvokePrefix, GuidedInvokePrefixContext, InvokeBoundary,
+    InvokeBoundaryFactory, InvokeEmitter, InvokeLatch, WrappedBlockScanner, WrappedBlockSpec,
     reorder_arguments,
 };
 use crate::tool_calling::v1core::{
     MiniMaxM3ParserConfig, ToolDefinition, try_tool_call_parse_minimax_m3,
 };
 
+use crate::tool_calling::scan::marker_prefix_suffix_len;
 use crate::tool_calling::traits::{Tool, ToolCallDelta, ToolParseResult, ToolParser};
+use crate::tool_calling::v1core::xml::minimax_m3_parser::{
+    html_unescape, parse_invoke_name, preserves_single_parameter, preserves_string_value,
+};
+use std::collections::HashSet;
 
 /// The namespace token emitted before every M3 tag.
 const NS: &str = "]<]minimax[>[";
@@ -40,6 +46,7 @@ const BLOCK_END: &str = "]<]minimax[>[</tool_call>";
 /// Bare `<invoke` (no trailing `>`): matches both `<invoke name="...">` and the
 /// malformed nameless `<invoke>` (whose parse yields no call and is dropped).
 const FUNCTION_START: &str = "]<]minimax[>[<invoke";
+const GUIDED_FUNCTION_START: &str = "]<]minimax[>[<invoke name=\"";
 const FUNCTION_END: &str = "]<]minimax[>[</invoke>";
 
 fn spec() -> WrappedBlockSpec {
@@ -63,24 +70,293 @@ fn spec() -> WrappedBlockSpec {
         drop_invoke_crossing_block_end: false,
         // Every wrapped family's markers are special tokens today.
         preserve_special_tokens: true,
-        ..Default::default()
+        invoke_boundary_factory: Some(InvokeBoundaryFactory::Custom(|| {
+            Box::new(M3Boundary::default())
+        })),
+    }
+}
+
+/// Keep header scans incremental; a `>` inside guided JSON belongs to the payload.
+#[derive(Default)]
+struct M3Boundary {
+    header_cursor: usize,
+    close_cursor: usize,
+    native_header: bool,
+}
+
+impl InvokeBoundary for M3Boundary {
+    fn guided_invoke_start(&self) -> Option<&'static str> {
+        Some(GUIDED_FUNCTION_START)
+    }
+    fn is_guided_invoke_marker(&self, marker: &str) -> bool {
+        marker == FUNCTION_START || marker == GUIDED_FUNCTION_START
+    }
+
+    fn owns_guided_prefix(&self) -> bool {
+        true
+    }
+
+    fn guided_prefix_append(
+        &mut self,
+        candidate: &str,
+        _append: &str,
+        context: GuidedInvokePrefixContext,
+    ) -> Option<GuidedInvokePrefix> {
+        if self.native_header {
+            return Some(GuidedInvokePrefix::NoMatch);
+        }
+        self.header_cursor = self.header_cursor.max(FUNCTION_START.len());
+        while self.header_cursor < candidate.len() {
+            let ch = candidate[self.header_cursor..].chars().next()?;
+            if matches!(ch, '{' | '[') {
+                return Some(if context.outside_reasoning {
+                    GuidedInvokePrefix::Match(self.header_cursor)
+                } else {
+                    GuidedInvokePrefix::Strip(self.header_cursor)
+                });
+            }
+            if ch == '>' {
+                self.native_header = true;
+                return Some(GuidedInvokePrefix::NoMatch);
+            }
+            if ch == '<' || context.followed_by_competing_marker {
+                let prefix = candidate[FUNCTION_START.len()..]
+                    .find("name=")
+                    .map(|at| FUNCTION_START.len() + at + "name=".len())
+                    .map(|at| at + usize::from(candidate[at..].starts_with(['\"', '\''])))
+                    .unwrap_or(FUNCTION_START.len());
+                return Some(GuidedInvokePrefix::Strip(prefix));
+            }
+            self.header_cursor += ch.len_utf8();
+        }
+        Some(if context.followed_by_competing_marker {
+            GuidedInvokePrefix::Strip(self.header_cursor)
+        } else {
+            GuidedInvokePrefix::Pending
+        })
+    }
+
+    fn end_append(
+        &mut self,
+        candidate: &str,
+        _append: &str,
+        _flush: bool,
+        _tool_index: usize,
+    ) -> Option<usize> {
+        let tail = &candidate[self.close_cursor..];
+        if let Some(at) = tail.find(FUNCTION_END) {
+            return Some(self.close_cursor + at + FUNCTION_END.len());
+        }
+        self.close_cursor = candidate.len() - marker_prefix_suffix_len(tail, [FUNCTION_END]);
+        None
+    }
+    fn opens(&self, _text: &str, _at: usize) -> bool {
+        true
+    }
+    fn holdback(&self, text: &str) -> usize {
+        if !self.native_header && self.header_cursor > 0 {
+            text.rfind(FUNCTION_START).map_or(0, |at| text.len() - at)
+        } else {
+            0
+        }
+    }
+    fn resync(&mut self, text: &str, _flush: bool, _tool_index: usize) -> Option<usize> {
+        text.get(1..)?.find(BLOCK_START).map(|at| at + 1)
+    }
+    fn reset(&mut self) {
+        *self = Self::default();
     }
 }
 
 /// Value-typing hook: wraps one complete invoke run in the M3 `<tool_call>`
 /// block so the v1 parser takes its normal wrapped path, then re-orders the
 /// arguments to source parameter-tag order.
-struct M3Emitter {
+pub(crate) struct M3Emitter {
     config: MiniMaxM3ParserConfig,
     tools: Vec<ToolDefinition>,
+    partial: Option<PartialInvoke>,
+}
+
+struct PartialInvoke {
+    name: String,
+    cursor: usize,
+    emitted: String,
+    seen: HashSet<String>,
+    active: Option<(String, usize)>,
+    blocked: bool,
+    announced: bool,
 }
 
 impl InvokeEmitter for M3Emitter {
+    fn parse_partial_invoke(
+        &mut self,
+        invoke: &str,
+        tool_index: usize,
+    ) -> anyhow::Result<Option<ToolCallDelta>> {
+        if self.partial.is_none() {
+            let Some(end) = invoke[FUNCTION_START.len()..]
+                .find('>')
+                .map(|at| FUNCTION_START.len() + at)
+            else {
+                return Ok(None);
+            };
+            let Some(name) = parse_invoke_name(&invoke[FUNCTION_START.len()..end]) else {
+                return Ok(None);
+            };
+            if name.is_empty() {
+                return Ok(None);
+            }
+            self.partial = Some(PartialInvoke {
+                name,
+                cursor: end + 1,
+                emitted: String::new(),
+                seen: HashSet::new(),
+                active: None,
+                blocked: false,
+                announced: false,
+            });
+        }
+        let partial = self.partial.as_mut().unwrap();
+        let mut arguments = String::new();
+        while !partial.blocked {
+            if let Some((key, value_cursor)) = &mut partial.active {
+                let close = format!("{NS}</{key}>");
+                let tail = &invoke[*value_cursor..];
+                let end = tail.find(&close);
+                let safe = end.unwrap_or_else(|| {
+                    tail.len() - marker_prefix_suffix_len(tail, [NS, close.as_str()])
+                });
+                // Nested XML changes the value's type. Let the final decoder own it.
+                if tail[..safe].contains(NS) {
+                    partial.blocked = true;
+                    break;
+                }
+                // Retain partial entities, including the batch decoder's amp-to-quote forms.
+                let safe = if end.is_none() {
+                    safe - marker_prefix_suffix_len(
+                        &tail[..safe],
+                        [
+                            "&lt;",
+                            "&gt;",
+                            "&amp;",
+                            "&quot;",
+                            "&#x27;",
+                            "&#39;",
+                            "&amp;quot;",
+                            "&amp;#x27;",
+                            "&amp;#39;",
+                        ],
+                    )
+                } else {
+                    safe
+                };
+                let encoded = serde_json::to_string(&html_unescape(&tail[..safe]))?;
+                arguments.push_str(&encoded[1..encoded.len() - 1]);
+                *value_cursor += safe;
+                if end.is_some() {
+                    arguments.push('"');
+                    partial.cursor = *value_cursor + close.len();
+                    partial.active = None;
+                    continue;
+                }
+                break;
+            }
+            let tail = &invoke[partial.cursor..];
+            let Some(at) = tail.find(NS) else {
+                partial.cursor = invoke.len() - marker_prefix_suffix_len(tail, [NS]);
+                break;
+            };
+            partial.cursor += at;
+            let tag = &invoke[partial.cursor + NS.len()..];
+            let Some(end) = tag.find('>') else { break };
+            let Some(key) = tag[..end].strip_prefix('<') else {
+                partial.blocked = true;
+                break;
+            };
+            let root_schema = self
+                .tools
+                .iter()
+                .find(|tool| tool.name == partial.name)
+                .and_then(|tool| tool.parameters.as_ref());
+            let schema = root_schema
+                .and_then(|root| root.get("properties"))
+                .and_then(|properties| properties.get(key));
+            let streamable = root_schema
+                .zip(schema)
+                .is_some_and(|(root, schema)| preserves_string_value(schema, root));
+            if !streamable {
+                if !root_schema.is_some_and(|root| preserves_single_parameter(schema, root)) {
+                    partial.blocked = true;
+                    break;
+                }
+                // A scalar or structured value needs the schema coercer, but
+                // must not prevent later string parameters from streaming.
+                let close = format!("{NS}</{key}>");
+                let value_start = partial.cursor + NS.len() + end + 1;
+                let Some(end) = invoke[value_start..].find(&close) else {
+                    break;
+                };
+                let parameter_end = value_start + end + close.len();
+                let wrapped = format!(
+                    "{BLOCK_START}{}{FUNCTION_END}{BLOCK_END}",
+                    &invoke[..parameter_end]
+                );
+                let tools = (!self.tools.is_empty()).then_some(self.tools.as_slice());
+                let (calls, _) = try_tool_call_parse_minimax_m3(&wrapped, &self.config, tools)?;
+                let Some(call) = calls.into_iter().next() else {
+                    partial.blocked = true;
+                    break;
+                };
+                let typed = reorder_arguments(
+                    &call.function.arguments,
+                    &source_parameter_order(&invoke[..parameter_end]),
+                );
+                let prefix = format!("{}{}", partial.emitted, arguments);
+                let Some(suffix) = typed
+                    .strip_suffix('}')
+                    .and_then(|body| body.strip_prefix(&prefix))
+                else {
+                    partial.blocked = true;
+                    break;
+                };
+                arguments.push_str(suffix);
+                partial.seen.insert(key.to_string());
+                partial.cursor = parameter_end;
+                continue;
+            }
+            if !partial.seen.insert(key.to_string()) {
+                partial.blocked = true;
+                break;
+            }
+            arguments.push(if partial.emitted.is_empty() && arguments.is_empty() {
+                '{'
+            } else {
+                ','
+            });
+            arguments.push_str(&serde_json::to_string(key)?);
+            arguments.push_str(":\"");
+            partial.active = Some((key.to_string(), partial.cursor + NS.len() + end + 1));
+        }
+        let name = (!partial.announced).then(|| partial.name.clone());
+        if name.is_none() && arguments.is_empty() {
+            return Ok(None);
+        }
+        partial.announced = true;
+        partial.emitted.push_str(&arguments);
+        Ok(Some(ToolCallDelta {
+            tool_index,
+            name,
+            arguments,
+            complete: false,
+        }))
+    }
+
     fn parse_invoke(
         &mut self,
         invoke: &str,
         tool_index: usize,
     ) -> anyhow::Result<Option<ToolCallDelta>> {
+        let partial = self.partial.take();
         let wrapped = format!("{BLOCK_START}{invoke}{BLOCK_END}");
         let tools_opt = (!self.tools.is_empty()).then_some(self.tools.as_slice());
         let (calls, _content) = try_tool_call_parse_minimax_m3(&wrapped, &self.config, tools_opt)?;
@@ -89,54 +365,78 @@ impl InvokeEmitter for M3Emitter {
         };
         let arguments =
             reorder_arguments(&call.function.arguments, &source_parameter_order(invoke));
+        let announced = partial.as_ref().is_some_and(|p| p.announced);
+        let arguments = if let Some(partial) = partial {
+            let Some(suffix) = arguments.strip_prefix(&partial.emitted) else {
+                tracing::warn!(
+                    why = "minimax_m3_streamed_arguments_invalidated",
+                    tool_index
+                );
+                return Ok(None);
+            };
+            suffix.to_string()
+        } else {
+            arguments
+        };
         Ok(Some(ToolCallDelta {
             tool_index,
-            name: Some(call.function.name),
+            name: (!announced).then_some(call.function.name),
             arguments,
             complete: true,
         }))
     }
+
+    fn reset(&mut self) {
+        self.partial = None;
+    }
 }
 
-/// Stream parser for MiniMax-M3 tool calls.
+/// Build the single scanner shared by the unified and tool-only entry points.
+pub(crate) fn minimax_m3_scanner(tools: &[Tool]) -> WrappedBlockScanner<M3Emitter> {
+    WrappedBlockScanner::new(
+        spec(),
+        M3Emitter {
+            config: MiniMaxM3ParserConfig::default(),
+            tools: tools.iter().map(ToolDefinition::from).collect(),
+            partial: None,
+        },
+    )
+}
+
+/// Compatibility projection of the unified parser with reasoning disabled.
 pub struct MiniMaxM3ToolStreamParser {
-    scanner: WrappedBlockScanner<M3Emitter>,
+    parser: Box<dyn crate::unified::UnifiedParser>,
 }
 
 impl MiniMaxM3ToolStreamParser {
     pub fn new(tools: &[Tool]) -> Self {
-        Self {
-            scanner: WrappedBlockScanner::new(
-                spec(),
-                M3Emitter {
-                    // Identical to `dynamo_parsers`' batch config so the streamed
-                    // value typing matches the v1 batch parser exactly.
-                    config: MiniMaxM3ParserConfig::default(),
-                    tools: tools.iter().map(ToolDefinition::from).collect(),
-                },
-            ),
-        }
+        let mut parser = crate::unified::minimax_m3::minimax_m3_unified(tools);
+        parser
+            .initialize_request(crate::unified::UnifiedParserInit {
+                starting_state: crate::unified::UnifiedParserStartingState::Response,
+                ..Default::default()
+            })
+            .expect("M3 supports the visible channel");
+        Self { parser }
     }
 }
 
 impl ToolParser for MiniMaxM3ToolStreamParser {
-    fn create(tools: &[Tool]) -> anyhow::Result<Box<dyn ToolParser>>
-    where
-        Self: Sized + 'static,
-    {
+    fn create(tools: &[Tool]) -> anyhow::Result<Box<dyn ToolParser>> {
         Ok(Box::new(Self::new(tools)))
     }
 
     fn preserve_special_tokens(&self) -> bool {
-        self.scanner.preserve_special_tokens()
+        self.parser.preserve_special_tokens()
     }
 
     fn push(&mut self, chunk: &str) -> anyhow::Result<ToolParseResult> {
-        self.scanner.push(chunk)
+        use crate::unified::UnifiedParserExt;
+        Ok(ToolParseResult::from_deltas(self.parser.push(chunk)?))
     }
 
     fn finish(&mut self) -> anyhow::Result<ToolParseResult> {
-        self.scanner.finish()
+        Ok(ToolParseResult::from_deltas(self.parser.finish()?.events))
     }
 }
 
@@ -343,7 +643,8 @@ mod tests {
             ],
         );
         assert_eq!(out.normal_text, "");
-        assert!(out.calls.is_empty());
+        assert!(out.calls.iter().all(|call| !call.complete));
+        assert!(out.coalesce_calls().calls.is_empty());
     }
 
     #[test]

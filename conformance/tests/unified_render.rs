@@ -1334,3 +1334,50 @@ print(g.emit_yaml("glm47"))
     let input_case: InputCase = serde_json::from_value(json!({"tools":case.tools})).unwrap();
     assert_eq!(input_case.tools, case.tools);
 }
+
+/// M3 must expose the same calls under token-sized and aggregated delivery.
+#[test]
+fn minimax_m3_authored_cases_are_chunk_invariant() {
+    let path = common::ensure_unified_golden().join("minimax_m3.yaml");
+    let file: GoldenFile = serde_yaml::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let mut checked = 0;
+    for (id, case) in file.cases {
+        let tools = common::unified_tools_for_schemas(case.tools.as_ref());
+        let boundaries: Vec<_> = case
+            .input
+            .char_indices()
+            .map(|(at, _)| at)
+            .chain([case.input.len()])
+            .collect();
+        // Whole and character-sized delivery already run in unified_parity.
+        let mut schedules: Vec<Vec<String>> = Vec::new();
+        for width in [20] {
+            schedules.push(
+                boundaries
+                    .windows(width + 1)
+                    .step_by(width)
+                    .map(|window| case.input[window[0]..window[width]].to_string())
+                    .collect(),
+            );
+            let schedule = schedules.last_mut().unwrap();
+            let consumed = schedule.iter().map(String::len).sum::<usize>();
+            if consumed < case.input.len() {
+                schedule.push(case.input[consumed..].to_string());
+            }
+        }
+        for at in boundaries {
+            schedules.push(vec![
+                case.input[..at].to_string(),
+                case.input[at..].to_string(),
+            ]);
+        }
+        for schedule in schedules {
+            assert_eq!(schedule.concat(), case.input);
+            let (actual, _) =
+                capture_native_case("minimax_m3", &schedule, &case.init, &tools).unwrap();
+            assert_eq!(actual, case.golden, "{id}; chunks={schedule:?}");
+            checked += 1;
+        }
+    }
+    eprintln!("M3 chunk schedules checked: {checked}");
+}

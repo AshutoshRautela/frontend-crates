@@ -87,10 +87,13 @@ pub(crate) enum JsonSchemaStyle {
     QwenXml,
     DeepseekXml,
     GlmXml,
+    MinimaxM3Xml,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct JsonSchemaFormat {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_whitespace_cnt: Option<usize>,
     pub json_schema: Value,
     pub style: JsonSchemaStyle,
     #[serde(skip_serializing_if = "is_false")]

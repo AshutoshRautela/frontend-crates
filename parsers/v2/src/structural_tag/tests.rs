@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 
 use crate::Tool;
 
-use super::builders::{DEEPSEEK_DSML, GLM47, QWEN3_CODER};
+use super::builders::{DEEPSEEK_DSML, GLM47, MINIMAX_M3, QWEN3_CODER};
 use super::test_support::{build, build_context, tools};
 use super::{
     ReasoningBoundary, StructuralTagContext, StructuralTagOptions, StructuralTagSchemaMode,
@@ -22,6 +22,81 @@ fn empty_qwen_tool() -> Tool {
         // Dynamo normalizes an omitted strict field to true before calling v2.
         strict: Some(true),
     }
+}
+
+#[test]
+fn minimax_xml_ineligible_schemas_preserve_json_fallback_and_strict_policy() {
+    for schema in [
+        json!({"type":["string","null"]}),
+        json!({"anyOf":[{"type":"string"},{"type":"integer"}]}),
+        json!({"type":"string","minLength":1}),
+        json!({"type":"string","maxLength":288}),
+        json!({"type":"string","pattern":"[a-z]+"}),
+        json!({"type":"string","format":"date-time"}),
+        json!({"type":"array","items":{"type":"string","minLength":1}}),
+    ] {
+        let mut tool = empty_qwen_tool();
+        tool.parameters = json!({"type":"object","properties":{"value":schema}});
+        fn context(tools: &[Tool]) -> StructuralTagContext<'_> {
+            StructuralTagContext {
+                tool_choice: StructuralTagToolChoice::Required,
+                tools,
+                parallel_tool_calls: None,
+                schema_mode: StructuralTagSchemaMode::Auto,
+                structured_output_schema: None,
+                starts_in_reasoning: false,
+            }
+        }
+        assert!(
+            !MINIMAX_M3
+                .supports_request(&context(std::slice::from_ref(&tool)))
+                .unwrap()
+        );
+        assert!(
+            MINIMAX_M3
+                .build(&context(std::slice::from_ref(&tool)))
+                .unwrap()
+                .is_none()
+        );
+        tool.strict = Some(false);
+        assert!(
+            MINIMAX_M3
+                .supports_request(&context(std::slice::from_ref(&tool)))
+                .unwrap()
+        );
+        assert!(
+            MINIMAX_M3
+                .build(&context(std::slice::from_ref(&tool)))
+                .unwrap()
+                .is_some()
+        );
+    }
+}
+
+#[test]
+fn minimax_schema_eligibility_uses_selected_tools_and_ignores_literal_data() {
+    let mut selected = empty_qwen_tool();
+    selected.parameters = json!({"type":"object","properties":{
+        "format":{"type":"string"},
+        "payload":{"type":"object","const":{"minLength":4,"format":"opaque"}}
+    }});
+    let mut other = empty_qwen_tool();
+    other.name = "other".into();
+    other.parameters =
+        json!({"type":"object","properties":{"value":{"type":"string","minLength":1}}});
+    let tools = [selected, other];
+    let mut context = StructuralTagContext {
+        tool_choice: StructuralTagToolChoice::Named("get_server_time"),
+        tools: &tools,
+        parallel_tool_calls: None,
+        schema_mode: StructuralTagSchemaMode::Strict,
+        structured_output_schema: None,
+        starts_in_reasoning: false,
+    };
+    assert!(MINIMAX_M3.supports_request(&context).unwrap());
+    assert!(MINIMAX_M3.build(&context).unwrap().is_some());
+    context.tool_choice = StructuralTagToolChoice::Required;
+    assert!(!MINIMAX_M3.supports_request(&context).unwrap());
 }
 
 fn qwen_call_tag(tag: &Value) -> &Value {
@@ -215,6 +290,7 @@ fn common_builder_closes_prompt_opened_reasoning_before_tool_output() {
             None,
         ),
         ("glm47", &GLM47, "<tool_call>", None, None),
+        ("minimax_m3", &MINIMAX_M3, "]<]minimax[>[", None, None),
     ] {
         for tool_choice in [
             StructuralTagToolChoice::Required,
@@ -244,7 +320,12 @@ fn common_builder_closes_prompt_opened_reasoning_before_tool_output() {
                 "{family} reasoning must exclude {tool_call_exclude}"
             );
             assert_eq!(
-                actual["format"]["elements"][0]["end"], "</think>",
+                actual["format"]["elements"][0]["end"],
+                if family == "minimax_m3" {
+                    "</mm:think>"
+                } else {
+                    "</think>"
+                },
                 "{family}"
             );
             let output = post_reasoning_format(&actual["format"], family, reasoning_suffix);
@@ -273,6 +354,7 @@ fn auto_closes_prompt_opened_reasoning_before_triggered_dispatch() {
         ("qwen3_coder", &QWEN3_CODER, "<tool_call>", Some("\n\n")),
         ("deepseek_v4", &DEEPSEEK_DSML, "<｜DSML｜tool_calls>", None),
         ("glm47", &GLM47, "<tool_call>", None),
+        ("minimax_m3", &MINIMAX_M3, "]<]minimax[>[", None),
     ] {
         let actual = build(
             builder,
@@ -284,7 +366,14 @@ fn auto_closes_prompt_opened_reasoning_before_triggered_dispatch() {
         );
 
         assert_eq!(actual["format"]["type"], "sequence", "{family}");
-        assert_eq!(actual["format"]["elements"][0]["end"], "</think>");
+        assert_eq!(
+            actual["format"]["elements"][0]["end"],
+            if family == "minimax_m3" {
+                "</mm:think>"
+            } else {
+                "</think>"
+            }
+        );
         assert!(
             actual["format"]["elements"][0]["content"]["excludes"]
                 .as_array()
@@ -314,6 +403,7 @@ fn auto_with_structured_output_offers_tool_calls_only_or_schema_constrained_resp
         ("qwen3_coder", &QWEN3_CODER),
         ("deepseek_v4", &DEEPSEEK_DSML),
         ("glm47", &GLM47),
+        ("minimax_m3", &MINIMAX_M3),
     ] {
         let actual = build_with_structured_output(
             builder,
@@ -350,6 +440,7 @@ fn auto_with_structured_output_honors_single_call_limit() {
         ("qwen3_coder", &QWEN3_CODER),
         ("deepseek_v4", &DEEPSEEK_DSML),
         ("glm47", &GLM47),
+        ("minimax_m3", &MINIMAX_M3),
     ] {
         let actual = build_with_structured_output(
             builder,
@@ -374,6 +465,7 @@ fn auto_with_structured_output_closes_prompt_opened_reasoning_before_choice() {
         ("qwen3_coder", &QWEN3_CODER, Some("\n\n")),
         ("deepseek_v4", &DEEPSEEK_DSML, None),
         ("glm47", &GLM47, None),
+        ("minimax_m3", &MINIMAX_M3, None),
     ] {
         let actual = build_with_structured_output(
             builder,
@@ -385,7 +477,14 @@ fn auto_with_structured_output_closes_prompt_opened_reasoning_before_choice() {
         );
 
         assert_eq!(actual["format"]["type"], "sequence", "{family}");
-        assert_eq!(actual["format"]["elements"][0]["end"], "</think>");
+        assert_eq!(
+            actual["format"]["elements"][0]["end"],
+            if family == "minimax_m3" {
+                "</mm:think>"
+            } else {
+                "</think>"
+            }
+        );
         assert_eq!(
             post_reasoning_format(&actual["format"], family, reasoning_suffix)["type"],
             "or"
@@ -400,6 +499,7 @@ fn external_reasoning_boundary_builds_only_the_post_reasoning_suffix() {
         ("qwen3_coder", &QWEN3_CODER),
         ("deepseek_v4", &DEEPSEEK_DSML),
         ("glm47", &GLM47),
+        ("minimax_m3", &MINIMAX_M3),
     ] {
         let actual = builder
             .build_with_options(
@@ -472,6 +572,7 @@ fn required_and_named_choices_do_not_offer_final_response_branch() {
         ("qwen3_coder", &QWEN3_CODER),
         ("deepseek_v4", &DEEPSEEK_DSML),
         ("glm47", &GLM47),
+        ("minimax_m3", &MINIMAX_M3),
     ] {
         for tool_choice in [
             StructuralTagToolChoice::Required,
@@ -491,6 +592,7 @@ fn auto_with_empty_tools_needs_no_structural_tag() {
         ("qwen3_coder", &QWEN3_CODER),
         ("deepseek_v4", &DEEPSEEK_DSML),
         ("glm47", &GLM47),
+        ("minimax_m3", &MINIMAX_M3),
     ] {
         let result = builder
             .build(&StructuralTagContext {

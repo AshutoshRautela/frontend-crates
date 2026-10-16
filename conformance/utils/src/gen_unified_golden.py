@@ -17,6 +17,7 @@ render -> explode -> package, exactly like every other conformance fixture shard
 Run:  python3 conformance/utils/src/gen_unified_golden.py
 """
 import json
+import html
 import os
 import re
 
@@ -44,6 +45,7 @@ UNIFIED_FAMILIES = {f for f, r in _MANIFEST.items() if r.get("native")}
 GUIDED_FAMILIES = {f for f, r in _MANIFEST.items() if r.get("guided_tool_output", True)}
 
 GRAMMAR_NOTE = {
+    "minimax_m3": "reasoning `<mm:think>...</mm:think>`; namespace-prefixed recursive XML tool calls and parameters.",
     "deepseek_v41": "prompt-prefilled reasoning ends at `</think>`; `<｜DSML｜ calls>` contains V4.1 invoke and parameter tags and ends the turn.",
     "deepseek_v4": "reasoning `<think>...</think>`, tool `<｜DSML｜tool_calls><｜DSML｜invoke name=\"NAME\"><｜DSML｜parameter name=\"KEY\" string=\"true\">VALUE</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`.",
     "gemma4": "reasoning `<|channel>thought\\n...<channel|>`, tool `<|tool_call>call:NAME{key:<|\"|>value<|\"|>}<tool_call|>` (string values wrapped in `<|\"|>`; an embedded `<tool_call|>` inside a `<|\"|>` string is data, not the end marker).",
@@ -59,6 +61,8 @@ GRAMMAR_NOTE = {
 # --- grammar renderers: one semantic segment -> that family's raw text --------
 
 def r_reason(fam, text):
+    if fam == "minimax_m3":
+        return f"<mm:think>{text}</mm:think>"
     if fam == "gpt_oss":
         return f"<|channel|>analysis<|message|>{text}<|end|>"
     if fam == "kimi_k3":
@@ -192,6 +196,10 @@ def r_tool_arguments(fam, name, arguments, idx, raw_arguments=None):
         native_values = {key: raw[key] if isinstance(value, str) else json.loads(raw[key])
                          for key, value in arguments.items()}
         return f"<|tool_call>call:{name}{_gemma_value(native_values)}<tool_call|>"
+    if fam == "minimax_m3":
+        ns = "]<]minimax[>["
+        params = "".join(f"{ns}<{key}>{html.escape(value, quote=False)}{ns}</{key}>" for key, value in raw.items())
+        return f'{ns}<tool_call>{ns}<invoke name="{name}">{params}{ns}</invoke>{ns}</tool_call>'
     if fam == "qwen3":
         params = "\n".join(
             f"<parameter={key}>\n{value}\n</parameter>" for key, value in raw.items()
@@ -221,6 +229,26 @@ def r_tool_arguments(fam, name, arguments, idx, raw_arguments=None):
     args = json.dumps(arguments, ensure_ascii=False)
     return (f"<|tool_calls_section_begin|><|tool_call_begin|>functions.{name}:{idx}"
             f"<|tool_call_argument_begin|>{args}<|tool_call_end|><|tool_calls_section_end|>")
+
+
+def qwen3_input_as_minimax_m3(input_text):
+    """Render shared XML edge cases in M3's namespace and named-parameter grammar."""
+    ns = "]<]minimax[>["
+    values = []
+    parameter = re.compile(r"<parameter=([^>]+)>(.*?)(</parameter>|$)", re.DOTALL)
+    def value(match):
+        body = match[2].removeprefix("\n").removesuffix("\n")
+        values.append(ns + "<" + match[1] + ">" + html.escape(body, quote=False)
+                      + (ns + "</" + match[1] + ">" if match[3] else ""))
+        return f"\x00M3_PARAMETER_{len(values)-1}\x00"
+    text = parameter.sub(value, input_text)
+    text = text.replace("<think>", "<mm:think>").replace("</think>", "</mm:think>")
+    text = re.sub(r"<function=([^>]*)>", lambda m: ns + '<invoke name="' + m[1] + '">', text)
+    text = text.replace("</function>", ns + "</invoke>")
+    text = text.replace("<tool_call>", ns + "<tool_call>").replace("</tool_call>", ns + "</tool_call>")
+    for index, body in enumerate(values):
+        text = text.replace(f"\x00M3_PARAMETER_{index}\x00", body)
+    return text
 
 
 def qwen3_input_as_glm47(input_text):
@@ -442,6 +470,8 @@ def control_tokens(fam):
 
     Returns `(reason_open, reason_close, tool_open, tool_close)`.
     """
+    if fam == "minimax_m3":
+        return "<mm:think>", "</mm:think>", "]<]minimax[>[<tool_call>", "]<]minimax[>[</tool_call>"
     if fam == "gpt_oss":
         return "<|channel|>analysis<|message|>", "<|end|>", "<|call|>", "<|call|>"
     if fam == "kimi_k3":
@@ -496,6 +526,7 @@ def guided_named_invoke_prefix(fam):
         "kimi_k3": '<|open|>call tool="get_weather"',
         "muse_glimmer": '<atem:invoke name="get_weather"',
         "qwen3": "<function=get_weather",
+        "minimax_m3": ']<]minimax[>[<invoke name="get_weather"',
     }[fam]
 
 
@@ -1785,6 +1816,7 @@ for _shape, _body in (
             for family, stimulus, visible, opener, closer in (
                 ("qwen3", "<think>literal</think>", "<think>literal</think>", "<function=f><parameter=x>", "</parameter></function>"),
                 ("muse_glimmer", "to=self<|message|>literal<|eom|>", "to=selfliteral", '<atem:invoke name="f"><atem:parameter name="x">', "</atem:parameter></atem:invoke>"),
+                ("minimax_m3", "<mm:think>literal</mm:think>", "<mm:think>literal</mm:think>", ']<]minimax[>[<invoke name="f">]<]minimax[>[<x>', "]<]minimax[>[</x>]<]minimax[>[</invoke>"),
             )
         }),
     ))
@@ -2054,7 +2086,7 @@ def _entry(spec, fam):
             "the comparison has no native GPT-OSS Unified parser; the legacy v1 batch capture is recorded separately",
         )
     if isinstance(spec, dict) and set(spec) <= set(FAMILIES) and "verdict" not in spec:
-        if fam in {"deepseek_v4", "deepseek_v41", "glm47"} and fam not in spec:
+        if fam in {"deepseek_v4", "deepseek_v41", "glm47", "minimax_m3"} and fam not in spec:
             return spec["qwen3"]
         return spec[fam]
     return spec
@@ -2203,6 +2235,7 @@ def _deepseek_v41_input(segments):
 _NULL_TEXT_INPUTS = {
     "qwen3": "<tool_call><function=get_weather><parameter=city>null</parameter></function></tool_call>",
     "glm47": "<tool_call>get_weather<arg_key>city</arg_key><arg_value>null</arg_value></tool_call>",
+    "minimax_m3": r_tool("minimax_m3", "get_weather", "city", "null", 0),
 }
 
 EDGE += [
@@ -2243,12 +2276,12 @@ EDGE += [
                 _NULL_TEXT_INPUTS[family],
                 D("UNSUPPORTED", f"No peer capture is recorded for this {family} reference-schema probe."), M,
             )
-            for family in (("glm47", "qwen3") if scenario == "arg_string_null_ref" else ("glm47",))
+            for family in (("glm47", "qwen3", "minimax_m3") if scenario == "arg_string_null_ref" else ("glm47", "minimax_m3"))
         }),
         {family: [{"name": "get_weather", "parameters": {
             "type": "object", "$defs": {"City": schema},
             "properties": {"city": {"$ref": "#/$defs/City"}},
-        }}] for family in (("glm47", "qwen3") if scenario == "arg_string_null_ref" else ("glm47",))},
+        }}] for family in (("glm47", "qwen3", "minimax_m3") if scenario == "arg_string_null_ref" else ("glm47", "minimax_m3"))},
     )
     for scenario, label, schema, value, detail in (
         ("arg_json_null_ref", "7-4.ref", {"type": ["string", "null"]}, None,
@@ -2266,10 +2299,11 @@ EDGE.append((
     {"starting_state": "None", "tool_output_mode": "Native", "named_tool": None},
     {"finish_reason": "stop"},
     OnlyFamilies({family: (
+        (r_tool_arguments("minimax_m3", "set_labels", MIXED_LABELS_ARGS, 0) if family == "minimax_m3" else
         "<tool_call>set_labels"
         "<arg_key>label</arg_key><arg_value>null</arg_value>"
         "<arg_key>note</arg_key><arg_value>null</arg_value>"
-        "<arg_key>literal</arg_key><arg_value>null</arg_value></tool_call>", M, M,
+        "<arg_key>literal</arg_key><arg_value>null</arg_value></tool_call>"), M, M,
     ) for family in MIXED_CASE_FAMILIES["7-4.mixed_labels"]}),
     {family: [{"name": "set_labels", "parameters": MIXED_LABELS_SCHEMA}]
      for family in MIXED_CASE_FAMILIES["7-4.mixed_labels"]},
@@ -2442,8 +2476,10 @@ EDGE.append((
         '<arg_key>payload</arg_key><arg_value>{"x":1}</arg_value>'
         '<arg_key>count</arg_key><arg_value>42</arg_value></tool_call>', M,
         M,
+    ), "minimax_m3": (
+        r_tool_arguments("minimax_m3", "capture_payload", {"payload": '{"x":1}', "count": 42}, 0), M, M,
     )}),
-    {"glm47": _GLM_REFERENCE_TOOLS},
+    {"glm47": _GLM_REFERENCE_TOOLS, "minimax_m3": _GLM_REFERENCE_TOOLS},
 ))
 
 
@@ -2458,6 +2494,7 @@ _NATIVE_QUOTED_CONTROL = {
     "kimi_k3": "<|open|>call",
     "muse_glimmer": "<|start|>assistant to=get_weather<|message|>",
     "qwen3": "<tool_call>",
+    "minimax_m3": "]<]minimax[>[<tool_call>",
 }
 
 
@@ -2660,6 +2697,12 @@ def _build_edge_cases(fam, specs):
                 kimi_input, *rest = per_fam["kimi_k2"]
                 per_fam = dict(per_fam)
                 per_fam[fam] = (kimi_input_as_dsml(kimi_input), *rest)
+            elif fam == "minimax_m3" and "qwen3" in per_fam:
+                qwen_input, *rest = per_fam["qwen3"]
+                per_fam = dict(per_fam)
+                if name == "prefilled_response_reasoning_markers_literal":
+                    rest[-1] = rest[-1].replace("<think>", "<mm:think>").replace("</think>", "</mm:think>")
+                per_fam[fam] = (qwen3_input_as_minimax_m3(qwen_input), *rest)
             elif fam == "glm47" and "qwen3" in per_fam:
                 qwen_input, *rest = per_fam["qwen3"]
                 per_fam = dict(per_fam)

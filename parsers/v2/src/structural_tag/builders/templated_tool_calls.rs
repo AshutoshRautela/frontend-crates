@@ -159,6 +159,7 @@ impl TemplatedToolCallFormat {
             })
         } else {
             Format::JsonSchema(JsonSchemaFormat {
+                max_whitespace_cnt: None,
                 json_schema,
                 style: self.arguments_style,
                 any_order: tool_arguments_any_order,

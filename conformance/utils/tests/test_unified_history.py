@@ -1393,3 +1393,21 @@ def test_restore_historical_snapshot_preserves_later_execution_and_additions(tmp
     reloaded = unified_history.load_store(tmp_path).histories[("gemma4", implementation)]
     assert reloaded.resolve(f"{implementation}-0.25.1") == restored
     assert reloaded.resolve(f"{implementation}-0.26.0") == later
+
+
+def test_first_capture_bootstraps_a_registered_family_history(tmp_path):
+    root = tmp_path / "store"
+    _write_family(root)
+    _write_capture(root, "0.7.0", {"text_only": _change()}, implementation="sglang_python")
+    loose = tmp_path / "loose"
+    path = loose / "dynamo_v2-0.8.0/gemma4/UNIFIED.1-1.yaml"
+    path.parent.mkdir(parents=True)
+    path.write_text(unified_history.dump_yaml({
+        "family": "gemma4", "mode": "unified", "captured_with": {"dynamo_v2": "0.8.0"},
+        "cases": {"UNIFIED.1-1": {"capture_input": _request(),
+            "assembled": [{"kind": "text", "text": "hello"}], "chunks": []}},
+    }))
+    unified_history.update_from_loose(root, loose)
+    history = unified_history.load_store(root).histories[("gemma4", "dynamo_v2")]
+    observation = history.resolve("dynamo_v2-0.8.0")["text_only"]["observation"]
+    assert observation["value"]["assembled"] == [{"kind": "text", "text": "hello"}]

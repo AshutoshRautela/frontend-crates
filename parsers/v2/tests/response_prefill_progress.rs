@@ -229,12 +229,7 @@ fn response_prefill_skips_non_call_json_and_preserves_no_tool_prose() {
 #[test]
 fn all_starting_channels_keep_long_field_progress_and_argument_order() {
     for family in dynamo_parsers_v2::REGISTERED_UNIFIED_FAMILIES {
-        let closer = match dynamo_parsers_v2::canonical_unified_family(family).unwrap() {
-            "gemma4" => "<channel|>",
-            "kimi_k3" => "<|close|>think<|sep|>",
-            "muse_glimmer" => "<|eom|>",
-            _ => "</think>",
-        };
+        let closer = reasoning_closer(family);
         for named in [false, true] {
             for state in [
                 UnifiedParserStartingState::None,
@@ -474,6 +469,59 @@ fn native_response_qwen_streams_long_quoted_second_parameter_at_every_split() {
                     assemble(&events),
                     expected,
                     "native Response split={split} fragment_size={fragment_size}"
+                );
+            }
+        }
+    }
+}
+
+fn reasoning_closer(family: &str) -> &'static str {
+    match dynamo_parsers_v2::canonical_unified_family(family).unwrap() {
+        "gemma4" => "<channel|>",
+        "kimi_k3" => "<|close|>think<|sep|>",
+        "muse_glimmer" => "<|eom|>",
+        "minimax_m3" => "</mm:think>",
+        _ => "</think>",
+    }
+}
+
+#[test]
+fn escaped_quote_example_cannot_hide_reasoning_end_and_guided_call() {
+    let reasoning = "A literal quote: \\\" → \"\nDone.";
+    for family in dynamo_parsers_v2::REGISTERED_UNIFIED_FAMILIES {
+        for named in [false, true] {
+            let arguments = serde_json::json!({"path":"x","content":"x"});
+            let payload = if named {
+                arguments.to_string()
+            } else {
+                serde_json::json!([{"name":"write_file","arguments":arguments}]).to_string()
+            };
+            let input = format!("{reasoning}{}{payload}", reasoning_closer(family));
+            for at in input.char_indices().map(|(at, _)| at).chain([input.len()]) {
+                let mut parser = create_unified_parser_for_family(family, &tools()).unwrap();
+                parser
+                    .initialize_request(UnifiedParserInit {
+                        starting_state: UnifiedParserStartingState::Reasoning,
+                        tool_output_mode: mode(named),
+                        invalid_guided_payload: InvalidGuidedPayloadPolicy::StreamBestEffort,
+                        ..Default::default()
+                    })
+                    .unwrap();
+                let mut events = parser.push(&input[..at]).unwrap();
+                events.extend(parser.push(&input[at..]).unwrap());
+                events.extend(parser.finish().unwrap().events);
+                assert_eq!(
+                    assemble(&events),
+                    vec![
+                        UnifiedEvent::Reasoning {
+                            text: reasoning.into()
+                        },
+                        UnifiedEvent::ToolCall {
+                            name: "write_file".into(),
+                            arguments: serde_json::json!({"path":"x","content":"x"})
+                        },
+                    ],
+                    "{family} named={named} split {at}"
                 );
             }
         }

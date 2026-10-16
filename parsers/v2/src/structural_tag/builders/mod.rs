@@ -3,17 +3,20 @@
 
 mod deepseek_dsml;
 mod glm47;
+mod minimax_m3;
 mod qwen3_coder;
 mod templated_tool_calls;
 
 pub(crate) use deepseek_dsml::DEEPSEEK_DSML;
 pub(crate) use glm47::GLM47;
+pub(crate) use minimax_m3::MINIMAX_M3;
 pub(crate) use qwen3_coder::QWEN3_CODER;
 
 use serde_json::Value;
 
 use super::policy::{
-    ResolvedToolCalling, ResolvedToolCallingPolicy, ToolCallingMode, resolve_tool_calling,
+    ResolvedToolCalling, ResolvedToolCallingPolicy, ToolCallingMode, enforces_tool_schema,
+    resolve_tool_calling,
 };
 use super::wire::{
     AnyTextFormat, ConstStringFormat, Format, JsonSchemaFormat, JsonSchemaStyle, OrFormat,
@@ -31,9 +34,30 @@ impl StructuralTagBuilder {
         Self { grammar }
     }
 
-    /// Returns `None` when this request needs no structural constraint.
+    /// Returns `None` when no native constraint is needed or supported.
+    /// Callers retain their existing JSON-guidance fallback for forced tools.
     pub fn build(&self, context: &StructuralTagContext<'_>) -> anyhow::Result<Option<Value>> {
         self.build_with_options(context, &StructuralTagOptions::default())
+    }
+
+    /// Whether the selected tools' schemas can be represented by the native grammar.
+    pub fn supports_request(&self, context: &StructuralTagContext<'_>) -> anyhow::Result<bool> {
+        Ok(match resolve_tool_calling(context)? {
+            ResolvedToolCalling::Disabled => true,
+            ResolvedToolCalling::Enabled(policy) => self.supports_policy(&policy),
+        })
+    }
+
+    /// Inspect native format compatibility without cloning a caller-owned schema.
+    pub fn supports_schema(&self, schema: &Value) -> bool {
+        self.grammar.supports_schema(schema)
+    }
+
+    fn supports_policy(&self, policy: &ResolvedToolCallingPolicy<'_>) -> bool {
+        policy.tools.iter().all(|tool| {
+            !enforces_tool_schema(tool, policy.schema_mode)
+                || self.supports_schema(&tool.parameters)
+        })
     }
 
     /// Builds a structural tag with request-independent behavior overrides.
@@ -51,6 +75,9 @@ impl StructuralTagBuilder {
             ResolvedToolCalling::Enabled(policy) => policy,
         };
         if policy.tools.is_empty() {
+            return Ok(None);
+        }
+        if !self.supports_policy(&policy) {
             return Ok(None);
         }
         let exclude_special_tokens = options
@@ -94,6 +121,10 @@ impl StructuralTagBuilder {
 }
 
 pub(super) trait ToolCallGrammar: Send + Sync {
+    fn supports_schema(&self, _schema: &Value) -> bool {
+        true
+    }
+
     fn reasoning_begin(&self) -> Option<&'static str>;
 
     fn reasoning_end(&self) -> Option<&'static str>;
@@ -130,6 +161,7 @@ pub(super) trait ToolCallGrammar: Send + Sync {
             elements: vec![
                 self.build_tool_calls_only(policy, tool_arguments_any_order)?,
                 Format::JsonSchema(JsonSchemaFormat {
+                    max_whitespace_cnt: None,
                     json_schema: schema.clone(),
                     style: JsonSchemaStyle::Json,
                     any_order: false,

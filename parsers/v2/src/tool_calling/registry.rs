@@ -55,7 +55,7 @@ family_registry! {
     ),
     "muse_glimmer" => (MuseGlimmerToolStreamParser::create, None),
     "minimax_m2"   => (MiniMaxM2ToolStreamParser::create, None),
-    "minimax_m3"   => (MiniMaxM3ToolStreamParser::create, None),
+    "minimax_m3"   => (MiniMaxM3ToolStreamParser::create, Some(&crate::structural_tag::builders::MINIMAX_M3)),
     "gemma4"       => (Gemma4ToolStreamParser::create, None),
     "glm47"        => (
         Glm47ToolStreamParser::create,

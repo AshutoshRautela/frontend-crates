@@ -1338,7 +1338,7 @@ def test_shared_reference_cases_keep_older_peer_captures_unmeasured(model_v2: di
         "glm_ref_json_looking_strings",
         "glm_ref_scalar_types",
     )
-    peer_families = {"deepseek_v4", "deepseek_v41", "gemma4", "kimi_k2", "kimi_k3", "muse_glimmer", "qwen3"}
+    peer_families = {"deepseek_v4", "deepseek_v41", "gemma4", "kimi_k2", "kimi_k3", "muse_glimmer", "qwen3", "minimax_m3"}
     for row in tab["rows"]:
         family = row["family"]
         for scenario in scenarios:
@@ -1395,7 +1395,7 @@ def test_glm_type_references_have_typed_current_batch_and_unified_captures(
     assert blocks["golden"]["events"] == blocks["dynamo"]["events"] == events
     assert cell_state(cell, {"key": "dynamo", "label": "Dynamo"})[0] == "green"
     families = {"deepseek_v4", "deepseek_v41", "gemma4", "glm47", "gpt_oss",
-                "kimi_k2", "kimi_k3", "muse_glimmer", "qwen3"}
+                "kimi_k2", "kimi_k3", "muse_glimmer", "qwen3", "minimax_m3"}
     rows = {other["family"]: other for other in unified["rows"] if other.get("family")}
     assert rows.keys() == families
     for family, other in rows.items():
@@ -1567,12 +1567,12 @@ def test_stream_regression_matrix_uses_consistent_display_ids(model_v2):
                     assert ["Ref", "https://github.com/ai-dynamo/frontend-crates/pull/271"] in cell["tooltip"]["refs"]
 
 
-@pytest.mark.parametrize("scenario,label,family", [
-    ("deepseek_v41_json_invocation_body", "deepseek_v41-json_invocation_body", "deepseek_v41"),
-    ("glm47_reference_type_intersection", "glm5-reference_type_intersection", "glm47"),
+@pytest.mark.parametrize("scenario,label,families", [
+    ("deepseek_v41_json_invocation_body", "deepseek_v41-json_invocation_body", {"deepseek_v41"}),
+    ("glm47_reference_type_intersection", "7-reference_type_intersection", {"glm47", "minimax_m3"}),
 ])
-def test_targeted_unified_regressions_use_family_specific_columns(model_v2, scenario, label, family):
-    assert table.gen_unified_golden.scenario_families(scenario) == {family}
+def test_targeted_unified_regressions_keep_applicability_and_display_placement(model_v2, scenario, label, families):
+    assert table.gen_unified_golden.scenario_families(scenario) == families
     tab = _tab(model_v2, "tab-unified")
     column = next(column for column in tab["columns"] if column["sub"] == scenario)
     assert column["label"] == label
@@ -1581,8 +1581,8 @@ def test_targeted_unified_regressions_use_family_specific_columns(model_v2, scen
         if not row.get("family"):
             continue
         cell = row["cells"][scenario]
-        assert (cell["status"] == "na") == (row["family"] != family)
-        if row["family"] == family:
+        assert (cell["status"] == "na") == (row["family"] not in families)
+        if row["family"] in families:
             assert cell["case_id"] == table.unified_taxonomy.numbered_id(scenario)
 
 
@@ -1682,8 +1682,8 @@ def test_unified_null_groups_keep_every_schema_variant_and_mixed_probe(model_v2)
     for row in tab["rows"]:
         if row.get("family") not in families:
             continue
-        mixed = row["family"] == "glm47"
-        refs = row["family"] == "glm47"
+        mixed = row["family"] in {"glm47", "minimax_m3"}
+        refs = row["family"] in {"glm47", "minimax_m3"}
         groups = []
         for label, count in (("7-arg_json_null", 5), ("7-arg_string_null", 7)):
             sub = next(col["sub"] for col in tab["columns"] if col["label"] == label)
@@ -1797,12 +1797,12 @@ def test_argument_sections_and_folds_preserve_all_authored_scenarios(model_v2):
     tab = _tab(model_v2, "tab-unified")
     sections = [group for group in tab["column_groups"] if group["key"].startswith("unified_g7_")]
     assert [group["label"] for group in sections] == list(ARGUMENT_SECTIONS.values())
-    assert [group["span"] for group in sections] == [3, 10, 6, 10, 17, 14]
+    assert [group["span"] for group in sections] == [3, 10, 6, 10, 17, 15]
     columns = [column for column in tab["columns"] if column["group_key"].startswith("unified_g7_")]
-    assert len(columns) == 60
-    assert [column["display_number"] for column in columns] == list(range(1, 61))
-    expected = {scenario for scenario in unified_taxonomy.UNIFIED_TAX if unified_taxonomy.tax(scenario)[0] == 7}
-    assert len(expected) == 139
+    assert len(columns) == 61
+    assert [column["display_number"] for column in columns] == list(range(1, 62))
+    expected = {scenario for scenario in unified_taxonomy.UNIFIED_TAX if unified_taxonomy.display_tax(scenario)[0] == 7}
+    assert len(expected) == 140
     found = set()
     for row in tab["rows"]:
         if row.get("section"):

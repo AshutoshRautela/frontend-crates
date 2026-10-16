@@ -247,7 +247,9 @@ fn unified_parser_is_chunk_invariant() {
 #[test]
 fn reference_argument_cases_preserve_results_at_every_split() {
     let mut checked = 0;
-    for file in load_native_golden() {
+    let files = load_native_golden();
+    let expected = 7 * files.len();
+    for file in files {
         for (id, case) in &file.cases {
             if ![
                 "glm_ref_object",
@@ -284,7 +286,7 @@ fn reference_argument_cases_preserve_results_at_every_split() {
             checked += 1;
         }
     }
-    assert_eq!(checked, 56);
+    assert_eq!(checked, expected);
 }
 
 /// I6: parsing the whole output at once assembles to the streamed result.

@@ -354,6 +354,10 @@ impl InvokeBoundaryFactory {
 /// Family-owned request-local invoke-boundary contract.
 ///
 pub(crate) trait InvokeBoundary: Send {
+    /// Guided output may need a complete header prefix while native recovery accepts less.
+    fn guided_invoke_start(&self) -> Option<&'static str> {
+        None
+    }
     /// Restore request/channel context after a retained candidate is rebased.
     fn set_guided_context(&mut self, _context: GuidedInvokePrefixContext) {}
 
@@ -595,6 +599,7 @@ struct ProseQuoteState {
     escaped: bool,
     previous: Option<char>,
     pending_apostrophe: bool,
+    pending_double_quote_open: bool,
 }
 
 impl ProseQuoteState {
@@ -609,6 +614,12 @@ impl ProseQuoteState {
 
     fn advance(&mut self, character: char, next: Option<char>) {
         self.resolve_apostrophe(Some(character));
+        if self.pending_double_quote_open {
+            if matches!(character, '\n' | '\r') {
+                self.quote = None;
+            }
+            self.pending_double_quote_open = false;
+        }
         if self.escaped {
             self.escaped = false;
         } else if character == '\\' {
@@ -629,8 +640,13 @@ impl ProseQuoteState {
         } else if self.quote.is_none()
             && matches!(character, '"' | '\'' | '`')
             && !(character == '\'' && self.previous.is_some_and(char::is_alphanumeric))
+            && !(character == '"' && next.is_some_and(|next| matches!(next, '\n' | '\r')))
         {
             self.quote = Some(character);
+            // A bare quote ending an escape example (`\" -> "`) cannot
+            // borrow its partner from a later channel's JSON payload.
+            // Keep the lookahead undecided across a chunk boundary.
+            self.pending_double_quote_open = character == '"' && next.is_none();
         }
         self.previous = Some(character);
     }
@@ -1101,6 +1117,13 @@ impl<E: InvokeEmitter> WrappedBlockScanner<E> {
 
     pub(crate) fn invoke_start(&self) -> &str {
         &self.spec.invoke_start
+    }
+
+    pub(crate) fn guided_invoke_start(&self) -> &str {
+        self.invoke_boundary
+            .as_ref()
+            .and_then(|boundary| boundary.guided_invoke_start())
+            .unwrap_or(&self.spec.invoke_start)
     }
 
     pub(crate) fn invoke_boundary_factory(&self) -> Option<InvokeBoundaryFactory> {
