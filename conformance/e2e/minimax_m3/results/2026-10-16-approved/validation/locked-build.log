@@ -1,0 +1,3 @@
+warning: dynamo-llm@1.6.0: Found FATBIN at default location: ./src/block_manager/block/transfer/kernels/vectorized_copy.fatbin
+warning: dynamo-llm@1.6.0: CUDA FATBIN found at: ./src/block_manager/block/transfer/kernels/vectorized_copy.fatbin - copied to OUT_DIR
+    Finished `dev` profile [optimized] target(s) in 0.44s

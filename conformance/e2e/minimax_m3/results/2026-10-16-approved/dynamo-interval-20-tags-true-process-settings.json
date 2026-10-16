@@ -1,0 +1,106 @@
+{
+  "server": {
+    "pid": "23125",
+    "argv": [
+      "python3",
+      "-m",
+      "dynamo.sglang",
+      "--namespace",
+      "m3-unified",
+      "--discovery-backend",
+      "file",
+      "--request-plane",
+      "tcp",
+      "--response-plane",
+      "tcp",
+      "--event-plane",
+      "zmq",
+      "--dyn-tool-call-parser",
+      "minimax_m3",
+      "--dyn-reasoning-parser",
+      "minimax_m3",
+      "--dyn-structural-tag",
+      "true",
+      "--reasoning-parser",
+      "minimax-m3",
+      "--model-path",
+      "MiniMaxAI/MiniMax-M3-MXFP8",
+      "--revision",
+      "c5454eb03678d8710e54a4e0fc681b9f3b4a3dba",
+      "--served-model-name",
+      "MiniMaxAI/MiniMax-M3-MXFP8",
+      "--tp",
+      "4",
+      "--attention-backend",
+      "fa4",
+      "--moe-runner-backend",
+      "deep_gemm",
+      "--context-length",
+      "8192",
+      "--chunked-prefill-size",
+      "4096",
+      "--mem-fraction-static",
+      "0.85",
+      "--max-running-requests",
+      "16",
+      "--disable-cuda-graph",
+      "--stream-interval",
+      "20",
+      "--trust-remote-code",
+      ""
+    ],
+    "parser_selection": [
+      "PYTHONPATH=/weights/overlay"
+    ]
+  },
+  "frontend-v1": {
+    "pid": "23126",
+    "argv": [
+      "python3",
+      "-m",
+      "dynamo.frontend",
+      "--namespace",
+      "m3-unified",
+      "--discovery-backend",
+      "file",
+      "--request-plane",
+      "tcp",
+      "--response-plane",
+      "tcp",
+      "--event-plane",
+      "zmq",
+      "--http-port",
+      "8001",
+      ""
+    ],
+    "parser_selection": [
+      "DYN_PARSER_VERSION=1",
+      "PYTHONPATH=/weights/overlay"
+    ]
+  },
+  "frontend-v2": {
+    "pid": "23127",
+    "argv": [
+      "python3",
+      "-m",
+      "dynamo.frontend",
+      "--namespace",
+      "m3-unified",
+      "--discovery-backend",
+      "file",
+      "--request-plane",
+      "tcp",
+      "--response-plane",
+      "tcp",
+      "--event-plane",
+      "zmq",
+      "--http-port",
+      "8000",
+      ""
+    ],
+    "parser_selection": [
+      "DYN_PARSER_VERSION=2",
+      "PYTHONPATH=/weights/overlay-whitespace"
+    ]
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "model": "MiniMaxAI/MiniMax-M3-MXFP8",
+  "revision": "c5454eb03678d8710e54a4e0fc681b9f3b4a3dba",
+  "shards": 31,
+  "shard_file_bytes": 443749077256,
+  "index_metadata": {
+    "total_size": 451543283200
+  },
+  "index_shards_match": true
+}

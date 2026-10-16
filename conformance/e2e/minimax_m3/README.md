@@ -25,6 +25,8 @@ For native SGLang with tags enabled, also pass:
 
 The exporter calls the production Rust builder and uses an external reasoning boundary because native SGLang already gates constrained decoding until reasoning ends. The deployed validation uses XGrammar 0.2.8. `--case ID` selects a smoke test; keep smoke captures in a separate output directory.
 
+The deployment recipes are in `deployment/`. The model pod installs pinned dependencies and waits; stage `prepare-engine.py` and the start/stop scripts under `/tmp`, then run `python3 /tmp/prepare-engine.py` before starting either server. This adapter adds a process lock to cold MSA kernel compilation: the pinned engine otherwise lets TP processes read a shared library while another process is linking it. Native parser code is unchanged. Wait for `/health` to return 200 and `/v1/models` to contain the model before scored requests. The build recipe needs both `dynamo.Cargo.lock` and `bindings.Cargo.lock` staged under `/tmp` because the Python binding has a separate Cargo workspace.
+
 Every run writes an append-only JSONL journal immediately and a uniquely named JSON capture on completion, including actual requests, assembled responses, raw SSE events and timestamps. Failed iterations are retained. The report selects the latest capture for each implementation/tags/interval combination. Regenerate it with:
 
 ```bash
@@ -44,7 +46,7 @@ On a Linux environment with XGrammar 0.2.8, verify that native parallel invocati
 
 M3's native XML cannot preserve every JSON Schema constraint. Unsupported unions and constrained strings retain the existing JSON-guidance path; tagged replay still checks the original schema and expected arguments.
 
-Recorded runs, original failures, build identifiers, raw SSE timing, and the HTML summary live under [`results/2026-10-16`](results/2026-10-16/report.html). The original suite is preserved; proposed schema changes under `diagnostics/` are unapproved and excluded from scored runs.
+Approved-suite runs, build identifiers, raw SSE timing, and the current HTML summary live under [`results/2026-10-16-approved`](results/2026-10-16-approved/report.html). The original suite, failures, and report remain under [`results/2026-10-16`](results/2026-10-16/report.html). The original suite and its failures are preserved under `diagnostics/cases-original.yaml` and the original captures. The user approved two schema constraints: `long_string_streaming` requires exactly 288 characters, and `json_escaping` fixes the already expected decoded string with `const`. Prompts and expected outputs are unchanged. Captures identify each suite by SHA-256; the approved suite is replayed across every backend/configuration.
 
 The offline v1 comparison distinguishes unsupported request modes from mismatches in supported modes. Replay its pinned 10.0.6 adapter with:
 

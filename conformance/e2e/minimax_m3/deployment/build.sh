@@ -15,6 +15,7 @@ patch -p1 < /tmp/dynamo-integration.patch
 patch -p1 < /tmp/pinned-engine-compat.patch
 patch -p1 < /tmp/dynamo-schema-fallback.patch
 cp /tmp/dynamo.Cargo.lock Cargo.lock
+cp /tmp/bindings.Cargo.lock lib/bindings/python/Cargo.lock
 export CARGO_TARGET_DIR=/work/target CARGO_BUILD_JOBS=10 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_DEV_OPT_LEVEL=1
 export PYO3_PYTHON=/usr/bin/python3
 cd lib/bindings/python

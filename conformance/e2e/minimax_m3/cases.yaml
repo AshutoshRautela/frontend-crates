@@ -366,7 +366,21 @@ cases:
 - id: long_string_streaming
   prompt: 'Call echo with text exactly the following string, preserving every character: abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789'
   tools:
-  - *id002
+  - type: function
+    function:
+      name: echo
+      description: Execute echo with the supplied arguments.
+      strict: true
+      parameters:
+        type: object
+        properties:
+          text:
+            type: string
+            minLength: 288
+            maxLength: 288
+        required:
+        - text
+        additionalProperties: false
   tool_choice: required
   expected:
     calls:
@@ -441,6 +455,7 @@ cases:
         properties:
           text:
             type: string
+            const: "line1\n\"quoted\"\\path\tend"
         required:
         - text
         additionalProperties: false

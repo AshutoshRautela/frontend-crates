@@ -235,7 +235,9 @@ def report(directory):
         metadata += "<h2>Hermetic parser validation</h2><table>" + "".join(
             f"<tr><td>{html.escape(label)}</td><td>{html.escape(str(value))}</td></tr>"
             for label, value in validation) + "</table>"
-        evidence = [path for path in ("offline/v1-batch-score.json", "diagnostics/model-generation-raw-proof.json")
+        evidence = [path for path in ("cases.yaml", "scores.json", "diagnostics/approved-schema-changes.json",
+                                     "validation/canonical-status.log", "offline/v1-batch-score.json",
+                                     "diagnostics/model-generation-raw-proof.json")
                     if (directory / path).exists()]
         if evidence:
             metadata += "<p>Evidence: " + ", ".join(f'<a href="{path}">{path}</a>' for path in evidence) + "</p>"
