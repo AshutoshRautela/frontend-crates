@@ -1122,6 +1122,7 @@ dependencies = [
  "dynamo-parsers",
  "dynamo-parsers-v2",
  "dynamo-protocols",
+ "dynamo-renderer",
  "futures",
  "serde",
  "serde_json",
@@ -1197,7 +1198,7 @@ dependencies = [
 
 [[package]]
 name = "dynamo-parsers-v2"
-version = "0.7.23"
+version = "0.7.24"
 dependencies = [
  "anyhow",
  "openai-harmony",

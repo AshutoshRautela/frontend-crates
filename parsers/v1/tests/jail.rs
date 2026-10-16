@@ -11,8 +11,517 @@ use dynamo_protocols::types::{
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dynamo_protocols::types::{ChatChoiceLogprobs, ChatCompletionTokenLogprob};
     use futures::StreamExt;
     use futures::stream;
+
+    fn dsml_chunk_with_metadata(
+        text: &str,
+        reasoning: Option<&str>,
+        finish_reason: Option<FinishReason>,
+    ) -> Annotated<CreateChatCompletionStreamResponse> {
+        let mut chunk = test_utils::create_mock_response_chunk(text.to_string(), 0);
+        let choice = &mut chunk.data.as_mut().unwrap().choices[0];
+        choice.delta.reasoning_content = reasoning.map(str::to_string);
+        choice.finish_reason = finish_reason;
+        let token = ChatCompletionTokenLogprob {
+            token: text.to_string(),
+            logprob: -0.5,
+            token_id: Some(42),
+            bytes: Some(text.as_bytes().to_vec()),
+            top_logprobs: Vec::new(),
+        };
+        choice.logprobs = Some(ChatChoiceLogprobs {
+            content: Some(vec![token.clone()]),
+            refusal: Some(vec![token]),
+        });
+        chunk
+    }
+
+    fn assert_logprob_records(expected: &[ChatChoiceLogprobs], choices: &[&ChatChoiceStream]) {
+        for is_refusal in [false, true] {
+            let actual_tokens: Vec<_> = choices
+                .iter()
+                .filter_map(|choice| choice.logprobs.as_ref())
+                .flat_map(|lp| if is_refusal { &lp.refusal } else { &lp.content })
+                .flatten()
+                .collect();
+            let expected_tokens: Vec<_> = expected
+                .iter()
+                .flat_map(|lp| if is_refusal { &lp.refusal } else { &lp.content })
+                .flatten()
+                .collect();
+            assert_eq!(actual_tokens, expected_tokens);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_dsml_partial_separator_preserves_logprobs() {
+        let chunks: Vec<_> = ["Hello", "\n\n", "world"]
+            .into_iter()
+            .map(|text| dsml_chunk_with_metadata(text, None, None))
+            .collect();
+        let expected: Vec<_> = chunks
+            .iter()
+            .map(|chunk| {
+                chunk.data.as_ref().unwrap().choices[0]
+                    .logprobs
+                    .clone()
+                    .unwrap()
+            })
+            .collect();
+        let results: Vec<_> = JailedStream::builder()
+            .tool_call_parser("deepseek_v4")
+            .build()
+            .apply_with_finish_reason(stream::iter(chunks))
+            .collect()
+            .await;
+        let choices: Vec<_> = results
+            .iter()
+            .flat_map(|chunk| &chunk.data.as_ref().unwrap().choices)
+            .collect();
+        assert_logprob_records(&expected, &choices);
+        assert_eq!(test_utils::reconstruct_content(&results), "Hello\n\nworld");
+    }
+
+    #[tokio::test]
+    async fn test_dsml_partial_separator_preserves_reasoning_at_eof() {
+        let chunks = vec![dsml_chunk_with_metadata(
+            "\n\n",
+            Some("thinking"),
+            Some(FinishReason::Stop),
+        )];
+        let results: Vec<_> = JailedStream::builder()
+            .tool_call_parser("deepseek_v4")
+            .build()
+            .apply_with_finish_reason(stream::iter(chunks))
+            .collect()
+            .await;
+        assert_eq!(test_utils::reconstruct_content(&results), "\n\n");
+        let choices: Vec<_> = results
+            .iter()
+            .flat_map(|chunk| &chunk.data.as_ref().unwrap().choices)
+            .collect();
+        assert_eq!(choices.len(), 1);
+        assert_eq!(
+            choices[0].delta.reasoning_content.as_deref(),
+            Some("thinking")
+        );
+        assert_eq!(choices[0].finish_reason, Some(FinishReason::Stop));
+        assert!(choices[0].logprobs.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_dsml_contentless_metadata_keeps_source_order() {
+        for is_jailed in [false, true] {
+            for has_followup in [true, false] {
+                let mut reasoning = dsml_chunk_with_metadata(
+                    "thinking",
+                    Some("thinking"),
+                    (!has_followup).then_some(FinishReason::Stop),
+                );
+                reasoning.data.as_mut().unwrap().choices[0].delta.content = None;
+                let initial = if is_jailed {
+                    "<｜DSML｜tool_calls><｜DSML｜invoke name=\"test\">"
+                } else {
+                    "\n\n"
+                };
+                let mut chunks = vec![
+                    dsml_chunk_with_metadata(initial, Some("first"), None),
+                    reasoning,
+                ];
+                if has_followup {
+                    chunks.push(dsml_chunk_with_metadata(
+                        if is_jailed {
+                            "</｜DSML｜invoke></｜DSML｜tool_calls>"
+                        } else {
+                            "world"
+                        },
+                        None,
+                        Some(FinishReason::Stop),
+                    ));
+                }
+                let expected: Vec<_> = chunks
+                    .iter()
+                    .map(|chunk| {
+                        chunk.data.as_ref().unwrap().choices[0]
+                            .logprobs
+                            .clone()
+                            .unwrap()
+                    })
+                    .collect();
+                let results: Vec<_> = JailedStream::builder()
+                    .tool_call_parser("deepseek_v4")
+                    .build()
+                    .apply_with_finish_reason(stream::iter(chunks))
+                    .collect()
+                    .await;
+                let choices: Vec<_> = results
+                    .iter()
+                    .flat_map(|chunk| &chunk.data.as_ref().unwrap().choices)
+                    .collect();
+                assert_logprob_records(&expected, &choices);
+                assert_eq!(
+                    test_utils::reconstruct_content(&results),
+                    if is_jailed {
+                        ""
+                    } else if has_followup {
+                        "\n\nworld"
+                    } else {
+                        "\n\n"
+                    }
+                );
+                assert_eq!(
+                    choices
+                        .iter()
+                        .filter_map(|choice| choice.delta.reasoning_content.as_deref())
+                        .collect::<String>(),
+                    "firstthinking"
+                );
+                assert_eq!(
+                    choices.last().unwrap().finish_reason,
+                    Some(if is_jailed && has_followup {
+                        FinishReason::ToolCalls
+                    } else {
+                        FinishReason::Stop
+                    })
+                );
+                assert!(
+                    choices[..choices.len() - 1]
+                        .iter()
+                        .all(|choice| choice.finish_reason.is_none())
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_reserved_partial_marker_terminal_metadata() {
+        let marker = "<|close|>mes";
+        for finish in [FinishReason::Length, FinishReason::Stop] {
+            for has_reasoning in [true, false] {
+                let initial = dsml_chunk_with_metadata(marker, None, None);
+                let mut terminal = dsml_chunk_with_metadata(
+                    "terminal",
+                    has_reasoning.then_some("thinking"),
+                    Some(finish),
+                );
+                let choice = &mut terminal.data.as_mut().unwrap().choices[0];
+                choice.delta.content = None;
+                choice.delta.role = (!has_reasoning).then_some(Role::Assistant);
+                let chunks = vec![initial, terminal];
+                let expected: Vec<_> = chunks
+                    .iter()
+                    .skip(usize::from(finish == FinishReason::Length))
+                    .map(|chunk| {
+                        chunk.data.as_ref().unwrap().choices[0]
+                            .logprobs
+                            .clone()
+                            .unwrap()
+                    })
+                    .collect();
+                let results: Vec<_> = JailedStream::builder()
+                    .tool_call_parser("kimi_k3")
+                    .build()
+                    .apply_with_finish_reason(stream::iter(chunks))
+                    .collect()
+                    .await;
+                let choices: Vec<_> = results
+                    .iter()
+                    .flat_map(|chunk| &chunk.data.as_ref().unwrap().choices)
+                    .collect();
+                assert_logprob_records(&expected, &choices);
+                assert_eq!(
+                    test_utils::reconstruct_content(&results),
+                    if finish == FinishReason::Length {
+                        ""
+                    } else {
+                        marker
+                    }
+                );
+                assert_eq!(choices.last().unwrap().finish_reason, Some(finish));
+                assert!(
+                    choices[..choices.len() - 1]
+                        .iter()
+                        .all(|choice| choice.finish_reason.is_none())
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_reserved_partial_marker_defers_contentless_metadata() {
+        let marker = "<|close|>mes";
+        for finish in [FinishReason::Length, FinishReason::Stop] {
+            for continuation in [None, Some(" world"), Some("sage"), Some("sage<|sep|>")] {
+                let mut reasoning = dsml_chunk_with_metadata("thinking", Some("thinking"), None);
+                reasoning.data.as_mut().unwrap().choices[0].delta.content = None;
+                let mut chunks = vec![dsml_chunk_with_metadata(marker, None, None), reasoning];
+                if let Some(text) = continuation {
+                    chunks.push(dsml_chunk_with_metadata(text, None, None));
+                }
+                let mut terminal = dsml_chunk_with_metadata("terminal", None, Some(finish));
+                terminal.data.as_mut().unwrap().choices[0].delta.content = None;
+                terminal.data.as_mut().unwrap().choices[0].delta.role = None;
+                chunks.push(terminal);
+                // A limit inside the marker drops its text records, never contentless ones.
+                let truncated =
+                    finish == FinishReason::Length && matches!(continuation, None | Some("sage"));
+                let last = chunks.len() - 1;
+                let expected: Vec<_> = chunks
+                    .iter()
+                    .enumerate()
+                    .filter(|(index, _)| !truncated || *index == 1 || *index == last)
+                    .map(|(_, chunk)| {
+                        chunk.data.as_ref().unwrap().choices[0]
+                            .logprobs
+                            .clone()
+                            .unwrap()
+                    })
+                    .collect();
+                let results: Vec<_> = JailedStream::builder()
+                    .tool_call_parser("kimi_k3")
+                    .build()
+                    .apply_with_finish_reason(stream::iter(chunks))
+                    .collect()
+                    .await;
+                let choices: Vec<_> = results
+                    .iter()
+                    .flat_map(|chunk| &chunk.data.as_ref().unwrap().choices)
+                    .collect();
+                assert_logprob_records(&expected, &choices);
+                let expected_text = match (continuation, finish) {
+                    (Some(" world"), _) => format!("{marker} world"),
+                    (None, FinishReason::Stop) => marker.to_string(),
+                    (Some("sage"), FinishReason::Stop) => format!("{marker}sage"),
+                    _ => String::new(),
+                };
+                assert_eq!(test_utils::reconstruct_content(&results), expected_text);
+                assert_eq!(choices.last().unwrap().finish_reason, Some(finish));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_held_text_records_stay_aligned() {
+        let chunk = |text: Option<&str>, tokens: &[&str]| {
+            let mut chunk =
+                test_utils::create_mock_response_chunk(text.unwrap_or_default().to_string(), 0);
+            let choice = &mut chunk.data.as_mut().unwrap().choices[0];
+            if text.is_none() {
+                choice.delta.role = None;
+                choice.delta.content = None;
+                choice.delta.reasoning_content = Some("thinking".to_string());
+            }
+            let records = tokens
+                .iter()
+                .map(|token| ChatCompletionTokenLogprob {
+                    token: token.to_string(),
+                    logprob: -0.5,
+                    token_id: None,
+                    bytes: Some(token.as_bytes().to_vec()),
+                    top_logprobs: Vec::new(),
+                })
+                .collect();
+            choice.logprobs = Some(ChatChoiceLogprobs {
+                content: Some(records),
+                refusal: None,
+            });
+            chunk
+        };
+        let k3_last = || {
+            let mut last = chunk(Some("x<|close|>mes"), &["x", "<|close|>", "mes"]);
+            last.data.as_mut().unwrap().choices[0].finish_reason = Some(FinishReason::Length);
+            last
+        };
+        let k3_call = concat!(
+            "<|open|>tools<|sep|><|open|>call tool=\"calc\" index=\"1\"<|sep|>",
+            "<|open|>argument key=\"x\" type=\"number\"<|sep|>323<|close|>argument<|sep|>",
+            "<|close|>call<|sep|><|close|>tools<|sep|>"
+        );
+        let call_then_marker = format!("{k3_call}<|close|>mes");
+        let cases = [
+            (
+                "deepseek_v4",
+                vec![
+                    chunk(Some("A\n\n"), &["A", "\n\n"]),
+                    chunk(None, &["r"]),
+                    chunk(Some("B\n"), &["B", "\n"]),
+                    chunk(Some("C"), &["C"]),
+                ],
+                vec!["A", "\n\n", "r", "B", "\n", "C"],
+            ),
+            (
+                "kimi_k3",
+                vec![
+                    chunk(Some("<|close|>mes"), &["<|close|>", "mes"]),
+                    chunk(None, &["thinking"]),
+                    k3_last(),
+                ],
+                vec!["<|close|>", "mes", "thinking", "x"],
+            ),
+            (
+                // The completed call's emission already carries its trailing marker's records.
+                "kimi_k3",
+                vec![
+                    chunk(Some(&call_then_marker), &[k3_call, "<|close|>", "mes"]),
+                    k3_last(),
+                ],
+                vec![k3_call, "<|close|>", "mes", "x"],
+            ),
+        ];
+        for (parser, chunks, expected) in cases {
+            let results: Vec<_> = JailedStream::builder()
+                .tool_call_parser(parser)
+                .build()
+                .apply_with_finish_reason(stream::iter(chunks))
+                .collect()
+                .await;
+            let choices: Vec<_> = results
+                .iter()
+                .flat_map(|chunk| &chunk.data.as_ref().unwrap().choices)
+                .collect();
+            let tokens = |choice: &ChatChoiceStream| -> Vec<String> {
+                choice
+                    .logprobs
+                    .iter()
+                    .flat_map(|lp| lp.content.iter().flatten())
+                    .map(|record| record.token.clone())
+                    .collect()
+            };
+            let all: Vec<_> = choices.iter().flat_map(|choice| tokens(choice)).collect();
+            assert_eq!(all, expected, "parser={parser}");
+            // A call emission owns its whole chunk's records; check text emissions.
+            for choice in choices
+                .iter()
+                .filter(|choice| choice.delta.tool_calls.is_none())
+            {
+                if let Some(dynamo_protocols::types::ChatCompletionMessageContent::Text(text)) =
+                    &choice.delta.content
+                {
+                    // Records may lead held text, but never cover another chunk's text.
+                    let covered: String = tokens(choice)
+                        .into_iter()
+                        .filter(|token| !["r", "thinking"].contains(&token.as_str()))
+                        .collect();
+                    assert!(text.ends_with(&covered), "parser={parser} text={text:?}");
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_dsml_split_metadata_has_one_owner() {
+        let invoke = "<｜DSML｜invoke name=\"test\"></｜DSML｜invoke>";
+        let end = "</｜DSML｜tool_calls>";
+        let complete = format!("Text.\n\n<｜DSML｜tool_calls>{invoke}{end} tail");
+        let partial_rest = format!("｜DSML｜tool_calls>{invoke}{end} tail");
+        let bare = format!("Text.\n\n{invoke}");
+        let cases = vec![
+            vec![complete.as_str()],
+            vec!["Text.\n\n", "<", partial_rest.as_str()],
+            vec!["\n\n", "<", partial_rest.as_str()],
+            vec!["Text.\n\n<", "ordinary"],
+            vec!["Text.\n\n<"],
+            vec!["Text", ".\n\n", "<", partial_rest.as_str()],
+            vec![bare.as_str()],
+        ];
+        for parts in cases {
+            let chunks: Vec<_> = parts
+                .iter()
+                .map(|part| dsml_chunk_with_metadata(part, None, None))
+                .collect();
+            let expected: Vec<_> = chunks
+                .iter()
+                .map(|chunk| {
+                    chunk.data.as_ref().unwrap().choices[0]
+                        .logprobs
+                        .clone()
+                        .unwrap()
+                })
+                .collect();
+            let mut chunks = chunks;
+            let mut terminal = test_utils::create_final_response_chunk(0);
+            terminal.data.as_mut().unwrap().choices[0]
+                .delta
+                .reasoning_content = Some("done".to_string());
+            chunks.push(terminal);
+            let results: Vec<_> = JailedStream::builder()
+                .tool_call_parser("deepseek_v4")
+                .build()
+                .apply_with_finish_reason(stream::iter(chunks))
+                .collect()
+                .await;
+            let choices: Vec<_> = results
+                .iter()
+                .flat_map(|chunk| &chunk.data.as_ref().unwrap().choices)
+                .collect();
+            assert_logprob_records(&expected, &choices);
+            let reasoning: String = choices
+                .iter()
+                .filter_map(|choice| choice.delta.reasoning_content.as_deref())
+                .collect();
+            assert_eq!(reasoning, "done");
+            let terminal_indices: Vec<_> = choices
+                .iter()
+                .enumerate()
+                .filter_map(|(index, choice)| choice.finish_reason.map(|_| index))
+                .collect();
+            assert_eq!(terminal_indices, vec![choices.len() - 1], "parts={parts:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_dsml_wrapped_and_bare_separator_split_boundaries() {
+        for (parser, block) in [
+            ("deepseek_v3_2", "function_calls"),
+            ("deepseek_v4", "tool_calls"),
+        ] {
+            for wrapped in [false, true] {
+                let open = if wrapped {
+                    format!("<｜DSML｜{block}>")
+                } else {
+                    String::new()
+                };
+                let body = format!(
+                    "{open}<｜DSML｜invoke name=\"test\"></｜DSML｜invoke></｜DSML｜{block}>"
+                );
+                for (prefix, expected) in
+                    [("\n\n\n\n", "\n\n"), (" \tText.\n\n\n\n", " \tText.\n\n")]
+                {
+                    let input = format!("{prefix}{body}");
+                    for split in input.char_indices().map(|(index, _)| index) {
+                        let chunks: Vec<_> = [&input[..split], &input[split..]]
+                            .into_iter()
+                            .map(|text| test_utils::create_mock_response_chunk(text.to_string(), 0))
+                            .collect();
+                        let results: Vec<_> = JailedStream::builder()
+                            .tool_call_parser(parser)
+                            .build()
+                            .apply_with_finish_reason(stream::iter(chunks))
+                            .collect()
+                            .await;
+                        let names: Vec<_> = results
+                            .iter()
+                            .flat_map(|chunk| &chunk.data.as_ref().unwrap().choices)
+                            .flat_map(|choice| choice.delta.tool_calls.iter().flatten())
+                            .filter_map(|call| call.function.as_ref()?.name.as_deref())
+                            .collect();
+                        assert_eq!(
+                            names,
+                            vec!["test"],
+                            "{parser} wrapped={wrapped} split={split}"
+                        );
+                        assert_eq!(
+                            test_utils::reconstruct_content(&results),
+                            expected,
+                            "{parser} wrapped={wrapped} split={split}"
+                        );
+                    }
+                }
+            }
+        }
+    }
 
     // Test utilities module - shared test infrastructure
     pub(crate) mod test_utils {
@@ -4095,6 +4604,78 @@ fahrenheit
                     .and_then(|function| function.name.clone())
             })
             .collect()
+    }
+
+    /// Chunks follow the model's tokenization, where ".\n\n" is one token.
+    #[tokio::test]
+    async fn test_dsml_block_separator_is_not_content() {
+        let call = "\n<｜DSML｜invoke name=\"get_weather\">\n<｜DSML｜parameter name=\"location\" string=\"true\">NYC</｜DSML｜parameter>\n</｜DSML｜invoke>\n";
+        let cases = [
+            (
+                "deepseek_v4",
+                "tool_calls",
+                vec!["\n\n", "<", "｜DSML｜", "tool_calls>"],
+                "",
+            ),
+            (
+                "deepseek_v4",
+                "tool_calls",
+                vec!["I will", " check", ".\n\n", "<", "｜DSML｜tool_calls>"],
+                "I will check.",
+            ),
+            (
+                "deepseek_v4",
+                "tool_calls",
+                vec!["I will check.\n\n\n\n", "<｜DSML｜tool_calls>"],
+                "I will check.\n\n",
+            ),
+            (
+                "deepseek_v3_2",
+                "function_calls",
+                vec!["I will check.\n\n", "<｜DSML｜function_calls>"],
+                "I will check.",
+            ),
+        ];
+        for (parser, block, chunks, expected) in cases {
+            let label = format!("{parser} {chunks:?}");
+            let end = format!("{call}</｜DSML｜{block}>");
+            let input_chunks: Vec<_> = chunks
+                .into_iter()
+                .chain([end.as_str()])
+                .map(|chunk| test_utils::create_mock_response_chunk(chunk.to_string(), 0))
+                .collect();
+            let jail = JailedStream::builder().tool_call_parser(parser).build();
+            let results: Vec<_> = jail
+                .apply_with_finish_reason(stream::iter(input_chunks))
+                .collect()
+                .await;
+            assert_eq!(
+                tool_call_names(&results),
+                vec!["get_weather".to_string()],
+                "{label}"
+            );
+            assert_eq!(
+                test_utils::reconstruct_content(&results),
+                expected,
+                "{label}"
+            );
+        }
+
+        let input_chunks = ["First.\n\n", "Second."]
+            .into_iter()
+            .map(|chunk| test_utils::create_mock_response_chunk(chunk.to_string(), 0));
+        let jail = JailedStream::builder()
+            .tool_call_parser("deepseek_v4")
+            .build();
+        let results: Vec<_> = jail
+            .apply_with_finish_reason(stream::iter(input_chunks))
+            .collect()
+            .await;
+        assert!(tool_call_names(&results).is_empty());
+        assert_eq!(
+            test_utils::reconstruct_content(&results),
+            "First.\n\nSecond."
+        );
     }
 
     fn assert_content_omits_markers(
