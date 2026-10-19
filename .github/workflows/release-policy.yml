@@ -1,0 +1,117 @@
+name: release-policy-controller
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, edited]
+  # Mirror pushes run ci; workflow_run always loads this controller from the
+  # default branch, never the candidate's workflow with status-write access.
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-policy-${{ github.event.pull_request.number && format('pull-request/{0}', github.event.pull_request.number) || github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
+
+jobs:
+  controller:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: write
+    outputs:
+      snapshot: ${{ steps.control.outputs.snapshot }}
+      check: ${{ steps.control.outputs.check }}
+      allowed: ${{ steps.control.outputs.allowed }}
+      head: ${{ steps.control.outputs.head }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+          path: trusted
+      - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea9 # v7.0.1
+        id: control
+        with:
+          script: |
+            await require('./trusted/.github/release_policy/controller.cjs')({github, context, core, phase: 'start'});
+
+  preview:
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    needs: controller
+    if: needs.controller.outputs.allowed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      summary: ${{ steps.summary.outputs.summary }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+          path: trusted
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ needs.controller.outputs.head }}
+          fetch-depth: 0
+          persist-credentials: false
+          path: candidate
+      - name: Install release tools
+        run: python3 trusted/.github/release_policy/install.py
+      - name: Test release planner and trusted controller
+        run: |
+          python3 -m pip install pytest pyyaml
+          python3 -m pytest trusted/.github/release_policy/tests -q
+          node --test trusted/.github/release_policy/tests/controller.test.cjs
+      - name: Preview squash release in disposable checkout
+        env:
+          RELEASE_SNAPSHOT: ${{ needs.controller.outputs.snapshot }}
+        run: python3 trusted/.github/release_policy/preview.py --source "$GITHUB_WORKSPACE/candidate" --report "$RUNNER_TEMP/release-plan.json"
+      - name: Read policy report
+        id: summary
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import uuid
+          report = Path(os.environ['RUNNER_TEMP']) / 'release-plan.json'
+          summary = json.loads(report.read_text())['summary'] if report.exists() else 'Preview failed; inspect the job logs.'
+          delimiter = str(uuid.uuid4())
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'summary<<{delimiter}\n{summary[:50000]}\n{delimiter}\n')
+          PY
+
+  publish-status:
+    needs: [controller, preview]
+    if: always() && needs.controller.outputs.allowed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+          path: trusted
+      - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea9 # v7.0.1
+        env:
+          RELEASE_SNAPSHOT: ${{ needs.controller.outputs.snapshot }}
+          RELEASE_CHECK: ${{ needs.controller.outputs.check }}
+          PREVIEW_RESULT: ${{ needs.preview.result }}
+          RELEASE_SUMMARY: ${{ needs.preview.outputs.summary }}
+        with:
+          script: |
+            await require('./trusted/.github/release_policy/controller.cjs')({github, context, core, phase: 'finish'});

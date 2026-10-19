@@ -14,6 +14,8 @@ concurrency:
 
 jobs:
   release:
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # Scope OIDC + secrets to a protected environment. crates.io trusted
@@ -51,89 +53,12 @@ jobs:
       - name: Install Rust
         run: rustup toolchain install
 
-      - name: Install release-plz CLI
-        run: |
-          curl -sSLf https://github.com/release-plz/release-plz/releases/download/release-plz-v0.3.158/release-plz-x86_64-unknown-linux-gnu.tar.gz \
-            | tar xz -C /usr/local/bin release-plz
-          release-plz --version
+      - name: Install release tools
+        run: python3 .github/release_policy/install.py
 
-      - name: Install cargo-semver-checks
-        run: |
-          curl -sSLf https://github.com/obi1kenobi/cargo-semver-checks/releases/download/v0.48.0/cargo-semver-checks-x86_64-unknown-linux-gnu.tar.gz \
-            | tar xz -C /usr/local/bin
-          cargo-semver-checks --version
-
-      # Path-scoped auto-bump (DIS-2414). A blanket `release-plz update` cascades:
-      # a change to one crate re-releases its dependents even when their code
-      # didn't change (all inter-crate deps are caret reqs, so a compatible bump
-      # never requires re-releasing a dependent). That churned versions — e.g.
-      # dynamo-parsers-v2 went 0.1.17 -> 0.1.21 in days, and v1/v2 were bumped
-      # in lockstep despite sharing no code. Instead, run `release-plz update
-      # -p <crate>` only for crates whose OWN directory changed since their last
-      # release tag, and never touch a version a human already bumped:
-      #   - version != last release tag  -> manually PEGGED: leave it alone;
-      #     the publish step below ships exactly that version (same number the
-      #     HF fixture upload embeds — Cargo.toml is the single source of truth)
-      #   - version == last tag, no changes under the crate dir -> nothing
-      #   - version == last tag, changes under the crate dir -> auto-bump this
-      #     crate only (release-plz still sizes the bump from conventional
-      #     commits and writes the changelog; API checks below are advisory)
-      - name: Bump versions for crates whose own files changed
-        run: |
-          # `--allow-dirty` below is intentional: each package update leaves
-          # its version/changelog edits for the final combined release commit.
-          # Fail here so it cannot mask changes that predate this loop.
-          if [ -n "$(git status --porcelain)" ]; then
-            git status --short
-            echo "Release checkout must start clean."
-            exit 1
-          fi
-
-          members=$(sed -n '/^members = \[/,/^]/p' Cargo.toml | grep -oE '"[^"]+"' | tr -d '"')
-          for dir in $members; do
-            grep -q '^publish *= *false' "$dir/Cargo.toml" && continue
-            name=$(grep -m1 '^name *=' "$dir/Cargo.toml" | sed -E 's/.*"([^"]+)".*/\1/')
-            ver=$(grep -m1 '^version *=' "$dir/Cargo.toml" | sed -E 's/.*"([^"]+)".*/\1/')
-            # Exact-match this crate's tags: the glob "dynamo-parsers-v*" would
-            # also match dynamo-parsers-v2-v0.1.21, so require <name>-v<semver>.
-            last=$(git tag -l "$name-v*" | grep -E "^$name-v[0-9]+\.[0-9]+\.[0-9]+$" | sort -V | tail -1)
-            # Report API incompatibilities (or checker failures) without sizing
-            # or blocking the release. Keep the full diagnostic in the job log.
-            if [ -n "$last" ] && ! git diff --quiet "$last"..HEAD -- "$dir" Cargo.toml; then
-              if ! cargo semver-checks check-release --package "$name" --baseline-rev "$last"; then
-                echo "::warning::$name: API compatibility check failed; review diagnostics above. Version policy is maintainer-controlled."
-              fi
-            fi
-            if [ -z "$last" ]; then
-              echo "$name: no release tag yet -> first release is manual, skipping"
-            elif [ "$ver" != "${last#"$name"-v}" ]; then
-              echo "$name: $ver != last released ${last#"$name"-v} -> manually pegged"
-              echo "$name: publish the maintainer-selected version as-is"
-            # The root Cargo.toml is part of every crate's change scope:
-            # workspace-inherited dependency versions and [workspace.package]
-            # metadata land in the published manifest of each member crate.
-            elif git diff --quiet "$last"..HEAD -- "$dir" Cargo.toml; then
-              echo "$name: no changes under $dir/ or the root Cargo.toml since $last"
-            else
-              echo "$name: changes under $dir/ (or root Cargo.toml) since $last -> auto-bump"
-              release-plz update --allow-dirty -p "$name"
-            fi
-          done
-
-      # Compare with the checked-out commit, so a major version explicitly
-      # pegged in the merged PR is allowed. Check every manifest to also catch
-      # dependent crates changed by release-plz.
-      - name: Reject automatic major bumps
-        run: |
-          while IFS= read -r toml; do
-            oldver=$(git show "HEAD:$toml" | sed -nE 's/^version *= *"([^"]+)".*/\1/p' | head -1)
-            newver=$(sed -nE 's/^version *= *"([^"]+)".*/\1/p' "$toml" | head -1)
-            [ -n "$oldver" ] && [ -n "$newver" ] || continue
-            if [ "${oldver%%.*}" != "${newver%%.*}" ]; then
-              echo "::error::$toml: automatic major bump $oldver -> $newver is disabled. Explicitly peg the intended version in a PR."
-              exit 1
-            fi
-          done < <(git ls-files | grep -E '(^|/)Cargo\.toml$')
+      # The same planner owns pre-merge previews and this post-merge guard.
+      - name: Plan releases and reject generated major versions
+        run: python3 .github/release_policy/plan.py --report "$RUNNER_TEMP/release-plan.json"
 
       - name: Commit and push version bumps (if any)
         run: |

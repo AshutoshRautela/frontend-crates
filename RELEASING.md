@@ -7,13 +7,27 @@ SPDX-License-Identifier: Apache-2.0
 
 Releases of `dynamo-protocols`, `dynamo-parsers`, `dynamo-parsers-v2`, `dynamo-tokenizers`, `dynamo-renderer`, and `dynamo-multimodal` to crates.io are automated by `.github/workflows/release.yml`. This document covers the workflow, one-time setup, and recovery.
 
+## Before merging a PR
+
+The `release-policy` check previews the release against the current base branch. It constructs a disposable squash commit using the PR title and a blank body, then runs the same pinned release-plz planner as publishing. Branch commit messages and the PR body do not select the bump. The preview has read-only repository access, no release environment or credentials, and never commits generated version edits, pushes, or publishes.
+
+The existing `/ok to test <sha>` flow authorizes candidate execution. A maintainer must approve the current PR head; the `pull-request/<number>` mirror must point to that exact SHA. Opening, reopening, updating, or editing a PR starts the trusted controller. An approved mirror push starts its preview after the mirror's `ci` workflow completes. A new PR commit invalidates the previous authorization. The controller reports failure with authorization instructions until the mirror matches.
+
+If release-plz proposes a major-number change, the check lists every affected crate, its committed and proposed versions, and its manifest path, including dependent crates. Explicitly edit the intended versions and affected dependency requirements in the PR, then have the new head approved and rerun. Committed manual majors are accepted. Ordinary patch/minor selection, `0.x` minor bumps, and advisory API checks keep their existing behavior. A generated `0.x` to `1.x` change requires the same explicit edit.
+
+The status publisher rechecks the head, current base SHA, PR title/body, mirror authorization, and repository squash settings before reporting success. The repository must permit only squash merges, with `PR_TITLE` and `BLANK` message defaults. The controller fails if those settings differ when it runs because its simulated commit would no longer match the configured merge defaults.
+
+Rollout is separate from the code change: land the trusted controller first, demonstrate passing and failing checks on approved PR heads, then explicitly enable `release-policy` alongside `rust` and require branches to be up to date with the base in branch protection. Do not enable the required check before the trusted workflow is available on the default branch. This implementation does not change repository rules. Strict base freshness prevents a successful preview on an older base from permitting a merge.
+
+The post-merge guard remains mandatory. GitHub retains a previous head-SHA success until the queued metadata-edit controller starts; repository-setting changes have no immediate workflow trigger. Maintainers can also override the default squash message when merging. These timing windows, message overrides, and ruleset bypasses can merge without a matching preview, and publishing can fail after a valid preview; any of them can still stop the release workflow. Revalidate after changing merge settings and let the edited-PR check start before merging. Fix the versions in a follow-up PR or investigate the publishing failure rather than removing the guard.
+
 ## What happens on every push to `main`
 
 1. The `release` workflow runs.
 2. The workflow decides **per crate, path-scoped** (DIS-2414). For each publishable workspace crate it compares the crate's `Cargo.toml` version against the crate's latest release tag (e.g. `dynamo-protocols-v2.0.2`):
    - **version ≠ last tag** → the version was **manually pegged** in a PR. The workflow does not touch it; the publish step ships exactly that version. See "Manual version peg" below.
-   - **version == last tag, no changes under the crate's own directory** since that tag → nothing happens. In particular, a change to one crate never re-releases its dependents: all inter-crate deps are caret reqs, so a compatible bump never requires a dependent re-release (the old blanket `release-plz update` cascaded these, churning versions of crates whose code never changed).
-   - **version == last tag, changes under the crate's own directory** → `release-plz update -p <crate>` bumps that crate only. Within the crate, release-plz still applies its own two filters: only **packaged contents** count (the `include = [...]` list in the crate's `Cargo.toml`: `src/**/*`, `Cargo.toml`, `README.md` — not `tests/` etc.), and only commits matching `release_commits` in `release-plz.toml` count (`feat:`, `fix:`, `perf:`, `refactor:`). If neither filter passes, no bump is proposed even though the directory changed.
+   - **version == last tag, no changes under the crate's own directory or root `Cargo.toml`** since that tag → nothing happens. In particular, a change to one crate never re-releases its dependents: all inter-crate deps are caret reqs, so a compatible bump never requires a dependent re-release (the old blanket `release-plz update` cascaded these, churning versions of crates whose code never changed).
+   - **version == last tag, changes under the crate's own directory or root `Cargo.toml`** → `release-plz update -p <crate>` bumps that crate only. Within the crate, release-plz still applies its own two filters: only **packaged contents** count (the `include = [...]` list in the crate's `Cargo.toml`: `src/**/*`, `Cargo.toml`, `README.md` — not `tests/` etc.), and only commits matching `release_commits` in `release-plz.toml` count (`feat:`, `fix:`, `perf:`, `refactor:`). If neither filter passes, no bump is proposed even though the directory changed.
    - **no release tag yet** → the bump step skips this crate.
 3. If any bumps were proposed, the workflow commits them with an informative
    subject listing every crate whose version changed this run — e.g.
@@ -109,10 +123,7 @@ These admin actions must be done before the workflow can run end-to-end.
    installation token for checkout, pushing release commits, and release-plz
    GitHub API calls.
 
-4. **Branch protection on `main`:** require CI status checks, require
-   linear history, require DCO. Add the release GitHub App to the ruleset
-   bypass list with "Always allow" so it can push the `chore: release`
-   commit directly. Human commits still go through PRs.
+4. **Branch protection on `main`:** require `rust` and `release-policy`, require branches to be up to date, require linear history, and require DCO. Enable the new check only after the rollout above. Add the release GitHub App to the ruleset bypass list with "Always allow" so it can push the `chore: release` commit directly. Human commits still go through PRs.
 
 5. **Tag protection:** add a tag protection rule matching `*-v*` to
    prevent updates and deletes.
