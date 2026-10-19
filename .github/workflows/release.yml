@@ -77,7 +77,7 @@ jobs:
       #   - version == last tag, no changes under the crate dir -> nothing
       #   - version == last tag, changes under the crate dir -> auto-bump this
       #     crate only (release-plz still sizes the bump from conventional
-      #     commits, writes the changelog, and runs cargo-semver-checks)
+      #     commits and writes the changelog; API checks below are advisory)
       - name: Bump versions for crates whose own files changed
         run: |
           # `--allow-dirty` below is intentional: each package update leaves
@@ -97,15 +97,18 @@ jobs:
             # Exact-match this crate's tags: the glob "dynamo-parsers-v*" would
             # also match dynamo-parsers-v2-v0.1.21, so require <name>-v<semver>.
             last=$(git tag -l "$name-v*" | grep -E "^$name-v[0-9]+\.[0-9]+\.[0-9]+$" | sort -V | tail -1)
+            # Report API incompatibilities (or checker failures) without sizing
+            # or blocking the release. Keep the full diagnostic in the job log.
+            if [ -n "$last" ] && ! git diff --quiet "$last"..HEAD -- "$dir" Cargo.toml; then
+              if ! cargo semver-checks check-release --package "$name" --baseline-rev "$last"; then
+                echo "::warning::$name: API compatibility check failed; review diagnostics above. Version policy is maintainer-controlled."
+              fi
+            fi
             if [ -z "$last" ]; then
               echo "$name: no release tag yet -> first release is manual, skipping"
             elif [ "$ver" != "${last#"$name"-v}" ]; then
               echo "$name: $ver != last released ${last#"$name"-v} -> manually pegged"
-              # A manual peg bypasses release-plz update — the only path that
-              # runs cargo-semver-checks — so validate here that the pegged
-              # jump is big enough for the actual API diff vs the last release.
-              cargo semver-checks check-release --package "$name" --baseline-rev "$last"
-              echo "$name: peg passes semver-checks, publish as-is"
+              echo "$name: publish the maintainer-selected version as-is"
             # The root Cargo.toml is part of every crate's change scope:
             # workspace-inherited dependency versions and [workspace.package]
             # metadata land in the published manifest of each member crate.
@@ -116,6 +119,21 @@ jobs:
               release-plz update --allow-dirty -p "$name"
             fi
           done
+
+      # Compare with the checked-out commit, so a major version explicitly
+      # pegged in the merged PR is allowed. Check every manifest to also catch
+      # dependent crates changed by release-plz.
+      - name: Reject automatic major bumps
+        run: |
+          while IFS= read -r toml; do
+            oldver=$(git show "HEAD:$toml" | sed -nE 's/^version *= *"([^"]+)".*/\1/p' | head -1)
+            newver=$(sed -nE 's/^version *= *"([^"]+)".*/\1/p' "$toml" | head -1)
+            [ -n "$oldver" ] && [ -n "$newver" ] || continue
+            if [ "${oldver%%.*}" != "${newver%%.*}" ]; then
+              echo "::error::$toml: automatic major bump $oldver -> $newver is disabled. Explicitly peg the intended version in a PR."
+              exit 1
+            fi
+          done < <(git ls-files | grep -E '(^|/)Cargo\.toml$')
 
       - name: Commit and push version bumps (if any)
         run: |
