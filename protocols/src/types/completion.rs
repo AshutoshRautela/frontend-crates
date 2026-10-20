@@ -115,7 +115,10 @@ pub struct CreateCompletionRequest {
     pub temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub top_p: Option<f32>,
+    /// Number of choices to generate. The OpenAI API default is one; Serde
+    /// preserves omitted or null input as `None` for the server to resolve.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "protocol-schema", schema(default = 1))]
     pub n: Option<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream: Option<bool>,

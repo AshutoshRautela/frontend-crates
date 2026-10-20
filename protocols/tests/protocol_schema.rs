@@ -52,6 +52,31 @@ fn request_roots_are_distinct_from_upstream_and_have_real_fields() {
     assert!(completion["properties"].get("prompt").is_some());
 }
 
+/// Both owned request schemas advertise the OpenAI default without requiring `n`
+/// or removing its nullable integer shape. This is metadata, not value injection.
+#[test]
+fn choice_count_schema_declares_openai_default() {
+    let doc = document();
+    for name in [
+        CreateChatCompletionRequest::name(),
+        CreateCompletionRequest::name(),
+    ] {
+        let request = &doc["components"]["schemas"][name.as_ref()];
+        let n = &request["properties"]["n"];
+        assert_eq!(n["default"], json!(1), "{name}");
+        let types = n["type"].as_array().unwrap();
+        assert!(types.contains(&json!("integer")), "{name}");
+        assert!(types.contains(&json!("null")), "{name}");
+        assert!(
+            !request["required"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("n")),
+            "{name}"
+        );
+    }
+}
+
 #[test]
 fn component_graph_resolves_every_reference() {
     fn walk(value: &Value, root: &Value) {
