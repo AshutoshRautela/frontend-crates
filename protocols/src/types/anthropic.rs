@@ -36,7 +36,7 @@ impl CacheControl {
     /// Accepts integer seconds ("120", "600") or shorthand ("5m", "1h").
     /// Values below 300 are clamped to 300; values above 3600 are clamped to 3600.
     /// Unrecognized strings default to 300s.
-    pub fn ttl_seconds(&self) -> u64 {
+    pub fn ttl_secs(&self) -> u64 {
         let raw = match self.ttl.as_deref() {
             None => return MIN_TTL_SECONDS,
             Some("5m") => 300,
