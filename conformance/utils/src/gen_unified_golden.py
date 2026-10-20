@@ -363,10 +363,12 @@ class OnlyFamilies(dict):
     Use for grammar-specific scenarios or explicitly scoped regression reproductions,
     and state the scope at the authoring site and in UNIFIED_CASES.md. An undeclared
     omission is a coverage gap, not a scope.
+    Disable grammar inheritance when a request needs a separately registered capability.
     """
 
-    def __init__(self, mapping):
+    def __init__(self, mapping, *, inherit_grammar=True):
         super().__init__(mapping)
+        self.inherit_grammar = inherit_grammar
         if not self:
             raise ValueError("OnlyFamilies() with no families declares nothing")
         unknown = sorted(set(self) - set(FAMILIES))
@@ -3003,6 +3005,8 @@ DEFAULT_REASONING_CASES = [
 # Inherited grammars expose their authored rows to applicability and schema consumers too.
 for _spec in EDGE:
     _policy = _edge_case_family_policy(_spec)
+    if isinstance(_policy, OnlyFamilies) and not _policy.inherit_grammar:
+        continue
     for _family, _row in _MANIFEST.items():
         _grammar = _row.get("grammar")
         if _grammar in _policy:
@@ -3084,7 +3088,7 @@ def _structured_response_case():
         "structured_response_after_reasoning",
         "No-tools response_format schema with free reasoning before the constrained JSON response. GPT-OSS emits its analysis and final headers; other supported builders close prompt-prefilled reasoning. The real structural tag must accept the authored Unicode stream and every split, reject wrong types, missing/extra keys and invalid values, then the native parser must preserve reasoning and response separately. Dynamo issue #16787.",
         ["P5", "I5"], [], OnlyFamilies(initializations), {"finish_reason": "stop"},
-        OnlyFamilies(inputs), [],
+        OnlyFamilies(inputs, inherit_grammar=False), [],
     )
 
 
@@ -3177,6 +3181,9 @@ def build_cases(fam):
         return _build_cases(fam)
     cases = {}
     for key, original in _build_cases(grammar).items():
+        scenario = key[len("UNIFIED."):].rsplit(".", 1)[0]
+        if fam not in scenario_families(scenario):
+            continue
         case = json.loads(json.dumps(original))
         # Shared Qwen scenarios begin outside reasoning; Ultra's empty thought
         # closes that default channel without disabling later reasoning markers.
@@ -3186,6 +3193,7 @@ def build_cases(fam):
                 case["input_chunks"][0] = default_response_prefix(fam) + case["input_chunks"][0]
         cases[key.rsplit(".", 1)[0] + "." + fam] = case
     cases.update(_build_edge_cases(fam, DEFAULT_REASONING_CASES))
+    _preserve_historical_requests(cases, fam)
     return cases
 
 
@@ -3458,7 +3466,8 @@ def scenario_families(scenario):
         init = edge_case[4] if len(edge_case) >= 6 else {}
         if (init or {}).get("tool_output_mode", "Native") != "Native":
             families.intersection_update(GUIDED_FAMILIES)
-        families.update(f for f in FAMILIES if _MANIFEST[f].get("grammar") in families)
+        if not isinstance(per_fam, OnlyFamilies) or per_fam.inherit_grammar:
+            families.update(f for f in FAMILIES if _MANIFEST[f].get("grammar") in families)
         return frozenset(families)
     raise KeyError(f"unknown unified scenario {scenario!r}")
 

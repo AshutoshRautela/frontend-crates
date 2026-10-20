@@ -37,6 +37,7 @@ import gen_unified_golden as G  # noqa: E402
 from schema_cases import CONFORMANCE_CASES, schema_arguments  # noqa: E402
 import unified_history  # noqa: E402
 import unified_taxonomy as taxonomy  # noqa: E402
+from capture_stimulus import _without_synthetic_finish_step  # noqa: E402
 from fixture_disposition import historical_unified_case_key  # noqa: E402
 from gen_unified_golden import (  # noqa: E402
     CLEAN,
@@ -883,6 +884,19 @@ def test_every_authored_case_survives_emission_and_reload():
             assert loaded.get("input_chunks") == case.get("input_chunks"), f"{cid}: chunk schedule changed"
 
 
+@pytest.mark.parametrize("family", [family for family in FAMILIES if G._MANIFEST[family].get("grammar")])
+def test_inherited_family_preserves_published_chunk_schedules(family):
+    path = UTILS.parent / "fixtures-unified-v2" / "families" / family / "inputs_and_golden.yaml"
+    historical = yaml.safe_load(path.read_text())["cases"]
+    cases = build_cases(family)
+    for record in historical.values():
+        if record["lifecycle"] != "active":
+            continue
+        request = _without_synthetic_finish_step(record["request"])
+        case = cases[f"UNIFIED.{record['scenario']}.{family}"]
+        assert case.get("input_chunks") == [chunk["delta_text"] for chunk in request["chunks"]], record["scenario"]
+
+
 # --- counts live where they can be checked, not in registry prose ---------------
 
 def test_unified_case_counts_match_the_generator():
@@ -903,6 +917,7 @@ def test_unified_case_counts_match_the_generator():
         "kimi_k3": 132,
         "muse_glimmer": 131,
         "qwen3": 126,
+        "nemotron_v3": 127,
     }
     assert set(family_specific) == set(FAMILIES)
     per_family = {fam: len(build_cases(fam)) for fam in FAMILIES}
@@ -1616,12 +1631,12 @@ def _assert_input_carries_events(family: str, scenario: str, case: dict) -> None
                 properties = parameters.get("properties", {})
                 for key, value in candidate["arguments"].items():
                     schema = properties.get(key, {})
-                    if family not in {"qwen3", "glm47"} or not isinstance(value, str):
+                    if G.unified_grammar_family(family) not in {"qwen3", "glm47"} or not isinstance(value, str):
                         continue
                     if value == "null" and matches_schema(None, schema, parameters):
                         candidate["arguments"][key] = None
                     elif (not matches_schema(value, schema, parameters)
-                          or (family == "qwen3" and scenario in {
+                          or (G.unified_grammar_family(family) == "qwen3" and scenario in {
                               "schema_integer_const_ambiguous", "schema_object_const_union",
                               "schema_type_array_string_integer",
                           })):
@@ -1723,7 +1738,7 @@ def _assert_cross_family_contract(corpus):
                 assert case["tools"] == []
                 assert init["starting_state"] == ("None" if family == "gpt_oss" else "Reasoning")
                 response = events[1]["text"]
-                if family == "qwen3":
+                if G.unified_grammar_family(family) == "qwen3":
                     assert response.startswith("\n\n")
                     response = response[2:]
                 schema = init["structural_tag"]["schema"]
