@@ -2159,10 +2159,18 @@ def _sync_current_corpus(
     input_roots = _shared_corpus_roots(loose_root, "inputs")
     golden_roots = _shared_corpus_roots(loose_root, "golden")
 
-    registered_families = set(
-        (yaml.safe_load((Path(__file__).resolve().parent / "parser_families.yaml").read_text()) or {})
-        .get("unified", {})
-    )
+    unified_rows = (
+        yaml.safe_load((Path(__file__).resolve().parent / "parser_families.yaml").read_text()) or {}
+    ).get("unified", {})
+    registered_families = set(unified_rows)
+    # A family registered for the Unified report without a native Unified parser
+    # (`native: false`, e.g. GPT-OSS on the split Harmony parser) has no live capture to
+    # sync; a complete current snapshot does not carry it.
+    uncaptured_families = {
+        family_name
+        for family_name, row in unified_rows.items()
+        if isinstance(row, dict) and row.get("native") is False
+    }
     known_families = set(store.families)
     for root in (*input_roots, *golden_roots):
         unknown = sorted(
@@ -2195,7 +2203,11 @@ def _sync_current_corpus(
             for root in golden_roots
             for path in sorted((root / family_name).glob("*.yaml"))
         ]
-        if complete_snapshot and (not input_paths or not golden_paths):
+        if (
+            complete_snapshot
+            and (not input_paths or not golden_paths)
+            and family_name not in uncaptured_families
+        ):
             raise ValueError(f"complete current snapshot is missing family: {family_name}")
         input_documents = [
             (path, _load_loose_document(path, family_name)) for path in input_paths

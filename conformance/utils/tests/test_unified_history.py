@@ -116,6 +116,70 @@ def _write_family(root: Path) -> None:
     )
 
 
+def _write_other_family(root: Path, family: str) -> None:
+    path = root / f"families/{family}/inputs_and_golden.yaml"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        unified_history.dump_yaml(
+            {
+                "input_document": {"family": family, "mode": "unified"},
+                "golden_document": {"family": family, "mode": "unified"},
+                "cases": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_loose_gemma4(loose: Path) -> None:
+    input_dir = loose / "inputs/gemma4"
+    golden_dir = loose / "golden/gemma4"
+    input_dir.mkdir(parents=True)
+    golden_dir.mkdir(parents=True)
+    case_key = "UNIFIED.1-1"
+    input_document = {
+        "family": "gemma4",
+        "mode": "unified",
+        "model_label": "gemma4",
+        "cases": {
+            case_key: {"scenario": "text_only", "description": "plain text", "policy": [], **_request()}
+        },
+    }
+    golden_document = {
+        "family": "gemma4",
+        "mode": "unified",
+        "captured_with": {"golden": "v1"},
+        "cases": {case_key: {"assembled": [{"kind": "text", "text": "hello"}]}},
+    }
+    (input_dir / f"{case_key}.yaml").write_text(unified_history.dump_yaml(input_document))
+    (golden_dir / f"{case_key}.yaml").write_text(unified_history.dump_yaml(golden_document))
+
+
+def test_complete_snapshot_skips_a_family_without_a_native_unified_parser(tmp_path):
+    # `gpt_oss` is registered for the Unified report with `native: false` (the split
+    # Harmony parser, dynamo_v1 captures only): the live Unified capture never produces
+    # it, so a complete current snapshot does not have to carry it.
+    root = tmp_path / "store"
+    _write_family(root)
+    _write_capture(root, "0.26.0", {"text_only": _change()})
+    _write_other_family(root, "gpt_oss")
+    loose = tmp_path / "loose"
+    _write_loose_gemma4(loose)
+    store = unified_history.load_store(root)
+
+    documents = unified_history._sync_current_corpus(store, loose, complete_snapshot=True)
+
+    assert store.families["gemma4"].path in documents
+    assert store.families["gpt_oss"].path not in documents
+    assert store.families["gpt_oss"].cases == {}
+
+    # A natively captured family is still required.
+    _write_other_family(root, "qwen3")
+    store = unified_history.load_store(root)
+    with pytest.raises(ValueError, match="missing family: qwen3"):
+        unified_history._sync_current_corpus(store, loose, complete_snapshot=True)
+
+
 def test_current_corpus_adds_a_registered_family(tmp_path):
     loose = tmp_path / "loose"
     input_dir = loose / "inputs/gpt_oss"
