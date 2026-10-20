@@ -3141,6 +3141,257 @@ mod tests {
         assert_eq!(final_choice.finish_reason, Some(FinishReason::ToolCalls));
     }
 
+    // Nemotron frames each qwen3_coder call with a newline on both sides.
+    const NEMOTRON_DIGIT_CALL: &str = "<tool_call>\n<function=enter_digit>\n<parameter=digit>\n1\n</parameter>\n</function>\n</tool_call>";
+
+    async fn apply_qwen3_coder(
+        chunks: Vec<Annotated<CreateChatCompletionStreamResponse>>,
+    ) -> Vec<Annotated<CreateChatCompletionStreamResponse>> {
+        JailedStream::builder()
+            .tool_call_parser("qwen3_coder")
+            .build()
+            .apply_with_finish_reason(stream::iter(chunks))
+            .collect()
+            .await
+    }
+
+    fn finish_reasons(
+        results: &[Annotated<CreateChatCompletionStreamResponse>],
+    ) -> Vec<FinishReason> {
+        results
+            .iter()
+            .filter_map(|result| result.data.as_ref())
+            .flat_map(|data| data.choices.iter())
+            .filter_map(|choice| choice.finish_reason)
+            .collect()
+    }
+
+    fn digit_calls(results: &[Annotated<CreateChatCompletionStreamResponse>]) -> usize {
+        results
+            .iter()
+            .filter(|result| has_tool_call(result))
+            .count()
+    }
+
+    #[tokio::test]
+    async fn test_qwen3_coder_tool_only_turn_drops_framing_newlines() {
+        let results = apply_qwen3_coder(vec![
+            create_mock_response_chunk("\n".to_string(), 0),
+            create_mock_response_chunk(
+                "<tool_call>\n<function=enter_digit>\n<parameter=digit>\n".to_string(),
+                0,
+            ),
+            create_mock_response_chunk("1\n</parameter>\n</function>\n</tool_call>".to_string(), 0),
+            create_mock_response_chunk("\n".to_string(), 0),
+            create_final_response_chunk(0),
+        ])
+        .await;
+
+        assert_eq!(reconstruct_content(&results), "");
+        assert_eq!(digit_calls(&results), 1);
+        let call = results.iter().find(|result| has_tool_call(result)).unwrap();
+        assert_tool_call(call, "enter_digit", json!({"digit": "1"}));
+        assert_eq!(finish_reasons(&results), [FinishReason::ToolCalls]);
+    }
+
+    #[tokio::test]
+    async fn test_qwen3_coder_tool_only_turn_drops_newlines_at_every_split() {
+        let turn = format!("\n{NEMOTRON_DIGIT_CALL}\n");
+        for split in (1..turn.len()).filter(|&split| turn.is_char_boundary(split)) {
+            let results = apply_qwen3_coder(vec![
+                create_mock_response_chunk(turn[..split].to_string(), 0),
+                create_mock_response_chunk(turn[split..].to_string(), 0),
+                create_final_response_chunk(0),
+            ])
+            .await;
+
+            assert_eq!(reconstruct_content(&results), "", "split: {split}");
+            assert_eq!(digit_calls(&results), 1, "split: {split}");
+            assert_eq!(
+                finish_reasons(&results),
+                [FinishReason::ToolCalls],
+                "split: {split}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_qwen3_coder_held_whitespace_returns_before_visible_text() {
+        let results = apply_qwen3_coder(vec![
+            create_mock_response_chunk("\n\n".to_string(), 0),
+            create_mock_response_chunk("Pressing it now.\n\n".to_string(), 0),
+            create_mock_response_chunk(NEMOTRON_DIGIT_CALL.to_string(), 0),
+            create_final_response_chunk(0),
+        ])
+        .await;
+
+        assert_eq!(reconstruct_content(&results), "\n\nPressing it now.\n\n");
+        assert_eq!(digit_calls(&results), 1);
+        assert_eq!(finish_reasons(&results), [FinishReason::ToolCalls]);
+    }
+
+    #[tokio::test]
+    async fn test_whitespace_without_tool_call_is_released_on_any_finish() {
+        for finish in [FinishReason::Stop, FinishReason::Length] {
+            let results = apply_qwen3_coder(vec![
+                create_mock_response_chunk("\n".to_string(), 0),
+                with_finish_reason(create_final_response_chunk(0), finish),
+            ])
+            .await;
+
+            assert_eq!(reconstruct_content(&results), "\n", "finish: {finish:?}");
+            assert_eq!(finish_reasons(&results), [finish], "finish: {finish:?}");
+        }
+
+        // Without a finish reason, held whitespace is released at end of stream.
+        let results =
+            apply_qwen3_coder(vec![create_mock_response_chunk("\n".to_string(), 0)]).await;
+        assert_eq!(reconstruct_content(&results), "\n");
+    }
+
+    #[tokio::test]
+    async fn test_qwen3_coder_dropped_whitespace_keeps_its_logprobs() {
+        let token = |text: &str| dynamo_protocols::types::ChatCompletionTokenLogprob {
+            token: text.to_string(),
+            logprob: -0.5,
+            token_id: None,
+            bytes: Some(text.as_bytes().to_vec()),
+            top_logprobs: Vec::new(),
+        };
+        let with_logprobs = |mut chunk: Annotated<CreateChatCompletionStreamResponse>,
+                             tokens: Vec<&str>| {
+            let choice = &mut chunk.data.as_mut().unwrap().choices[0];
+            choice.logprobs = Some(dynamo_protocols::types::ChatChoiceLogprobs {
+                content: Some(tokens.into_iter().map(token).collect()),
+                refusal: None,
+            });
+            chunk
+        };
+        let results = apply_qwen3_coder(vec![
+            with_logprobs(create_mock_response_chunk("\n".to_string(), 0), vec!["\n"]),
+            with_logprobs(
+                create_mock_response_chunk(NEMOTRON_DIGIT_CALL.to_string(), 0),
+                vec![NEMOTRON_DIGIT_CALL],
+            ),
+            with_logprobs(create_mock_response_chunk("\n".to_string(), 0), vec!["\n"]),
+            create_final_response_chunk(0),
+        ])
+        .await;
+
+        assert_eq!(reconstruct_content(&results), "");
+        let tokens: Vec<_> = results
+            .iter()
+            .filter_map(|result| result.data.as_ref())
+            .flat_map(|data| data.choices.iter())
+            .filter_map(|choice| choice.logprobs.as_ref()?.content.as_ref())
+            .flatten()
+            .map(|entry| entry.token.as_str())
+            .collect();
+        assert_eq!(tokens, ["\n", NEMOTRON_DIGIT_CALL, "\n"]);
+    }
+
+    #[tokio::test]
+    async fn test_qwen3_coder_blank_content_hold_is_choice_local() {
+        let results = apply_qwen3_coder(vec![
+            create_multi_choice_chunk(vec![("\n".to_string(), 0), ("\n".to_string(), 1)]),
+            create_multi_choice_chunk(vec![
+                (NEMOTRON_DIGIT_CALL.to_string(), 0),
+                ("plain response".to_string(), 1),
+            ]),
+            create_multi_choice_finish_chunk(vec![0, 1]),
+        ])
+        .await;
+
+        let content = |index| {
+            results
+                .iter()
+                .filter_map(|result| result.data.as_ref())
+                .flat_map(|data| data.choices.iter())
+                .filter(|choice| choice.index == index)
+                .filter_map(|choice| choice.delta.content.as_ref())
+                .map(extract_text)
+                .collect::<String>()
+        };
+        assert_eq!(content(0), "");
+        assert_eq!(content(1), "\nplain response");
+    }
+
+    #[tokio::test]
+    async fn test_qwen3_coder_held_whitespace_does_not_strand_reasoning() {
+        // A mid-stream chunk: reasoning tail plus a newline, no role.
+        let mut thinking = create_mock_response_chunk("\n".to_string(), 0);
+        let delta = &mut thinking.data.as_mut().unwrap().choices[0].delta;
+        delta.role = None;
+        delta.reasoning_content = Some("plan".to_string());
+        let results = apply_qwen3_coder(vec![
+            create_mock_response_chunk(String::new(), 0),
+            thinking,
+            create_final_response_chunk(0),
+        ])
+        .await;
+
+        let reasoning: String = results
+            .iter()
+            .filter_map(|result| result.data.as_ref())
+            .flat_map(|data| data.choices.iter())
+            .filter_map(|choice| choice.delta.reasoning_content.as_deref())
+            .collect();
+        assert_eq!(reasoning, "plan");
+        assert_eq!(reconstruct_content(&results), "\n");
+        assert_eq!(finish_reasons(&results), [FinishReason::Stop]);
+    }
+
+    #[tokio::test]
+    async fn test_qwen3_coder_whitespace_hold_releases_at_its_limit() {
+        let results = apply_qwen3_coder(vec![
+            create_mock_response_chunk(" ".repeat(4096), 0),
+            create_mock_response_chunk(" ".to_string(), 0),
+            create_mock_response_chunk(NEMOTRON_DIGIT_CALL.to_string(), 0),
+            create_final_response_chunk(0),
+        ])
+        .await;
+
+        assert_eq!(reconstruct_content(&results), " ".repeat(4097));
+        assert_eq!(digit_calls(&results), 1);
+        assert_eq!(finish_reasons(&results), [FinishReason::ToolCalls]);
+    }
+
+    #[tokio::test]
+    async fn test_qwen3_coder_finish_while_jailed_settles_held_whitespace() {
+        // Truncated inside the call: unchanged from before, the newline survives.
+        let results = apply_qwen3_coder(vec![
+            create_mock_response_chunk("\n".to_string(), 0),
+            with_finish_reason(
+                create_mock_response_chunk(
+                    "<tool_call>\n<function=enter_digit>\n<parameter=digit>\n".to_string(),
+                    0,
+                ),
+                FinishReason::Length,
+            ),
+        ])
+        .await;
+        assert_eq!(reconstruct_content(&results), "\n");
+        assert_eq!(digit_calls(&results), 0);
+        assert_eq!(finish_reasons(&results), [FinishReason::Length]);
+
+        // A call recovered at end of stream still drops the framing newline.
+        let results = apply_qwen3_coder(vec![
+            create_mock_response_chunk("\n".to_string(), 0),
+            with_finish_reason(
+                create_mock_response_chunk(
+                    "<tool_call>\n<function=enter_digit>\n<parameter=digit>\n1\n</parameter>\n</function>"
+                        .to_string(),
+                    0,
+                ),
+                FinishReason::Stop,
+            ),
+        ])
+        .await;
+        assert_eq!(reconstruct_content(&results), "");
+        assert_eq!(digit_calls(&results), 1);
+        assert_eq!(finish_reasons(&results), [FinishReason::ToolCalls]);
+    }
+
     #[tokio::test]
     async fn test_jailed_stream_qwen3_coder_multiple_params() {
         use dynamo_parsers::tool_calling::ToolDefinition;
