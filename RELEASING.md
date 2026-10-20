@@ -74,11 +74,9 @@ Use ordinary `feat:` commits for features intended for a minor release, even whe
 
 For `0.x` crates, existing release-plz behavior is unchanged: compatible changes bump the patch slot and breaking commit markers bump the minor slot. Moving from `0.x` to `1.x` requires a manual peg.
 
-### Advisory API checks
+### No API checks
 
-`cargo-semver-checks` runs against the last release tag for changed crates, including manually pegged versions. API incompatibilities and checker failures produce a workflow warning and retain their full diagnostics in the job log, but do not choose or block the release version. Release-plz's own automatic API check is disabled in `release-plz.toml`.
-
-This policy intentionally permits Rust API breaks in minor releases. Consumers using caret requirements may receive an update that requires source changes; consumers needing explicit upgrade control should use exact version pins. A passing API check does not cover all behavioral changes.
+Release-plz's automatic API check is disabled in `release-plz.toml`, and the workflow does not run `cargo-semver-checks`. This policy intentionally permits Rust API breaks in minor releases. Consumers using caret requirements may receive an update that requires source changes; consumers needing explicit upgrade control should use exact version pins.
 
 ## One-time setup (bootstrap)
 
@@ -125,8 +123,7 @@ These admin actions must be done before the workflow can run end-to-end.
 ## Recovery: partial publish failure
 
 If the workflow publishes `dynamo-protocols` but fails on
-`dynamo-tokenizers` (e.g. crates.io throttling, transient network error,
-late-failing `cargo-semver-checks`):
+`dynamo-tokenizers` (e.g. crates.io throttling, transient network error):
 
 1. The `chore: release` commit is already on `main` and the
    `dynamo-protocols-v<version>` tag exists.

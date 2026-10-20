@@ -9,7 +9,6 @@
 #   - version == last tag, no changes under the crate dir -> nothing
 #   - version == last tag, changes under the crate dir -> auto-bump this crate
 #     only (release-plz sizes the bump from conventional commits)
-# Set SEMVER_CHECKS=1 to run advisory cargo-semver-checks for changed crates.
 set -euo pipefail
 
 # `--allow-dirty` below is intentional: each package update leaves its
@@ -29,13 +28,6 @@ for dir in $members; do
   # Exact-match this crate's tags: the glob "dynamo-parsers-v*" would also
   # match dynamo-parsers-v2-v0.1.21, so require <name>-v<semver>.
   last=$(git tag -l "$name-v*" | grep -E "^$name-v[0-9]+\.[0-9]+\.[0-9]+$" | sort -V | tail -1 || true)
-  # Report API incompatibilities (or checker failures) without sizing or
-  # blocking the release. Keep the full diagnostic in the job log.
-  if [ "${SEMVER_CHECKS:-0}" = 1 ] && [ -n "$last" ] && ! git diff --quiet "$last"..HEAD -- "$dir" Cargo.toml; then
-    if ! cargo semver-checks check-release --package "$name" --baseline-rev "$last"; then
-      echo "::warning::$name: API compatibility check failed; review diagnostics above. Version policy is maintainer-controlled."
-    fi
-  fi
   if [ -z "$last" ]; then
     echo "$name: no release tag yet -> first release is manual, skipping"
   elif [ "$ver" != "${last#"$name"-v}" ]; then

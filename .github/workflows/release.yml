@@ -35,15 +35,6 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Install Rust
-        run: rustup toolchain install
-
-      - name: Install release-plz CLI
-        run: |
-          curl -sSLf https://github.com/release-plz/release-plz/releases/download/release-plz-v0.3.158/release-plz-x86_64-unknown-linux-gnu.tar.gz \
-            | tar xz -C /usr/local/bin release-plz
-          release-plz --version
-
       # release-plz sizes bumps from the commit that lands on main: the squash
       # commit titled with the PR title, not the branch's own commits.
       - name: Build the squash commit
@@ -56,6 +47,13 @@ jobs:
           git fetch -q origin "$GITHUB_SHA"
           git merge --squash "$GITHUB_SHA"
           git commit -q -m "$title"
+
+      # After the squash, so the PR's own scripts and toolchain are used.
+      - name: Install Rust
+        run: rustup toolchain install
+
+      - name: Install release tools
+        run: .github/scripts/install-release-tools.sh
 
       - name: Bump versions (dry run)
         run: .github/scripts/bump-versions.sh
@@ -102,24 +100,13 @@ jobs:
       - name: Install Rust
         run: rustup toolchain install
 
-      - name: Install release-plz CLI
-        run: |
-          curl -sSLf https://github.com/release-plz/release-plz/releases/download/release-plz-v0.3.158/release-plz-x86_64-unknown-linux-gnu.tar.gz \
-            | tar xz -C /usr/local/bin release-plz
-          release-plz --version
-
-      - name: Install cargo-semver-checks
-        run: |
-          curl -sSLf https://github.com/obi1kenobi/cargo-semver-checks/releases/download/v0.48.0/cargo-semver-checks-x86_64-unknown-linux-gnu.tar.gz \
-            | tar xz -C /usr/local/bin
-          cargo-semver-checks --version
+      - name: Install release tools
+        run: .github/scripts/install-release-tools.sh
 
       # Path-scoped auto-bump; see the script header. Generated major
       # versions are rejected by the preview job before merge, so this step
       # publishes whatever was merged.
       - name: Bump versions for crates whose own files changed
-        env:
-          SEMVER_CHECKS: "1"
         run: .github/scripts/bump-versions.sh
 
       - name: Commit and push version bumps (if any)
