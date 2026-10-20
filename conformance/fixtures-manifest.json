@@ -378,9 +378,10 @@
     {
       "path": "unified-history",
       "format": "unified-history",
-      "sha256": "aebbd661295d1a92505dc9d0e3c30065dd4deb6a67fbb2973fd5169549e396d2",
-      "size": 54360608
+      "sha256": "e0fd7ec9c238016914734f3da128ddfe0fa364f4d519d042f050f420167d6d85",
+      "size": 6046164875
     }
   ],
-  "inactive_shards": []
+  "inactive_shards": [],
+  "historical_catalog_sha256": "6f844e1571147e3a849f19f475636bc3be59c9536e2156043410ee4c1aae2622"
 }
