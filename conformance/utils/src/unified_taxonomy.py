@@ -28,6 +28,7 @@ from schema_cases import ARGUMENT_SECTIONS, CONFORMANCE_CASES, SCHEMA_GROUPS, ar
 UNIFIED_TAX = {
     "default_reasoning_without_opener": (10, "6"),
     "default_reasoning_tool_without_closer": (12, "5"),
+    "structured_response_after_reasoning": (36, "1"),
     'harmony_guided_json_gt_in_argument_bare_opener': ("gpt_oss", "1"),
     'harmony_guided_json_gt_in_argument_named_bare_opener': ("gpt_oss", "2"),
     'harmony_guided_json_narrated_prefix_inside_reasoning': ("gpt_oss", "3"),
