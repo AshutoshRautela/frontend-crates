@@ -22,7 +22,7 @@ jobs:
   # drops the breaking marker or pegs the major version before merge.
   preview:
     if: startsWith(github.ref, 'refs/heads/pull-request/')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: read
@@ -62,7 +62,7 @@ jobs:
         run: .github/scripts/check-major-bumps.sh
 
   release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     # Scope OIDC + secrets to a protected environment. crates.io trusted
     # publishing entries should reference this environment so the OIDC
