@@ -51,16 +51,6 @@ use `dynamo_protocols.*` names; upstream schemas use `async_openai.*` names.
 This feature requires async-openai 0.42.2 or a newer compatible version. It does
 not enable the async-openai HTTP client or change JSON parsing and serialization.
 
-### Existing consumers
-
-Use the generated definitions without replacing them with external schemas.
-The public `schema` module has been removed. Import protocol types from `types`
-instead and enable `protocol-schema` for their schema implementations. Code that
-constructed the former empty schema structs must also change. Dynamo's adoption
-work is tracked in
-[#351](https://github.com/ai-dynamo/frontend-crates/issues/351); this crate does
-not register HTTP endpoints or serve the document itself.
-
 ### Contract and coverage limits
 
 - **Schema limits do not enforce server policy.** Adding numeric limits does not
