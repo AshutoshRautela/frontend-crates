@@ -1122,11 +1122,22 @@ dependencies = [
  "dynamo-parsers",
  "dynamo-parsers-v2",
  "dynamo-protocols",
+ "dynamo-renderer",
  "futures",
  "serde",
  "serde_json",
  "serde_yaml",
  "tokio",
+]
+
+[[package]]
+name = "dynamo-decisions"
+version = "0.1.0"
+dependencies = [
+ "dynamo-protocols",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -1153,13 +1164,14 @@ dependencies = [
 
 [[package]]
 name = "dynamo-multimodal"
-version = "0.1.1"
+version = "0.2.2"
 dependencies = [
  "base64 0.22.1",
  "blake3",
  "gif",
  "image",
  "ipnet",
+ "matroska-demuxer",
  "png",
  "rayon",
  "reqwest 0.12.28",
@@ -1173,7 +1185,7 @@ dependencies = [
 
 [[package]]
 name = "dynamo-parsers"
-version = "10.0.3"
+version = "10.0.7"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -1196,7 +1208,7 @@ dependencies = [
 
 [[package]]
 name = "dynamo-parsers-v2"
-version = "0.7.23"
+version = "0.7.29"
 dependencies = [
  "anyhow",
  "openai-harmony",
@@ -1240,7 +1252,7 @@ dependencies = [
 
 [[package]]
 name = "dynamo-renderer"
-version = "8.0.2"
+version = "8.0.4"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1257,7 +1269,7 @@ dependencies = [
 
 [[package]]
 name = "dynamo-tokenizers"
-version = "3.1.0"
+version = "3.1.2"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -1405,12 +1417,14 @@ dependencies = [
 
 [[package]]
 name = "fastokens"
-version = "0.3.1"
+version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "35ff8cf975d8f772e7d4c3be439659b0b23b1ae1086ebee7204573807053ff7f"
+checksum = "a54c07b9d1217010ec476249998b23430d0f4f85a4504114d81f55f2a43d1610"
 dependencies = [
+ "aho-corasick",
  "daachorse",
  "fancy-regex 0.17.0",
+ "fastrand",
  "hf-hub 0.4.3",
  "icu_normalizer",
  "libc",
@@ -1422,6 +1436,7 @@ dependencies = [
  "serde_json",
  "strum",
  "thiserror 2.0.18",
+ "unicode-normalization-alignments",
  "ureq",
 ]
 
@@ -2580,6 +2595,12 @@ name = "matchit"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
+
+[[package]]
+name = "matroska-demuxer"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4cbf36668475a45a46bf8710e927e7458b7c387e7c46ddb5457ae0c71cf5e817"
 
 [[package]]
 name = "maybe-rayon"

@@ -10,6 +10,47 @@ from pathlib import Path
 import yaml
 
 from fixture_disposition import canonical_unified_record_key, canonicalize_unified_inputs
+from impls import UNIFIED_BATCH_IMPLS
+
+
+_UNAVAILABLE_CATEGORIES = {
+    **dict.fromkeys(("peer_request_unsupported", "peer_finish_unsupported", "peer_termination_unsupported",
+                     "peer_chunk_schedule_unsupported", "vllm_chunk_schedule_unsupported", "vllm_tool_schema_unsupported",
+                     "vllm_rust_guided_json_unsupported", "vllm_rust_named_tool_unsupported", "vllm_rust_starting_state_unsupported"),
+                    "unsupported_request_mode"),
+    **dict.fromkeys(("peer_detector_unavailable", "vllm_parser_not_registered", "vllm_rust_parser_not_registered"),
+                    "unsupported_family"),
+}
+
+
+def capture_failure_detail(payload: dict) -> object:
+    return payload.get("detail", payload.get("message", payload.get("code")))
+
+
+def capture_failure_text(payload: dict) -> str:
+    detail = capture_failure_detail(payload)
+    text = detail if isinstance(detail, str) else payload.get("code")
+    if not isinstance(text, str):
+        raise ValueError("capture failure needs string detail, message, or code")
+    return text
+
+
+def normalize_unavailable(record: dict) -> dict:
+    """Project typed limitations without changing stored observations or error kinds."""
+    if "unavailable" not in record:
+        return record
+    result = dict(record)
+    typed = ((record.get("capture_observation") or {}).get("unavailable")
+             or (record.get("capture_stimulus") or {}).get("unavailable") or {})
+    if isinstance(record["unavailable"], dict):
+        if not typed:
+            typed = record["unavailable"]
+            result["capture_observation"] = {**(record.get("capture_observation") or {}), "unavailable": dict(typed)}
+        result["unavailable"] = capture_failure_text(typed)
+    code = typed.get("code") or record.get("unavailable_code")
+    if code is not None:
+        result["unavailable_code"] = _UNAVAILABLE_CATEGORIES.get(code, code)
+    return result
 
 
 def validate_family_scoped_cases(cases: list[dict]) -> None:
@@ -66,7 +107,7 @@ def capture_peer_results(
     supports_tools=False,
     unsupported_reason=None,
 ) -> dict:
-    """Bind only native/default peer executions; unsupported requests never run."""
+    """Bind supported peer executions; unsupported requests never run."""
     validate_family_scoped_cases(cases)
     ready, results, bindings = [], {}, {}
     for case in cases:
@@ -84,6 +125,10 @@ def capture_peer_results(
 
         def unavailable(code: str, detail: str) -> dict:
             return unavailable_result(code, detail, capture=requested)
+
+        if requested["init"].get("structural_tag") is not None:
+            results[key] = unavailable("unsupported_request_mode", "Parser-only peer capture does not execute structural-tag generation constraints.")
+            continue
 
         reason = unsupported_reason(case) if unsupported_reason is not None else None
         if reason is not None:
@@ -164,12 +209,26 @@ def original_capture_input(record: dict, raw: bytes, relative: str, bindings: di
     return original
 
 
+def _without_synthetic_finish_step(request: dict) -> dict:
+    chunks = request.get("chunks")
+    input_text = request.get("input")
+    if not isinstance(chunks, list) or not chunks or not isinstance(input_text, str):
+        return request
+    if (
+        chunks[-1] == {"delta_text": "‹finish›"}
+        and "".join(chunk.get("delta_text", "") for chunk in chunks[:-1]) == input_text
+    ):
+        return {**request, "chunks": chunks[:-1]}
+    return request
+
+
 def select_peer_observation(record: dict, current: dict, *, implementation: str, version: str) -> dict:
     """Use a bound recapture while retaining the original historical observation."""
     recapture = record.get("verified_recapture")
     if recapture is None:
         return record
-    if implementation not in {"sglang_python", "vllm_python", "vllm_rust"}:
+    batch = implementation in UNIFIED_BATCH_IMPLS
+    if implementation not in {"sglang_python", "vllm_python", "vllm_rust"} and not batch:
         raise ValueError("verified recapture requires a supported peer implementation")
     if not isinstance(recapture, dict) or set(recapture) != {"result", "provenance", "resolution"}:
         raise ValueError("invalid verified recapture")
@@ -194,9 +253,13 @@ def select_peer_observation(record: dict, current: dict, *, implementation: str,
     result = recapture["result"]
     if not isinstance(result, dict) or result.get("capture_input") != capture_input(current):
         raise ValueError("verified recapture request differs from displayed request")
-    states = sum(key in result for key in ("error", "unavailable", "chunks"))
+    states = sum(key in result for key in ("error", "unavailable", "assembled" if batch else "chunks"))
     if states != 1:
         raise ValueError("verified recapture must carry exactly one result state")
+    if batch:
+        if "chunks" in result or ("assembled" in result and result["assembled"] != batch_final_events(result.get("batch_final", {}))):
+            raise ValueError("invalid verified batch final fields")
+        result = {**result, "producer_origin": {"crate_version": version, **provenance}}
     if resolution == "historical_adapter_unsupported" and "unavailable" in result:
         return {**result, "historical_capture_note": (
             "This comparison uses the recapture adapter's verified request compatibility "
@@ -226,6 +289,8 @@ def comparison_failure(record: dict, current: dict, raw: bytes, relative: str, b
         return "Capture stimulus unavailable: displayed request tool schema was not retained; request equality cannot be verified."
     if not isinstance(original, dict) or original.keys() != expected.keys():
         raise ValueError(f"incomplete capture input binding: {relative}")
+    original = _without_synthetic_finish_step(original)
+    expected = _without_synthetic_finish_step(expected)
     changed = [key for key in expected if original[key] != expected[key]]
     if changed:
         return f"Capture stimulus mismatch ({', '.join(changed)}): historical output belongs to a different request and is not scored against this input."
@@ -248,12 +313,16 @@ def _effective_capture_records(directory: Path, input_aliases: dict) -> dict:
     return captures
 
 
-def validated_current_capture_docs(directory: Path, input_dirs: list[Path]) -> list[dict]:
+def validated_current_capture_docs(
+    directory: Path, input_dirs: list[Path], families: set[str] | None = None,
+) -> list[dict]:
     """Return the effective records checked here so Rust cannot reread a different layer."""
     raw_inputs = {}
     for input_dir in input_dirs:
         for path in sorted(input_dir.glob("*/*.yaml")):
             doc = yaml.safe_load(path.read_bytes())
+            if families is not None and doc["family"] not in families:
+                continue
             for key, record in doc["cases"].items():
                 raw_inputs[(doc["family"], key)] = record
     inputs, input_aliases = canonicalize_unified_inputs(raw_inputs)
@@ -285,23 +354,45 @@ def validated_current_capture_docs(directory: Path, input_dirs: list[Path]) -> l
     return [{"family": family, "cases": records} for family, records in families.items()]
 
 
-def validate_current_capture(directory: Path, input_dirs: list[Path]) -> int:
-    return sum(len(doc["cases"]) for doc in validated_current_capture_docs(directory, input_dirs))
+def validate_current_capture(
+    directory: Path, input_dirs: list[Path], families: set[str] | None = None,
+) -> int:
+    return sum(len(doc["cases"]) for doc in validated_current_capture_docs(directory, input_dirs, families))
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--validate-current", type=Path, required=True)
     parser.add_argument("--inputs", type=Path, nargs="+")
+    parser.add_argument("--families", nargs="+", help="restrict validation to these explicitly applicable families")
     parser.add_argument("--format", choices=("count", "json"), default="count")
     args = parser.parse_args()
     if not args.inputs:
         parser.error("--validate-current requires --inputs")
+    families = set(args.families) if args.families is not None else None
     if args.format == "json":
-        print(json.dumps(validated_current_capture_docs(args.validate_current, args.inputs)))
+        print(json.dumps(validated_current_capture_docs(args.validate_current, args.inputs, families)))
     else:
-        print(validate_current_capture(args.validate_current, args.inputs))
+        print(validate_current_capture(args.validate_current, args.inputs, families))
 
 
 if __name__ == "__main__":
     main()
+
+
+def batch_final_events(final: dict) -> list[dict]:
+    """Project final message fields without inventing their lost interleaving."""
+    if set(final) != {"reasoning_text", "normal_text", "calls"}:
+        raise ValueError("batch final fields must contain reasoning_text, normal_text, calls")
+    if not isinstance(final["reasoning_text"], str) or not isinstance(final["normal_text"], str) or not isinstance(final["calls"], list):
+        raise ValueError("invalid batch final field types")
+    events = []
+    if final["reasoning_text"]:
+        events.append({"kind": "reasoning", "text": final["reasoning_text"]})
+    if final["normal_text"]:
+        events.append({"kind": "text", "text": final["normal_text"]})
+    for call in final["calls"]:
+        if set(call) != {"name", "arguments"} or not isinstance(call["name"], str):
+            raise ValueError("invalid batch tool call")
+        events.append({"kind": "tool_call", **call})
+    return events

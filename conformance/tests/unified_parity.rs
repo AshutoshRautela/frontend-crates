@@ -53,7 +53,7 @@ struct GoldenCase {
     init: Init,
 }
 
-fn load_golden() -> Vec<GoldenFile> {
+fn load_native_golden() -> Vec<GoldenFile> {
     let dir = common::ensure_unified_golden();
     let mut files: Vec<GoldenFile> = Vec::new();
     for entry in std::fs::read_dir(&dir).unwrap_or_else(|e| panic!("read {}: {e}", dir.display())) {
@@ -66,8 +66,39 @@ fn load_golden() -> Vec<GoldenFile> {
             serde_yaml::from_str(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display())),
         );
     }
+    files.retain(|file| has_unified_parser(&file.family));
     files.sort_by(|a, b| a.family.cmp(&b.family));
     files
+}
+
+#[test]
+fn structural_response_case_checks_the_schema_before_parsing() {
+    let mut families = Vec::new();
+    for file in load_native_golden() {
+        for (id, mut case) in file.cases {
+            if !id.contains("structured_response_after_reasoning") {
+                continue;
+            }
+            families.push(file.family.clone());
+            let tools = common::unified_tools_for_schemas(case.tools.as_ref());
+            let chunks = capture::input_chunks(&case.input, case.input_chunks.as_deref());
+            assert_eq!(
+                events(&file.family, &chunks, &case.init, &tools).unwrap(),
+                case.golden,
+                "{id}"
+            );
+            // Parsing the same stream still succeeds with a contradictory schema.
+            // Only a real grammar check can reject this request before parsing.
+            case.init.structural_tag.as_mut().unwrap().schema =
+                serde_json::json!({"const": "impossible response"});
+            assert!(
+                events(&file.family, &chunks, &case.init, &tools).is_err(),
+                "{id}: ignored the response schema"
+            );
+        }
+    }
+    families.sort();
+    assert_eq!(families, ["deepseek_v4", "glm47", "gpt_oss", "qwen3"]);
 }
 
 fn has_unified_parser(family: &str) -> bool {
@@ -83,6 +114,8 @@ fn events(
     let mut parser = create_unified_parser_for_family(family, tool_schemas)
         .unwrap_or_else(|e| panic!("create unified parser for `{family}`: {e}"));
     init.apply(&mut parser, family);
+    init.validate_capture(family, tool_schemas, chunks)
+        .map_err(|error| format!("{error:#}"))?;
 
     let rows = capture::native_capture(&mut parser, chunks).map_err(|failure| match failure {
         capture::CaptureFailure::Error(error) => error,
@@ -130,21 +163,17 @@ fn splittings(input: &str) -> Vec<(String, Vec<String>)> {
 /// The gate: assembled events must equal the golden, exactly and in order.
 #[test]
 fn unified_parser_matches_the_golden_oracle() {
-    let files = load_golden();
+    let files = load_native_golden();
     let known = divergences::load();
-    let covered: Vec<&GoldenFile> = files
-        .iter()
-        .filter(|f| has_unified_parser(&f.family))
-        .collect();
     assert!(
-        !covered.is_empty(),
+        !files.is_empty(),
         "no golden family has a unified parser — the surface is unproven"
     );
 
     let mut failures = Vec::new();
     let mut observed = std::collections::BTreeSet::new();
     let mut checked = 0usize;
-    for file in &covered {
+    for file in &files {
         for (id, case) in &file.cases {
             checked += 1;
             let case_tools = common::unified_tools_for_schemas(case.tools.as_ref());
@@ -191,10 +220,7 @@ fn unified_parser_is_chunk_invariant() {
     let known = divergences::load();
     let mut observed = std::collections::BTreeSet::new();
     let mut failures = Vec::new();
-    for file in load_golden()
-        .iter()
-        .filter(|f| has_unified_parser(&f.family))
-    {
+    for file in load_native_golden() {
         for (id, case) in &file.cases {
             let case_tools = common::unified_tools_for_schemas(case.tools.as_ref());
             let baseline = events(
@@ -252,20 +278,23 @@ fn unified_parser_is_chunk_invariant() {
 
 #[test]
 fn reference_argument_cases_preserve_results_at_every_split() {
+    let scenarios = [
+        "glm_ref_object",
+        "glm_ref_encoded_targets",
+        "glm_ref_json_looking_strings",
+        "glm_ref_scalar_types",
+        "unused_reference_graph_parameter_types",
+        "nullable_reference_alias_literals",
+        "local_schema_id_preserves_type",
+    ];
     let mut checked = 0;
-    for file in load_golden() {
+    let files = load_native_golden();
+    let family_count = files.len();
+    for file in files {
         for (id, case) in &file.cases {
-            if ![
-                "glm_ref_object",
-                "glm_ref_encoded_targets",
-                "glm_ref_json_looking_strings",
-                "glm_ref_scalar_types",
-                "unused_reference_graph_parameter_types",
-                "nullable_reference_alias_literals",
-                "local_schema_id_preserves_type",
-            ]
-            .iter()
-            .any(|scenario| id == &format!("UNIFIED.{scenario}.{}", file.family))
+            if !scenarios
+                .iter()
+                .any(|scenario| id == &format!("UNIFIED.{scenario}.{}", file.family))
             {
                 continue;
             }
@@ -290,7 +319,7 @@ fn reference_argument_cases_preserve_results_at_every_split() {
             checked += 1;
         }
     }
-    assert_eq!(checked, 56);
+    assert_eq!(checked, family_count * scenarios.len());
 }
 
 /// I6: parsing the whole output at once assembles to the streamed result.
@@ -299,10 +328,7 @@ fn unified_parser_has_stream_batch_parity() {
     let known = divergences::load();
     let mut observed = std::collections::BTreeSet::new();
     let mut failures = Vec::new();
-    for file in load_golden()
-        .iter()
-        .filter(|f| has_unified_parser(&f.family))
-    {
+    for file in load_native_golden() {
         for (id, case) in &file.cases {
             let case_tools = common::unified_tools_for_schemas(case.tools.as_ref());
             let streamed = events(
@@ -380,10 +406,7 @@ fn advance(
 /// either one.
 #[test]
 fn unified_parsers_are_isolated_per_stream() {
-    for file in load_golden()
-        .iter()
-        .filter(|f| has_unified_parser(&f.family))
-    {
+    for file in load_native_golden() {
         let cases: Vec<_> = file.cases.iter().collect();
         for pair in cases.windows(2) {
             let [(id_a, a), (id_b, b)] = pair else {
@@ -438,7 +461,7 @@ fn registered_unified_families_all_create() {
         });
     }
     assert!(
-        load_golden().iter().any(|f| has_unified_parser(&f.family)),
+        !load_native_golden().is_empty(),
         "no golden family maps to a registered unified parser"
     );
 }
@@ -508,7 +531,7 @@ fn deepseek_tool_adapter_matches_both_native_golden_corpora() {
 
     let known = divergences::load();
     let mut coverage = BTreeMap::<String, usize>::new();
-    for file in load_golden()
+    for file in load_native_golden()
         .into_iter()
         .filter(|file| matches!(file.family.as_str(), "deepseek_v4" | "deepseek_v41"))
     {

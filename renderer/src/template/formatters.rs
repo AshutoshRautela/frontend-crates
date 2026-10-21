@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use super::minimax_m2::{adapt_minimax_m2_thinking_template_source, is_minimax_m2_template_source};
 use super::tokcfg::{
     ChatTemplate, fromjson, python_formatter, python_methods, python_string, python_trim,
     raise_exception, strftime_now, tojson,
@@ -526,11 +527,13 @@ fn adapt_gemma4_reasoning_template_source(source: &str) -> String {
         .replace(OLD_TOOL_LOOP_END, NEW_TOOL_LOOP_END)
 }
 
-fn normalize_chat_template_source(source: &str) -> String {
+pub(super) fn normalize_chat_template_source(source: &str) -> String {
     let source = normalize_jinja_syntax(source);
 
     if is_gemma4_reasoning_field_template_source(&source) {
         adapt_gemma4_reasoning_template_source(&source)
+    } else if is_minimax_m2_template_source(&source) {
+        adapt_minimax_m2_thinking_template_source(&source)
     } else {
         source
     }
