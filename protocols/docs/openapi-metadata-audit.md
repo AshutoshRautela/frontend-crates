@@ -65,7 +65,7 @@ backend capabilities remain serving concerns.
 
 All rows have action **keep**: the dependency upgrade does not authorize a type
 representation or runtime compatibility change. “Native children” means fields
-now use the real upstream schema, not an import placeholder.
+now use the upstream type's own schema.
 
 | Type or subtree | Local rationale and metadata decision | Evidence / downstream effect |
 | --- | --- | --- |
@@ -96,14 +96,13 @@ Descriptions and constraints must continue to follow the local semantic owner.
 This audit does not mechanically copy upstream Rustdoc: references to hosted
 OpenAI models, storage, quotas, or defaults can be inaccurate for Dynamo.
 
-## Import migration and downstream work
+## Native schema adoption and downstream work
 
-The old placeholder names map to the same `async_openai.*` component names, but
-now contain actual definitions and transitive references. `schema::*` remains a
+Native definitions use `async_openai.*` component names and register their
+transitive references. `schema::*` remains a
 compatibility import path for these actual types. Constructing the former public
 unit placeholders is no longer supported; this is a source-breaking change for
-callers that used those constructors. No import-slot mode remains when
-`protocol-schema` is enabled.
+callers that used those constructors.
 
 `CreateCompletionResponse` is now available directly through its re-exported
 type. Upstream response schemas can still be more permissive than serialized
@@ -118,9 +117,8 @@ After a containing crate release, coordinate these Dynamo changes through
 2. Replace Dynamo's `CompletionResponseSchema` import stub with the real type.
    Preserve aliases, request extensions, reasoning-key configuration, and SSE
    `itemSchema`; check every referenced component is registered.
-3. Retire only obsolete import composition. Never overwrite native definitions
-   with external schemas. Preserve explicit handling of older import-slot exports
-   or reject those versions clearly.
+3. Retire obsolete schema composition. Never overwrite native definitions with
+   external schemas. Make the supported protocol versions explicit.
 4. Compare native HTTP/file exports, response requiredness, and serialized fixtures;
    update comparison/report fixtures and pinned assessment recipes as needed.
 

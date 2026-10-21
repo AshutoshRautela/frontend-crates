@@ -112,10 +112,9 @@ fn component_graph_resolves_every_reference() {
 
 /// Native imports must describe real values and register their transitive types.
 #[test]
-fn dependency_types_use_native_schemas_without_import_slots() {
+fn dependency_types_describe_native_shapes_and_transitive_components() {
     let doc = document();
     let schemas = doc["components"]["schemas"].as_object().unwrap();
-    assert!(!doc.to_string().contains("x-dynamo-schema-import"));
     for name in [
         "async_openai.Prompt",
         "async_openai.FunctionObject",

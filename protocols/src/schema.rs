@@ -1,11 +1,10 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Compatibility paths for types previously represented by schema import slots.
+//! Schema-compatible re-exports of native async-openai types.
 //!
 //! These are now the real async-openai types, with native `ToSchema` implementations.
-//! Owned protocol fields refer directly to their runtime types; no placeholder
-//! schemas or `x-dynamo-schema-import` markers are generated. Prefer importing
+//! Owned protocol fields refer directly to their runtime types. Prefer importing
 //! protocol types from [`crate::types`] in new code.
 
 pub use async_openai::types::chat::{

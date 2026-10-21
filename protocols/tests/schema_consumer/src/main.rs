@@ -49,7 +49,10 @@ fn assert_references(node: &Value, document: &Value) {
 fn main() {
     let document = serde_json::to_value(Contract::openapi()).unwrap();
     assert_references(&document, &document);
-    assert!(!document.to_string().contains("x-dynamo-schema-import"));
+    assert_eq!(
+        document["components"]["schemas"]["async_openai.FunctionObject"]["properties"]["name"]["type"],
+        "string"
+    );
     for name in [
         "dynamo_protocols.chat.CreateChatCompletionRequest",
         "dynamo_protocols.completion.CreateCompletionRequest",

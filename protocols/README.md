@@ -35,14 +35,11 @@ struct Contract;
 Owned components keep their `dynamo_protocols.*` names. Imported components use
 the real `async_openai.*` schemas, including transitive types such as prompt
 variants, tool definitions, response formats, completion choices, and usage.
-No `x-dynamo-schema-import` placeholders remain in this surface. The old
-`schema::*` paths now re-export actual upstream types; they no longer name
-placeholder unit structs.
+The existing `schema::*` paths now re-export actual upstream types; they no longer
+name placeholder unit structs.
 
-Consumers of the earlier import-slot export must stop replacing these native
-components with external definitions. Keep support for older exports explicit,
-and resolve only markers actually present in those exports. The coordinated
-Dynamo export/composition migration is tracked in
+Consumers should use these native components without replacing them with external
+definitions. The coordinated Dynamo export/composition migration is tracked in
 [#351](https://github.com/ai-dynamo/frontend-crates/issues/351).
 
 ### Contract and coverage limits
