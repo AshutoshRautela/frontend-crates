@@ -18,9 +18,13 @@ Use `protocol-schema` to generate OpenAPI schemas for chat/completion requests,
 chat responses and stream chunks, and `CreateCompletionResponse`. The `utoipa`
 feature is an alias for `protocol-schema`.
 
-Enable this feature on your `dynamo-protocols` dependency and add `utoipa` 5 and
-`serde_json` 1 to your dependencies. Register the types you need, then serialize
-the generated document:
+Enable this feature on your `dynamo-protocols` dependency. The feature enables
+the crate's schema dependencies automatically; you do not need to declare them
+yourself just to enable it.
+
+The export example below directly uses `utoipa` and `serde_json`, so add
+`utoipa` 5 and `serde_json` 1 to your dependencies to run it. Register the types
+you need, then serialize the generated document:
 
 ```rust
 use utoipa::OpenApi;
@@ -82,19 +86,15 @@ not register HTTP endpoints or serve the document itself.
 
 ### Verify schema generation
 
-From the repository root, run the protocol suite with and without schemas, then
-run the separate consumer crate:
+From the repository root, run the protocol suite with and without schemas:
 
 ```sh
 cargo test -p dynamo-protocols --features protocol-schema --locked
 cargo test -p dynamo-protocols --no-default-features --locked
-cargo run --manifest-path protocols/tests/schema_consumer/Cargo.toml
 ```
 
-The protocol tests check schema shapes and references. The consumer only exports
-the document. It builds outside the parent workspace so other crates cannot supply
-dependency features that it forgot to enable. Its generated `Cargo.lock` is not
-committed; retain it with validation evidence to reproduce the resolved versions.
+The protocol tests check schema shapes and references as well as JSON parsing
+and serialization.
 
 ## Locally-defined extensions
 
