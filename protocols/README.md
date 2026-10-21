@@ -14,13 +14,17 @@ Request/response types for OpenAI- and Anthropic-compatible inference servers. B
 
 ## Optional protocol schemas
 
-Enable `protocol-schema` (or its `utoipa` alias) to obtain utoipa 5 schemas for
-chat/completion requests, chat responses and stream chunks, and the re-exported
-`CreateCompletionResponse`. The feature enables `async-openai/openapi` using
-released async-openai 0.42.2 or newer compatible versions. It does not enable the
-HTTP client or change Serde behavior.
+Use `protocol-schema` to generate OpenAPI schemas for chat/completion requests,
+chat responses and stream chunks, and `CreateCompletionResponse`. The `utoipa`
+feature is an alias for `protocol-schema`.
 
-```rust,ignore
+Enable this feature on your `dynamo-protocols` dependency and add `utoipa` 5 and
+`serde_json` 1 to your dependencies. Register the types you need, then serialize
+the generated document:
+
+```rust
+use utoipa::OpenApi;
+
 #[derive(utoipa::OpenApi)]
 #[openapi(components(schemas(
     dynamo_protocols::types::CreateChatCompletionRequest,
@@ -30,45 +34,56 @@ HTTP client or change Serde behavior.
     dynamo_protocols::types::CreateCompletionResponse
 )))]
 struct Contract;
+
+fn main() -> Result<(), serde_json::Error> {
+    println!("{}", serde_json::to_string_pretty(&Contract::openapi())?);
+    Ok(())
+}
 ```
 
-Owned components keep their `dynamo_protocols.*` names. Imported components use
-the real `async_openai.*` schemas, including transitive types such as prompt
-variants, tool definitions, response formats, completion choices, and usage.
-The existing `schema::*` paths now re-export actual upstream types; they no longer
-name placeholder unit structs.
+The document includes schemas for the registered types and the nested types they
+reference, such as tool definitions and usage statistics. Dynamo-owned schemas
+use `dynamo_protocols.*` names; upstream schemas use `async_openai.*` names.
+This feature requires async-openai 0.42.2 or a newer compatible version. It does
+not enable the async-openai HTTP client or change JSON parsing and serialization.
 
-Consumers should use these native components without replacing them with external
-definitions. The coordinated Dynamo export/composition migration is tracked in
-[#351](https://github.com/ai-dynamo/frontend-crates/issues/351).
+### Existing consumers
+
+Use the generated definitions without replacing them with external schemas.
+The `schema::*` paths now re-export actual upstream types. Code that constructed
+the former empty structs must change. Dynamo's adoption work is tracked in
+[#351](https://github.com/ai-dynamo/frontend-crates/issues/351); this crate does
+not register HTTP endpoints or serve the document itself.
 
 ### Contract and coverage limits
 
-- **Metadata is not runtime validation.** Numeric limits describe the serving
-  contract, but Serde still accepts values representable by the Rust types.
-  Likewise, `n: default=1` does not inject a value: omitted/null input remains
-  `None` until the server resolves it. Other omitted sampling controls remain
-  backend/model dependent; no universal default is added for them.
+- **Schema limits do not enforce server policy.** Adding numeric limits does not
+  change JSON parsing. For example, `n=0` still parses, but the serving layer
+  rejects it. The `n: default=1` annotation also does not fill in a value: omitted
+  or null input remains `None` for the server to resolve. Other sampling defaults
+  depend on the backend and model.
 - **Intentional differences remain.** Dynamo's `top_p` excludes zero and its
   logit biases may be fractional. Local reasoning, multimodal, token-stop,
   streaming-usage, and permissive-input extensions retain their own schemas.
   The [metadata audit](docs/openapi-metadata-audit.md) records what was restored,
   what differs, and what remains outside coverage.
-- **Canonical shape is not every accepted input.** Custom deserializers normalize
-  object-valued function arguments, media shorthand, reasoning aliases, and null
-  stream-option flags. Canonical schemas are not a replacement for those parsers
-  or server cross-field validation.
+- **Schemas do not describe every accepted input form.** Custom parsers convert
+  object-valued function arguments to strings, expand media shorthand, and
+  normalize reasoning aliases and null stream-option flags. Tests check these
+  values after parsing and serialization, not just the original input.
 - **Other API families remain uncovered.** This feature does not provide complete
   schemas for Responses, embeddings, images, Realtime, Batch, Files, or Anthropic.
-  Released async-openai schema support is limited to chat/completion types and
-  their shared dependencies; local definitions in other families are not silently
-  presented as covered.
-- **Transport and backend behavior are separate.** The component graph does not
-  define endpoint registration, HTTP errors, SSE framing/order/termination,
-  configured output keys, or actual engine support. Reference closure is not a
-  whole-server compatibility claim.
+  Some upstream response schemas also allow fields to be omitted even though
+  serialized responses always include them.
+- **Server behavior needs separate tests.** These component schemas do not define
+  HTTP errors, server-sent event (SSE) framing and ordering, configured output
+  keys, or engine support. Resolved schema references do not prove server
+  compatibility.
 
-Run the protocol suite in both feature configurations:
+### Verify schema generation
+
+From the repository root, run the protocol suite with and without schemas, then
+run the separate consumer crate:
 
 ```sh
 cargo test -p dynamo-protocols --features protocol-schema --locked
@@ -76,10 +91,10 @@ cargo test -p dynamo-protocols --no-default-features --locked
 cargo run --manifest-path protocols/tests/schema_consumer/Cargo.toml
 ```
 
-The standalone consumer prints a native OpenAPI document and checks reference
-closure without relying on workspace-wide feature unification.
-It resolves compatible released dependencies into its own ignored lockfile;
-retain that lockfile with validation evidence when reproducing a run.
+The consumer prints an OpenAPI document and checks that every schema reference
+resolves. It builds outside the parent workspace so other crates cannot supply
+dependency features that it forgot to enable. Its generated `Cargo.lock` is not
+committed; retain it with validation evidence to reproduce the resolved versions.
 
 ## Locally-defined extensions
 

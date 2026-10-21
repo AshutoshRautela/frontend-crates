@@ -10,8 +10,9 @@ use dynamo_protocols::types::responses::{
 use dynamo_protocols::types::{CreateChatCompletionRequest, CreateCompletionRequest};
 use serde_json::json;
 
-/// Schema defaults must not change Serde: omission/null stays `None`, and explicit
-/// counts survive unchanged. Run with and without `protocol-schema` enabled.
+/// Declaring a schema default must not fill in `n` during JSON parsing.
+/// Omitted/null counts stay `None` and serialize without `n`; explicit counts,
+/// including zero, are preserved. Run with and without `protocol-schema` enabled.
 #[test]
 fn choice_count_schema_default_does_not_inject_wire_values() {
     for n in [

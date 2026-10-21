@@ -18,17 +18,21 @@ use utoipa::{OpenApi, ToSchema};
 )))]
 struct Contract;
 
-/// Generate the owned and re-exported chat/completion component graph.
+/// Return the registered chat/completion schemas as one JSON OpenAPI document.
 fn document() -> Value {
     serde_json::to_value(Contract::openapi()).unwrap()
 }
 
+/// Build a validator for `T`, which must be included in `document()`.
+/// Panics if the generated schema cannot be compiled.
 fn validator<T: ToSchema>() -> jsonschema::Validator {
     let mut doc = document();
     doc["$ref"] = json!(format!("#/components/schemas/{}", T::name()));
     jsonschema::validator_for(&doc).unwrap()
 }
 
+/// Parse `input` as `T`, then assert that its serialized form matches `T`'s schema.
+/// Use for inputs that normalize during parsing; panics on conversion or validation failure.
 fn canonical<T: ToSchema + DeserializeOwned + Serialize>(input: Value) {
     let parsed: T = serde_json::from_value(input).unwrap();
     let output = serde_json::to_value(parsed).unwrap();
@@ -54,8 +58,8 @@ fn request_roots_are_distinct_from_upstream_and_have_real_fields() {
     assert!(completion["properties"].get("prompt").is_some());
 }
 
-/// Both owned request schemas advertise the OpenAI default without requiring `n`
-/// or removing its nullable integer shape. This is metadata, not value injection.
+/// Declaring `n=1` must leave `n` optional and allow integer or null values.
+/// The wire-level test separately checks that parsing does not fill in the default.
 #[test]
 fn choice_count_schema_declares_openai_default() {
     let doc = document();
@@ -110,7 +114,8 @@ fn component_graph_resolves_every_reference() {
     }
 }
 
-/// Native imports must describe real values and register their transitive types.
+/// Upstream schemas must describe field shapes and include their nested definitions.
+/// Check valid and invalid prompts, then validate a serialized completion response.
 #[test]
 fn dependency_types_describe_native_shapes_and_transitive_components() {
     let doc = document();
@@ -158,8 +163,9 @@ fn dependency_types_describe_native_shapes_and_transitive_components() {
     }));
 }
 
-/// Preserve stream-flag defaults and numeric limits, including Dynamo-specific bounds.
-/// Serde is intentionally not a schema validator; invalid serving values still parse.
+/// Schemas must retain stream-flag defaults and Dynamo's numeric constraints.
+/// Values outside serving limits still parse when their Rust types allow them;
+/// these annotations must not become runtime validation.
 #[test]
 fn owned_request_metadata_preserves_standard_limits_and_dynamo_differences() {
     let doc = document();

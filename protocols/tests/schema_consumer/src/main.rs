@@ -1,8 +1,9 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Standalone schema-consumer smoke test. Run with this directory's Cargo manifest.
-//! Successful execution prints a native OpenAPI document; failed contract assertions panic.
+//! Check schema generation without features supplied by the parent workspace.
+//! Run with this directory's Cargo manifest. Success prints the OpenAPI document
+//! to stdout; a failed schema check panics and exits with an error.
 
 use dynamo_protocols::types::{
     CreateChatCompletionRequest, CreateChatCompletionResponse, CreateChatCompletionStreamResponse,
@@ -21,7 +22,8 @@ use utoipa::OpenApi;
 )))]
 struct Contract;
 
-/// Assert that every local reference under `node` resolves in the complete document.
+/// Check references below `node` against the full OpenAPI `document`.
+/// Panics if a reference is outside `components/schemas` or has no definition.
 fn assert_references(node: &Value, document: &Value) {
     match node {
         Value::Object(fields) => {
@@ -45,7 +47,8 @@ fn assert_references(node: &Value, document: &Value) {
     }
 }
 
-/// Export all supported roots and fail if native import coverage or choice defaults regress.
+/// Print schemas for the five registered request/response types after checking
+/// references, a nested field shape, completion-response registration, and `n=1`.
 fn main() {
     let document = serde_json::to_value(Contract::openapi()).unwrap();
     assert_references(&document, &document);

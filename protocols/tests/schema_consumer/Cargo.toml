@@ -7,8 +7,8 @@ version = "0.0.0"
 edition = "2024"
 publish = false
 
-# Deliberately outside the parent workspace: exercise a downstream consumer's
-# dependency/feature resolution rather than workspace-wide feature unification.
+# Build separately so other workspace crates cannot enable missing dependency
+# features on this consumer's behalf.
 [workspace]
 
 [dependencies]

@@ -1150,8 +1150,8 @@ pub struct ChatCompletionStreamOptions {
 /// - Uses our extended `ChatCompletionRequestMessage` (with reasoning, video/audio)
 /// - Uses our extended `ChatCompletionStreamOptions` (with continuous_usage_stats)
 ///
-/// Schema bounds describe the serving contract; Serde still only parses values.
-/// Omitted sampling controls remain `None` for the server/backend to resolve.
+/// Schema bounds document serving limits; they do not add checks to JSON parsing.
+/// Omitted sampling controls remain `None` for the server or backend to resolve.
 #[derive(Clone, Serialize, Default, Debug, Builder, Deserialize, PartialEq)]
 #[builder(name = "CreateChatCompletionRequestArgs")]
 #[builder(pattern = "mutable")]
@@ -1188,8 +1188,8 @@ pub struct CreateChatCompletionRequest {
     pub max_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_completion_tokens: Option<u32>,
-    /// Number of choices to generate. The OpenAI API default is one; Serde
-    /// preserves omitted or null input as `None` for the server to resolve.
+    /// Number of choices to generate. OpenAI specifies a default of one.
+    /// Parsing omitted or null input leaves `None`; the server must resolve it.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(
         feature = "protocol-schema",
@@ -1220,8 +1220,8 @@ pub struct CreateChatCompletionRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "protocol-schema", schema(minimum = 0, maximum = 2))]
     pub temperature: Option<f32>,
-    /// Nucleus-sampling probability. Dynamo requires a positive value, unlike
-    /// OpenAI's schema, which includes zero. Omission leaves the backend default.
+    /// Nucleus-sampling probability. Dynamo's serving layer requires `0 < top_p <= 1`,
+    /// unlike OpenAI's schema, which allows zero. Omission leaves `None` for the backend.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(
         feature = "protocol-schema",
