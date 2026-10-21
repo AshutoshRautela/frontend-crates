@@ -113,7 +113,12 @@ fn assert_adapters(
         .expect("native request");
     let events = drive_unified(unified.as_mut(), chunks);
     let mut expected = Vec::new();
-    if !expected_text.is_empty() {
+    // Unified drops whitespace-only text from a tool-only turn (issue #406); the
+    // tool-only adapter above still reports it as normal text. DSML owns its framing.
+    let blank_tool_turn = expected_text.trim().is_empty()
+        && !expected_calls.is_empty()
+        && !family.starts_with("deepseek_v4");
+    if !expected_text.is_empty() && !blank_tool_turn {
         expected.push(UnifiedEvent::Text {
             text: expected_text.into(),
         });

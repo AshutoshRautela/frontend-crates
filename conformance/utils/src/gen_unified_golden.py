@@ -2660,6 +2660,48 @@ DEFAULT_REASONING_CASES = [
 ]
 
 
+# Issue #406: whitespace-only text in a turn that calls tools and shows no visible
+# text is call framing (P8). Nemotron frames each Qwen3-Coder call with a newline on
+# both sides, and its chat template renders assistant content as `content | trim`, so
+# dropping that whitespace re-renders the same prompt. Any turn with visible text
+# keeps every whitespace byte, and whitespace with no call is visible content.
+# Inputs render each whitespace run as the family's own visible-text segment.
+# Excluded: DeepSeek V4/V4.1 own their call framing (the `dsml-*` cases above keep
+# non-separator whitespace as content); GPT-OSS has no native Unified parser.
+_BLANK_INIT = {"starting_state": "None", "tool_output_mode": "Native", "named_tool": None}
+_BLANK_FAMILIES = [f for f in TEMPLATE_FAMILIES if f not in ("deepseek_v4", "deepseek_v41", "gpt_oss")]
+_BLANK_CALL = ("tool", "get_weather", "city", "Paris")
+_BLANK_SECOND_CALL = ("tool", "get_weather", "city", "Tokyo")
+BLANK_FRAMING = [
+    ("blank_framing_tool_only",
+     "A tool-only turn frames its call with a newline on each side, as Nemotron emits it. The tag-aligned schedule delivers each newline in its own chunk. No text is emitted.",
+     ["P8", "I5"], [("text", "\n"), _BLANK_CALL, ("text", "\n")],
+     [_BLANK_CALL], {"finish_reason": "stop"}, _BLANK_FAMILIES),
+    ("blank_framing_between_calls_single_chunk",
+     "Two calls framed by newlines before, between, and after them, delivered in one push. No text is emitted.",
+     ["P8", "I6"], [("text", "\n"), _BLANK_CALL, ("text", "\n\n"), _BLANK_SECOND_CALL, ("text", "\n")],
+     [_BLANK_CALL, _BLANK_SECOND_CALL], {"finish_reason": "stop", "single_chunk": True}, _BLANK_FAMILIES),
+    ("blank_framing_with_prose",
+     "Visible prose before the call: the turn has visible text, so every whitespace byte, including the newline after the call, is kept.",
+     ["P8", "I1"], [("text", "Pressing it now.\n\n"), _BLANK_CALL, ("text", "\n")],
+     [("text", "Pressing it now.\n\n"), _BLANK_CALL, ("text", "\n")], {"finish_reason": "stop"}, _BLANK_FAMILIES),
+    ("blank_framing_after_reasoning",
+     "Reasoning, then a newline-framed call and nothing visible: reasoning and the call survive, the framing newlines are not text.",
+     ["P8", "I2"], [("reason", "Check weather."), ("text", "\n\n"), _BLANK_CALL, ("text", "\n")],
+     [("reason", "Check weather."), _BLANK_CALL], {"finish_reason": "stop"}, _BLANK_FAMILIES),
+    ("blank_output_without_call",
+     "Whitespace-only output with no call is visible content and is kept unchanged.",
+     ["P8", "I1"], [("text", "\n\n")],
+     [("text", "\n\n")], {"finish_reason": "stop"},
+     [f for f in TEMPLATE_FAMILIES if f != "gpt_oss"]),
+]
+for _scenario, _description, _policy, _segments, _golden, _stream, _families in BLANK_FRAMING:
+    EDGE.append((
+        _scenario, _description, _policy, golden_of(_golden), _BLANK_INIT, _stream,
+        OnlyFamilies({f: (render_input(f, _segments), M, M) for f in _families}),
+    ))
+
+
 # Inherited grammars expose their authored rows to applicability and schema consumers too.
 for _spec in EDGE:
     _policy = _edge_case_family_policy(_spec)
@@ -2890,8 +2932,17 @@ def emit_yaml(fam):
         # was measuring a different input than the one authored. `2` is the content
         # indentation relative to this mapping node, and the trailing `-` keeps the
         # existing strip-final-newline behaviour.
-        lines.append("    input: |2-")
-        for ln in c["input"].split("\n"):
+        # `-` strips EVERY trailing line break, so an input ending in a newline (the
+        # framing newline after a call, issue #406) would reload without it. Such an
+        # input uses keep chomping (`+`) over the text before its final newline, which
+        # reloads byte-identical; every other input keeps the `-` form unchanged.
+        block = c["input"]
+        if block.endswith("\n"):
+            lines.append("    input: |2+")
+            block = block[:-1]
+        else:
+            lines.append("    input: |2-")
+        for ln in block.split("\n"):
             lines.append(f"      {ln}")
         lines.append(f"    golden: {json.dumps(c['golden'], ensure_ascii=False)}")
         lines.append(f"    expect: {json.dumps(c['expect'], ensure_ascii=False)}")
