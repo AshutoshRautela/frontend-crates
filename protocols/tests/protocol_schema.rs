@@ -58,31 +58,6 @@ fn request_roots_are_distinct_from_upstream_and_have_real_fields() {
     assert!(completion["properties"].get("prompt").is_some());
 }
 
-/// Declaring `n=1` must leave `n` optional and allow integer or null values.
-/// The wire-level test separately checks that parsing does not fill in the default.
-#[test]
-fn choice_count_schema_declares_openai_default() {
-    let doc = document();
-    for name in [
-        CreateChatCompletionRequest::name(),
-        CreateCompletionRequest::name(),
-    ] {
-        let request = &doc["components"]["schemas"][name.as_ref()];
-        let n = &request["properties"]["n"];
-        assert_eq!(n["default"], json!(1), "{name}");
-        let types = n["type"].as_array().unwrap();
-        assert!(types.contains(&json!("integer")), "{name}");
-        assert!(types.contains(&json!("null")), "{name}");
-        assert!(
-            !request["required"]
-                .as_array()
-                .unwrap()
-                .contains(&json!("n")),
-            "{name}"
-        );
-    }
-}
-
 #[test]
 fn component_graph_resolves_every_reference() {
     fn walk(value: &Value, root: &Value) {
@@ -163,7 +138,7 @@ fn dependency_types_describe_native_shapes_and_transitive_components() {
     }));
 }
 
-/// Schemas must retain stream-flag defaults and Dynamo's numeric constraints.
+/// Schemas must retain field defaults, optional/nullable `n`, and numeric constraints.
 /// Values outside serving limits still parse when their Rust types allow them;
 /// these annotations must not become runtime validation.
 #[test]
@@ -178,7 +153,13 @@ fn owned_request_metadata_preserves_standard_limits_and_dynamo_differences() {
         CreateChatCompletionRequest::name(),
         CreateCompletionRequest::name(),
     ] {
-        let fields = &doc["components"]["schemas"][name.as_ref()]["properties"];
+        let request = &doc["components"]["schemas"][name.as_ref()];
+        let fields = &request["properties"];
+        assert_eq!(fields["n"]["default"], json!(1), "{name}");
+        let types = fields["n"]["type"].as_array().unwrap();
+        assert!(types.contains(&json!("integer")) && types.contains(&json!("null")));
+        let required = request["required"].as_array().unwrap();
+        assert!(!required.contains(&json!("n")));
         for (field, min, max) in [
             ("temperature", 0, 2),
             ("presence_penalty", -2, 2),

@@ -19,7 +19,7 @@ license = "Apache-2.0 AND MIT"
 homepage.workspace = true
 repository.workspace = true
 keywords = ["llm", "genai", "inference", "openai", "anthropic"]
-include = ["src/**/*", "docs/**/*", "Cargo.toml", "README.md"]
+include = ["src/**/*", "Cargo.toml", "README.md"]
 
 [features]
 # Metadata only: no request deserialization or response serialization changes.

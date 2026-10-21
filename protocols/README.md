@@ -65,8 +65,6 @@ not register HTTP endpoints or serve the document itself.
 - **Intentional differences remain.** Dynamo's `top_p` excludes zero and its
   logit biases may be fractional. Local reasoning, multimodal, token-stop,
   streaming-usage, and permissive-input extensions retain their own schemas.
-  The [metadata audit](docs/openapi-metadata-audit.md) records what was restored,
-  what differs, and what remains outside coverage.
 - **Schemas do not describe every accepted input form.** Custom parsers convert
   object-valued function arguments to strings, expand media shorthand, and
   normalize reasoning aliases and null stream-option flags. Tests check these
@@ -91,8 +89,8 @@ cargo test -p dynamo-protocols --no-default-features --locked
 cargo run --manifest-path protocols/tests/schema_consumer/Cargo.toml
 ```
 
-The consumer prints an OpenAPI document and checks that every schema reference
-resolves. It builds outside the parent workspace so other crates cannot supply
+The protocol tests check schema shapes and references. The consumer only exports
+the document. It builds outside the parent workspace so other crates cannot supply
 dependency features that it forgot to enable. Its generated `Cargo.lock` is not
 committed; retain it with validation evidence to reproduce the resolved versions.
 
