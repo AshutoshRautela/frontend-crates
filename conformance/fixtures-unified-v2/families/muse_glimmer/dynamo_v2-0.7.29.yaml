@@ -1,0 +1,83 @@
+provenance:
+  status: captured
+  origin:
+    crate_version: 0.7.29
+    git_commit: 4c32291f2c93b0632ac73cb5be6b456b82df5486
+    source_sha256: 0ccc32d4f10329d42f2410c7dc3cb48eb577eda68bc5c7751e6fa5c372adae86
+document:
+  mode: unified
+changes:
+  muse_unterminated_parameter_then_call:
+    observation:
+      value:
+        assembled:
+        - kind: tool_call
+          name: get_weather
+          arguments:
+            city: Paris
+        chunks:
+        - expected: []
+        - expected: []
+        - expected: []
+        - expected: []
+        - expected: []
+        - expected: []
+        - expected: []
+        - expected: []
+        - expected: []
+        - expected: []
+        - expected: []
+        - expected: []
+        - expected: []
+        - expected: []
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: get_weather
+            arguments: '{"city":"Paris"}'
+            complete: true
+  muse_unterminated_parameter_then_empty_call:
+    observation:
+      value:
+        assembled:
+        - kind: tool_call
+          name: f
+          arguments: {}
+        chunks:
+        - expected: []
+        - expected: []
+        - expected: []
+        - expected: []
+        - expected: []
+        - expected: []
+        - expected: []
+        - expected: []
+        - expected: []
+        - expected: []
+        - expected: []
+        - expected: []
+        - expected:
+          - kind: tool_call
+            name: f
+            arguments: '{}'
+            complete: true
+metadata_changes: {}
+document_overrides:
+  muse_unterminated_parameter_then_call:
+    capture_provenance:
+      captured_with:
+        dynamo_v2: 0.7.29
+      capture_origin:
+        crate_version: 0.7.29
+        source_sha256: 0ccc32d4f10329d42f2410c7dc3cb48eb577eda68bc5c7751e6fa5c372adae86
+        git_commit: 4c32291f2c93b0632ac73cb5be6b456b82df5486
+      inherited_from: null
+  muse_unterminated_parameter_then_empty_call:
+    capture_provenance:
+      captured_with:
+        dynamo_v2: 0.7.29
+      capture_origin:
+        crate_version: 0.7.29
+        source_sha256: 0ccc32d4f10329d42f2410c7dc3cb48eb577eda68bc5c7751e6fa5c372adae86
+        git_commit: 4c32291f2c93b0632ac73cb5be6b456b82df5486
+      inherited_from: null
