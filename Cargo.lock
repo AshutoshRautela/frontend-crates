@@ -1131,6 +1131,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "dynamo-decisions"
+version = "0.1.0"
+dependencies = [
+ "dynamo-protocols",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "dynamo-demo-server"
 version = "0.1.0"
 dependencies = [
@@ -1154,7 +1164,7 @@ dependencies = [
 
 [[package]]
 name = "dynamo-multimodal"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -1198,7 +1208,7 @@ dependencies = [
 
 [[package]]
 name = "dynamo-parsers-v2"
-version = "0.7.24"
+version = "0.7.28"
 dependencies = [
  "anyhow",
  "openai-harmony",
@@ -1242,7 +1252,7 @@ dependencies = [
 
 [[package]]
 name = "dynamo-renderer"
-version = "8.0.3"
+version = "8.0.4"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1259,7 +1269,7 @@ dependencies = [
 
 [[package]]
 name = "dynamo-tokenizers"
-version = "3.1.1"
+version = "3.1.2"
 dependencies = [
  "aho-corasick",
  "anyhow",
