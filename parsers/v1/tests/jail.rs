@@ -3230,6 +3230,99 @@ mod tests {
         assert_eq!(finish_reasons(&results), [FinishReason::ToolCalls]);
     }
 
+    // Review finding: DSML parsers own their call framing (#405). The parser
+    // consumes one "\n\n" separator; the rest is content and must survive.
+    const DSML_RUN_CALL: &str = "<｜DSML｜tool_calls><｜DSML｜invoke name=\"run\"><｜DSML｜parameter name=\"value\" string=\"true\">Paris</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>";
+
+    #[tokio::test]
+    async fn test_dsml_content_whitespace_survives_the_blank_hold() {
+        let turn = format!("\n\n\n\n{DSML_RUN_CALL}");
+        let mut deliveries: Vec<Vec<Annotated<CreateChatCompletionStreamResponse>>> = vec![
+            vec![
+                create_mock_response_chunk(turn.clone(), 0),
+                create_final_response_chunk(0),
+            ],
+            vec![with_finish_reason(
+                create_mock_response_chunk(turn.clone(), 0),
+                FinishReason::Stop,
+            )],
+        ];
+        for split in (1..turn.len()).filter(|&split| turn.is_char_boundary(split)) {
+            deliveries.push(vec![
+                create_mock_response_chunk(turn[..split].to_string(), 0),
+                create_mock_response_chunk(turn[split..].to_string(), 0),
+                create_final_response_chunk(0),
+            ]);
+            deliveries.push(vec![
+                create_mock_response_chunk(turn[..split].to_string(), 0),
+                with_finish_reason(
+                    create_mock_response_chunk(turn[split..].to_string(), 0),
+                    FinishReason::Stop,
+                ),
+            ]);
+        }
+        for (case, chunks) in deliveries.into_iter().enumerate() {
+            let results: Vec<_> = JailedStream::builder()
+                .tool_call_parser("deepseek_v4")
+                .build()
+                .apply_with_finish_reason(stream::iter(chunks))
+                .collect()
+                .await;
+            assert_eq!(reconstruct_content(&results), "\n\n", "case {case}");
+            assert_eq!(digit_calls(&results), 1, "case {case}");
+            assert_eq!(
+                finish_reasons(&results),
+                [FinishReason::ToolCalls],
+                "case {case}"
+            );
+        }
+    }
+
+    // Review finding: only a successful finish (`stop`, rewritten to `tool_calls`)
+    // drops held whitespace. Truncation and filtering release it unchanged.
+    #[tokio::test]
+    async fn test_held_whitespace_is_released_on_length_and_content_filter() {
+        let truncated_second = "<tool_call>\n<function=enter_digit>\n<parameter=digit>\n2";
+        for finish in [FinishReason::Length, FinishReason::ContentFilter] {
+            let contentless = apply_qwen3_coder(vec![
+                create_mock_response_chunk("\n".to_string(), 0),
+                create_mock_response_chunk(NEMOTRON_DIGIT_CALL.to_string(), 0),
+                create_mock_response_chunk("\n".to_string(), 0),
+                with_finish_reason(create_final_response_chunk(0), finish),
+            ])
+            .await;
+            assert_eq!(reconstruct_content(&contentless), "\n\n", "{finish:?}");
+            assert_eq!(digit_calls(&contentless), 1, "{finish:?}");
+            assert_eq!(finish_reasons(&contentless), [finish], "{finish:?}");
+
+            // The terminal filter still drops whitespace after a call in the
+            // terminal chunk itself, as before; the held leading newline returns.
+            let inline = apply_qwen3_coder(vec![
+                create_mock_response_chunk("\n".to_string(), 0),
+                create_mock_response_chunk(NEMOTRON_DIGIT_CALL.to_string(), 0),
+                with_finish_reason(create_mock_response_chunk("\n".to_string(), 0), finish),
+            ])
+            .await;
+            assert_eq!(reconstruct_content(&inline), "\n", "{finish:?}");
+            assert_eq!(finish_reasons(&inline), [finish], "{finish:?}");
+
+            let second_truncated = apply_qwen3_coder(vec![
+                create_mock_response_chunk("\n".to_string(), 0),
+                create_mock_response_chunk(NEMOTRON_DIGIT_CALL.to_string(), 0),
+                create_mock_response_chunk("\n".to_string(), 0),
+                create_mock_response_chunk(truncated_second.to_string(), 0),
+                with_finish_reason(create_final_response_chunk(0), finish),
+            ])
+            .await;
+            assert!(
+                reconstruct_content(&second_truncated).starts_with("\n\n"),
+                "{finish:?}: {:?}",
+                reconstruct_content(&second_truncated)
+            );
+            assert_eq!(finish_reasons(&second_truncated), [finish], "{finish:?}");
+        }
+    }
+
     #[tokio::test]
     async fn test_whitespace_without_tool_call_is_released_on_any_finish() {
         for finish in [FinishReason::Stop, FinishReason::Length] {
