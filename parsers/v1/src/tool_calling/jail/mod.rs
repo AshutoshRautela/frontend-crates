@@ -65,7 +65,7 @@ enum Absorb {
     /// A terminal chunk: whitespace after a call there is the terminal filter's
     /// (`normalize_terminal_emissions` drops it with its logprobs, as before #406).
     BeforeFirstCall,
-    None,
+    Nothing,
 }
 
 /// Held whitespace is dropped only when the turn finished successfully after a
@@ -906,7 +906,7 @@ impl ChoiceJailState {
     /// Returns whether holding removed every emission.
     fn hold_blank_content(&mut self, emissions: &mut Vec<ChoiceEmission>, absorb: Absorb) -> bool {
         let had_emissions = !emissions.is_empty();
-        let mut absorbing = absorb != Absorb::None;
+        let mut absorbing = absorb != Absorb::Nothing;
         let mut index = 0;
         while index < emissions.len() && !self.blank_hold_closed {
             let has_tool_calls = emissions[index].has_tool_calls();
@@ -2054,7 +2054,7 @@ impl JailedStream {
                                 // earlier chunks settles in `normalize_terminal_emissions`.
                                 let absorb = match choice.finish_reason {
                                     None => Absorb::All,
-                                    Some(_) if had_tool_calls_before => Absorb::None,
+                                    Some(_) if had_tool_calls_before => Absorb::Nothing,
                                     Some(_) => Absorb::BeforeFirstCall,
                                 };
                                 let held_all = self.holds_blank_content
