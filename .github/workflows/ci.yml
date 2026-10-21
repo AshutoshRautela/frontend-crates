@@ -100,6 +100,17 @@ jobs:
       - name: Run protocol schema tests
         run: cargo test -p dynamo-protocols --features protocol-schema --locked
 
+      - name: Check protocol feature isolation and downstream schema consumer
+        run: |
+          cargo test -p dynamo-protocols --no-default-features --locked
+          cargo generate-lockfile --manifest-path protocols/tests/schema_consumer/Cargo.toml
+          cargo run --locked --manifest-path protocols/tests/schema_consumer/Cargo.toml > "$RUNNER_TEMP/protocol-openapi.json"
+          cargo tree --locked --manifest-path protocols/tests/schema_consumer/Cargo.toml -e features -i async-openai
+          if cargo tree --locked --manifest-path protocols/tests/schema_consumer/Cargo.toml -e features -i async-openai | grep -E 'async-openai feature "(_api|rustls|native-tls)"'; then
+            echo "Schema consumer must not enable the async-openai HTTP client"
+            exit 1
+          fi
+
       - name: Run clippy
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 

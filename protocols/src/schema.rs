@@ -1,75 +1,43 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Schema-only placeholders for async-openai types that lack schema support.
+//! Compatibility paths for types previously represented by schema import slots.
 //!
-//! These placeholders let Dynamo-owned types derive `ToSchema` without
-//! requiring `async-openai/protocol-schema`. Field-level `schema(value_type = ...)`
-//! annotations select them for schema generation only; runtime field types and
-//! Serde behavior remain unchanged.
-//!
-//! Each placeholder preserves the upstream type's identity through an
-//! `x-dynamo-schema-import` marker, but does not describe its detailed shape.
-//! Consumers must resolve these markers against version-aligned upstream
-//! schemas before claiming complete coverage. This module does not perform
-//! that resolution or merge specifications.
-//!
-//! Once native upstream schema support is integrated, the corresponding
-//! placeholders and field overrides can be removed.
+//! These are now the real async-openai types, with native `ToSchema` implementations.
+//! Owned protocol fields refer directly to their runtime types; no placeholder
+//! schemas or `x-dynamo-schema-import` markers are generated. Prefer importing
+//! protocol types from [`crate::types`] in new code.
 
-macro_rules! imports {
-    ($($name:ident),* $(,)?) => {$(
-        pub struct $name;
+pub use async_openai::types::chat::{
+    ChatCompletionAudio, ChatCompletionFunctionCall, ChatCompletionFunctions,
+    ChatCompletionRequestAssistantMessageAudio, ChatCompletionRequestAssistantMessageContent,
+    ChatCompletionRequestDeveloperMessage, ChatCompletionRequestFunctionMessage,
+    ChatCompletionRequestMessageContentPartAudio, ChatCompletionRequestMessageContentPartText,
+    ChatCompletionRequestSystemMessageContent, ChatCompletionResponseMessageAudio, CompletionUsage,
+    FinishReason, FunctionObject, FunctionType, ImageDetail, PredictionContent, Prompt,
+    ResponseFormat, ResponseModalities, Role, ServiceTier, TopLogprobs, WebSearchOptions,
+};
 
-        impl utoipa::PartialSchema for $name {
-            fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::Schema> {
-                use utoipa::openapi::schema::{ObjectBuilder, SchemaType, Type};
-                ObjectBuilder::new()
-                    // These imported Rust types are non-Option. Excluding null
-                    // prevents overlap with utoipa's Option<T> oneOf null arm.
-                    .schema_type(SchemaType::Array(vec![
-                        Type::Object, Type::Array, Type::String,
-                        Type::Number, Type::Boolean,
-                    ]))
-                    .extensions(Some([(
-                        "x-dynamo-schema-import",
-                        serde_json::json!({"crate": "async-openai", "type": stringify!($name)}),
-                    )].into_iter().collect()))
-                    .into()
-            }
-        }
+/// Describe optional token biases using Dynamo's numeric range, including fractions.
+///
+/// Used by both owned request schemas because upstream advertises integer biases.
+/// This replaces the whole property, including nullability and description; it
+/// does not validate or alter the underlying `HashMap<String, Value>` at runtime.
+pub(crate) fn logit_bias() -> utoipa::openapi::schema::Object {
+    use utoipa::openapi::schema::{ObjectBuilder, SchemaType, Type};
 
-        impl utoipa::ToSchema for $name {
-            fn name() -> std::borrow::Cow<'static, str> {
-                concat!("async_openai.", stringify!($name)).into()
-            }
-        }
-    )*};
+    ObjectBuilder::new()
+        .schema_type(SchemaType::from_iter([Type::Object, Type::Null]))
+        .description(Some(
+            "Map token IDs to numeric logit biases from -100 to 100. Dynamo accepts \
+             fractional biases as well as integers. Token ID parsing and validation \
+             are performed by the serving layer.",
+        ))
+        .additional_properties(Some(
+            ObjectBuilder::new()
+                .schema_type(Type::Number)
+                .minimum(Some(-100))
+                .maximum(Some(100)),
+        ))
+        .build()
 }
-
-imports!(
-    FunctionType,
-    ImageDetail,
-    TopLogprobs,
-    FunctionObject,
-    ChatCompletionRequestMessageContentPartText,
-    ChatCompletionRequestMessageContentPartAudio,
-    ChatCompletionRequestSystemMessageContent,
-    ChatCompletionRequestAssistantMessageContent,
-    ChatCompletionRequestAssistantMessageAudio,
-    ChatCompletionRequestDeveloperMessage,
-    ChatCompletionRequestFunctionMessage,
-    Role,
-    ChatCompletionResponseMessageAudio,
-    ResponseModalities,
-    PredictionContent,
-    ChatCompletionAudio,
-    ResponseFormat,
-    ServiceTier,
-    ChatCompletionFunctionCall,
-    ChatCompletionFunctions,
-    WebSearchOptions,
-    FinishReason,
-    CompletionUsage,
-    Prompt,
-);
