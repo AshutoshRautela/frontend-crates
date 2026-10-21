@@ -34,8 +34,9 @@ pub use async_openai::types::chat::{
     CompletionFinishReason, CompletionTokensDetails, CompletionUsage, FunctionObject,
     FunctionObjectArgs, ImageDetail, InputAudio, InputAudioFormat, Logprobs, PredictionContent,
     PredictionContentContent, Prompt, PromptTokensDetails, ResponseFormat,
-    ResponseFormatJsonSchema, Role, ServiceTier, TopLogprobs, WebSearchContextSize,
-    WebSearchLocation, WebSearchOptions, WebSearchUserLocation, WebSearchUserLocationType,
+    ResponseFormatJsonSchema, ResponseModalities, Role, ServiceTier, TopLogprobs,
+    WebSearchContextSize, WebSearchLocation, WebSearchOptions, WebSearchUserLocation,
+    WebSearchUserLocationType,
 };
 
 /// OpenAI stop configuration, with Dynamo's token-id stop extension.
@@ -1176,7 +1177,7 @@ pub struct CreateChatCompletionRequest {
     #[cfg_attr(feature = "protocol-schema", schema(minimum = -2, maximum = 2))]
     pub frequency_penalty: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "protocol-schema", schema(schema_with = crate::schema::logit_bias))]
+    #[cfg_attr(feature = "protocol-schema", schema(schema_with = super::logit_bias_schema))]
     pub logit_bias: Option<std::collections::HashMap<String, serde_json::Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub logprobs: Option<bool>,

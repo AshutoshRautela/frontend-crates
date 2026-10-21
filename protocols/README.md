@@ -50,8 +50,10 @@ not enable the async-openai HTTP client or change JSON parsing and serialization
 ### Existing consumers
 
 Use the generated definitions without replacing them with external schemas.
-The `schema::*` paths now re-export actual upstream types. Code that constructed
-the former empty structs must change. Dynamo's adoption work is tracked in
+The public `schema` module has been removed. Import protocol types from `types`
+instead and enable `protocol-schema` for their schema implementations. Code that
+constructed the former empty schema structs must also change. Dynamo's adoption
+work is tracked in
 [#351](https://github.com/ai-dynamo/frontend-crates/issues/351); this crate does
 not register HTTP endpoints or serve the document itself.
 

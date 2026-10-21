@@ -156,7 +156,7 @@ pub struct CreateCompletionRequest {
     #[cfg_attr(feature = "protocol-schema", schema(minimum = 0, maximum = 20))]
     pub best_of: Option<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "protocol-schema", schema(schema_with = crate::schema::logit_bias))]
+    #[cfg_attr(feature = "protocol-schema", schema(schema_with = super::logit_bias_schema))]
     pub logit_bias: Option<HashMap<String, serde_json::Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user: Option<String>,
