@@ -11,8 +11,9 @@
 //! - Whitespace-only text is held until visible (non-whitespace) text arrives. It is
 //!   then released unchanged in front of that text, and holding stops for the rest
 //!   of the stream.
-//! - At finish, held whitespace is dropped if the stream produced a tool call and no
-//!   visible text; otherwise it is released unchanged.
+//! - At finish, held whitespace is dropped if the stream completed a tool call and
+//!   showed no visible text; otherwise it is released unchanged.
+//! - `reset` returns held whitespace ahead of the inner parser's unconsumed text.
 //! - Holding stops at [`MAX_HELD_BLANK_BYTES`], so a model stuck emitting newlines
 //!   still streams.
 //!
@@ -69,7 +70,9 @@ struct BlankToolTurn {
     held: String,
     /// Holding is over for this stream: visible text arrived or the cap was reached.
     closed: bool,
-    /// This stream produced a tool-call event.
+    /// This stream completed a tool call. A provisional delta does not count:
+    /// `assemble` drops a call that never completes (truncated, or invalidated by
+    /// a duplicate parameter), and the turn then has no call to frame.
     made_tool_call: bool,
 }
 
@@ -99,7 +102,8 @@ impl BlankToolTurn {
                     output.push_text(text);
                 }
                 UnifiedParserEvent::ToolCall(call) => {
-                    self.made_tool_call = true;
+                    // Same rule `assemble` uses to keep a call.
+                    self.made_tool_call |= call.complete;
                     output.push_call(call);
                 }
                 other => output.push_event(other),
@@ -170,11 +174,13 @@ impl UnifiedParser for BlankToolTurn {
     }
 
     fn reset(&mut self) -> String {
-        // The held whitespace belongs to the abandoned stream, like its emitted output.
-        self.held.clear();
+        // Held whitespace was never emitted, so it is unconsumed text like the inner
+        // parser's buffer: return it first, in stream order, for the caller to recover.
+        let mut remainder = std::mem::take(&mut self.held);
         self.closed = false;
         self.made_tool_call = false;
-        self.inner.reset()
+        remainder.push_str(&self.inner.reset());
+        remainder
     }
 
     fn preserve_special_tokens(&self) -> bool {

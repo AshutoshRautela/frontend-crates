@@ -355,3 +355,71 @@ fn gpt_oss_token_ids_drop_framing_in_a_tool_only_turn() {
     parser.initialize(&[]).unwrap();
     assert_eq!(parser.parse_complete(&turn).unwrap(), [call("1")]);
 }
+
+/// Review finding: reset returns the wrapper's held whitespace with the inner
+/// parser's unconsumed text, so recovery sees every byte that was not emitted.
+#[test]
+fn reset_returns_held_whitespace_before_the_inner_remainder() {
+    for family in FAMILIES {
+        let mut parser = create_unified_parser_for_family(family, &tools()).unwrap();
+        parser
+            .initialize_request(UnifiedParserInit {
+                starting_state: RESPONSE,
+                ..Default::default()
+            })
+            .unwrap();
+        let mut output = UnifiedParserOutput::default();
+        parser.parse_into("\n", &mut output).unwrap();
+        parser.parse_into("<tool_c", &mut output).unwrap();
+        assert!(output.is_empty(), "{family}");
+        assert_eq!(parser.reset(), "\n<tool_c", "{family}");
+
+        // The flags restart too: a fresh stream holds and settles again.
+        parser
+            .initialize_request(UnifiedParserInit {
+                starting_state: RESPONSE,
+                ..Default::default()
+            })
+            .unwrap();
+        let mut output = UnifiedParserOutput::default();
+        for chunk in RECORDED_CHUNKS {
+            parser.parse_into(chunk, &mut output).unwrap();
+        }
+        output.append(&mut parser.finish().unwrap());
+        assert_eq!(assemble(&output.events), [call("1")], "{family}");
+    }
+}
+
+/// Review finding: only a completed call makes the turn a tool turn. A call that
+/// never completes (truncated, or invalidated by a duplicate parameter after its
+/// first value streamed) is dropped by `assemble`, so the whitespace around it is kept.
+#[test]
+fn whitespace_is_kept_when_no_call_completes() {
+    let truncated = "<tool_call><function=enter_digit><parameter=digit>1";
+    let duplicate = "<tool_call>\n<function=enter_digit>\n<parameter=digit>\n1\n</parameter>\n<parameter=digit>\n2\n</parameter>\n</function>\n</tool_call>";
+    for family in ["qwen3", "nemotron_v3", "qwen3_coder"] {
+        assert_eq!(
+            run(family, RESPONSE, &["\n", truncated]),
+            [text("\n")],
+            "{family}: truncated"
+        );
+        let mut invalidated = 0;
+        for split in (1..duplicate.len()).filter(|&at| duplicate.is_char_boundary(at)) {
+            let chunks = ["\n", &duplicate[..split], &duplicate[split..], "\n"];
+            let events = run(family, RESPONSE, &chunks);
+            if events
+                .iter()
+                .any(|event| matches!(event, UnifiedEvent::ToolCall { .. }))
+            {
+                assert_eq!(events, [call("2")], "{family}: {chunks:?}");
+            } else {
+                invalidated += 1;
+                assert_eq!(events, [text("\n\n")], "{family}: {chunks:?}");
+            }
+        }
+        assert!(
+            invalidated > 0,
+            "{family}: no split invalidated the duplicate"
+        );
+    }
+}
