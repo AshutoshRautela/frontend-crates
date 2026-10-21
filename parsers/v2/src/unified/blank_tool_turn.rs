@@ -35,7 +35,10 @@
 //! re-rendering reproduces the generated tokens. Dropping it would break that
 //! contract, so those families are not wrapped (see [`owns_call_framing`]).
 
-use super::{UnifiedParser, UnifiedParserEvent, UnifiedParserInit, UnifiedParserOutput};
+use super::{
+    UnifiedParser, UnifiedParserEvent, UnifiedParserInit, UnifiedParserInputCapabilities,
+    UnifiedParserOutput,
+};
 use crate::tool_calling::traits::Result;
 
 /// Whitespace held before visible text is released past this size. Matches the v1 jail.
@@ -112,8 +115,27 @@ impl BlankToolTurn {
 }
 
 impl UnifiedParser for BlankToolTurn {
+    fn input_capabilities(&self) -> UnifiedParserInputCapabilities {
+        self.inner.input_capabilities()
+    }
+
     fn initialize_request(&mut self, init: UnifiedParserInit) -> Result<()> {
         self.inner.initialize_request(init)
+    }
+
+    /// Token-id ingestion (GPT-OSS Harmony) gets the same rule as text deltas.
+    fn parse_token_ids_into(
+        &mut self,
+        token_ids: &[u32],
+        output: &mut UnifiedParserOutput,
+    ) -> Result<()> {
+        let mut advanced = UnifiedParserOutput::default();
+        let result = self.inner.parse_token_ids_into(token_ids, &mut advanced);
+        self.filter(advanced, output);
+        if result.is_err() {
+            self.release(output);
+        }
+        result
     }
 
     fn parse_into(&mut self, delta: &str, output: &mut UnifiedParserOutput) -> Result<()> {

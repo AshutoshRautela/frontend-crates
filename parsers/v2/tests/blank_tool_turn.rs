@@ -334,3 +334,24 @@ fn vendor_parsers_get_the_same_rule_and_errors_keep_committed_text() {
 
     dynamo_parsers_v2::unregister_unified_parser(family);
 }
+
+/// GPT-OSS ingests token ids; the rule applies to that path as well as text.
+#[test]
+fn gpt_oss_token_ids_drop_framing_in_a_tool_only_turn() {
+    let native_call = "<|start|>assistant<|channel|>commentary to=functions.enter_digit <|constrain|>json<|message|>{\"digit\": \"1\"}<|call|>";
+    let blank = "<|start|>assistant<|channel|>final<|message|>\n<|return|>";
+    let turn = format!("{blank}{native_call}{blank}");
+    let ids = dynamo_parsers_v2::unified::harmony::encode_harmony(&turn).unwrap();
+
+    let mut parser = create_unified_parser_for_family("gpt_oss", &tools()).unwrap();
+    assert!(parser.input_capabilities().token_ids);
+    parser.initialize(&[]).unwrap();
+    let mut output = UnifiedParserOutput::default();
+    parser.parse_token_ids_into(&ids, &mut output).unwrap();
+    output.append(&mut parser.finish().unwrap());
+    assert_eq!(assemble(&output.events), [call("1")]);
+
+    let mut parser = create_unified_parser_for_family("gpt_oss", &tools()).unwrap();
+    parser.initialize(&[]).unwrap();
+    assert_eq!(parser.parse_complete(&turn).unwrap(), [call("1")]);
+}
