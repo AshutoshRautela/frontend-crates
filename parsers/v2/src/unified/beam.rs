@@ -15,8 +15,8 @@
 //! envelope mode; this file is only the grammar table ([`ENVELOPE`]), the tool-body walk
 //! ([`BeamBoundary`]) and the argument emitter ([`BeamEmitter`]).
 //!
-//! Analysis closes only on `<|end|>`; the final channel closes on `<|end|>` or
-//! `<|return|>`; `<|call|>` inside either is ordinary text. A tool call completes only
+//! Analysis closes only on `<|end|>`; the final channel closes on `<|end|>`,
+//! `<|return|>` or `<|call|>`. A tool call completes only
 //! once its terminator (`<|call|>` / `<|end|>`) arrives, but its arguments stream ahead
 //! of it ([`OpenCall`]): a raw-text string parameter as its bytes arrive, any other
 //! parameter whole at its closer, every fragment an exact prefix of the completed JSON.
@@ -120,9 +120,7 @@ static ENVELOPE: ChannelEnvelope = ChannelEnvelope {
     // Terminators AND the inner header markers: a `<|constrain|>` or `<|message|>` with no
     // header around it is framing debris, never visible text (goal 3/4).
     orphan_controls: &[CALL, END, RETURN, CONSTRAIN, MESSAGE],
-    // Only `<|return|>` ends the turn for the guided reader: `<|call|>` closes a tool
-    // call (or the final answer) but a guided payload may still follow it.
-    turn_end: &[RETURN],
+    turn_end: &[RETURN, CALL],
 };
 
 /// Every fixed marker of the grammar: terminator competition and split-marker holdback
@@ -146,6 +144,8 @@ static GUIDED_CHANNEL: GuidedChannel = GuidedChannel {
     find_close: |h, flush, state| envelope_guided_close(&ENVELOPE, Some(BOUNDARY), h, flush, state),
     find_turn_end: |h, flush, state| {
         envelope_guided_turn_end(&ENVELOPE, Some(BOUNDARY), h, flush, state)
+            // CALL closes a visible answer; before a tool payload it is an orphan.
+            .filter(|&(at, len)| state.content_routed || &h[at..at + len] != CALL)
     },
     find_transition: |h, flush, state| {
         envelope_guided_transition(&ENVELOPE, Some(BOUNDARY), h, flush, state)
@@ -1187,6 +1187,13 @@ mod tests {
         events.extend(parser.finish().unwrap());
         assert_eq!(argument_text(&events), "{\"b\": true, \"n\": 7}");
         assert_eq!(assemble(&events), want);
+
+        let integer = declare("limit", json!({"count": {"type": "integer"}}), Some(false));
+        expect_streamed(
+            &[integer],
+            &echo_call("limit", &[("count", "3.0")]),
+            vec![call("limit", json!({"count": 3}))],
+        );
     }
 
     #[test]
@@ -1489,6 +1496,11 @@ mod tests {
             (
                 UnifiedParserStartingState::Response,
                 "hi<|return|>",
+                vec![text("hi")],
+            ),
+            (
+                UnifiedParserStartingState::Response,
+                "hi<|call|>",
                 vec![text("hi")],
             ),
         ] {
@@ -1916,12 +1928,16 @@ mod tests {
         // A whole native call under guided decoding is one control-only turn.
         guided_every_split(N, None, &format!("{HDR}{LONDON}<|call|>"), vec![]);
         // Reasoning around the payload, and a narrated header inside the thought.
-        guided_every_split(
-            N,
-            None,
-            &format!("<|start|>assistant<|channel|>analysis<|message|>checking<|end|>{PAYLOAD}"),
-            vec![reasoning("checking"), paris()],
-        );
+        for orphan in ["", CALL] {
+            guided_every_split(
+                N,
+                None,
+                &format!(
+                    "<|start|>assistant<|channel|>analysis<|message|>checking<|end|>{orphan}{PAYLOAD}"
+                ),
+                vec![reasoning("checking"), paris()],
+            );
+        }
         guided_every_split(
             N,
             None,
@@ -2086,13 +2102,18 @@ mod tests {
     }
 
     /// Body terminators follow the channel grammar in every request mode: analysis
-    /// ends only at `<|end|>` (`<|call|>` and `<|return|>` are text there), and nothing
-    /// unframed is a header inside an open body. Under guided decoding the answer body
-    /// ends only at the turn end (`<|return|>`); the native drain also closes it at
-    /// `<|call|>`, the grammar's third closer.
+    /// ends only at `<|end|>`, while final accepts all three answer closers.
+    /// Nothing unframed is a header inside an open body.
     #[test]
     fn guided_body_terminators_follow_the_channel_grammar() {
         use UnifiedParserStartingState::{None as N, Reasoning as R};
+        let body = r#"{"value":"<|call|>"}"#;
+        guided_every_split(
+            N,
+            None,
+            &format!("<|start|>assistant<|channel|>final<|message|>{body}<|call|>"),
+            vec![text(body)],
+        );
         guided_every_split(
             N,
             None,
@@ -2107,12 +2128,16 @@ mod tests {
             &format!("a<|call|>b<|return|>c<|end|>{PAYLOAD}"),
             vec![reasoning("a<|call|>b<|return|>c"), paris()],
         );
-        guided_every_split(
-            N,
-            None,
-            "<|start|>assistant<|channel|>analysis<|message|>t<|end|><|start|>assistant<|channel|>final<|message|>b<|call|>c<|return|>",
-            vec![reasoning("t"), text("b<|call|>c")],
-        );
+        for closer in [RETURN, CALL] {
+            guided_every_split(
+                N,
+                None,
+                &format!(
+                    "<|start|>assistant<|channel|>analysis<|message|>t<|end|><|start|>assistant<|channel|>final<|message|>b{closer}c<|return|>"
+                ),
+                vec![reasoning("t"), text("bc")],
+            );
+        }
         guided_every_split(
             N,
             None,
@@ -2902,10 +2927,13 @@ mod tests {
     /// JSON. Prose that merely quotes a marker is not JSON and ends at the marker.
     #[test]
     fn json_answer_keeps_a_marker_inside_its_string_but_prose_does_not() {
-        expect(
-            "<|channel|>final<|message|>{\"value\":\"<|return|>\"}<|return|>",
-            vec![text("{\"value\":\"<|return|>\"}")],
-        );
+        for closer in [END, RETURN, CALL] {
+            let body = format!("{{\"value\":\"{closer}\"}}");
+            expect(
+                &format!("<|channel|>final<|message|>{body}{closer}"),
+                vec![text(&body)],
+            );
+        }
         expect(
             "<|channel|>final<|message|>\n[{\"k\": \"a <|end|> b\", \"n\": 1}]<|return|>",
             vec![text("\n[{\"k\": \"a <|end|> b\", \"n\": 1}]")],
