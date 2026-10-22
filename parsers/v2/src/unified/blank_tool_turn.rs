@@ -37,8 +37,8 @@
 //! contract, so those families are not wrapped (see [`owns_call_framing`]).
 
 use super::{
-    UnifiedParser, UnifiedParserEvent, UnifiedParserInit, UnifiedParserInputCapabilities,
-    UnifiedParserOutput,
+    ToolCallPolicy, UnifiedParser, UnifiedParserEvent, UnifiedParserInit,
+    UnifiedParserInputCapabilities, UnifiedParserOutput,
 };
 use crate::tool_calling::traits::Result;
 
@@ -125,6 +125,10 @@ impl UnifiedParser for BlankToolTurn {
 
     fn initialize_request(&mut self, init: UnifiedParserInit) -> Result<()> {
         self.inner.initialize_request(init)
+    }
+
+    fn set_tool_call_policy(&mut self, policy: ToolCallPolicy) -> Result<()> {
+        self.inner.set_tool_call_policy(policy)
     }
 
     /// Token-id ingestion (GPT-OSS Harmony) gets the same rule as text deltas.

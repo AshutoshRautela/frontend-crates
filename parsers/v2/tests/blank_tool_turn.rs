@@ -423,3 +423,17 @@ fn whitespace_is_kept_when_no_call_completes() {
         );
     }
 }
+
+/// The wrapper forwards the request-scoped tool-call policy (Beam supports one);
+/// without forwarding, the trait default would reject every non-default policy.
+#[test]
+fn tool_call_policy_reaches_the_wrapped_parser() {
+    let policy = dynamo_parsers_v2::ToolCallPolicy {
+        argument_framing: dynamo_parsers_v2::ArgumentFraming::ConstrainedJson,
+        ..Default::default()
+    };
+    let mut beam = create_unified_parser_for_family("beam", &tools()).unwrap();
+    beam.set_tool_call_policy(policy).unwrap();
+    let mut qwen = create_unified_parser_for_family("qwen3", &tools()).unwrap();
+    assert!(qwen.set_tool_call_policy(policy).is_err());
+}
