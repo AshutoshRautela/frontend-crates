@@ -198,15 +198,21 @@ fn envelope_parse_prefix(env: &ChannelEnvelope, prefix: &str) -> HeaderLead {
     // The recipient is whatever `recipient_key NAME` ends the lead; bytes glued in front
     // of it (`assistant\tto=NAME`, `assistantto=NAME`) are header debris, never prose:
     // the header is identified by its tail, as the builder's template regex does.
-    let Some(k) = t.rfind(env.recipient_key) else {
-        return HeaderLead::NotHeader;
-    };
-    let r = &t[k + env.recipient_key.len()..];
-    if !r.is_empty() && (env.recipient_len)(r) == r.len() {
-        HeaderLead::Lead(Some(r.to_string()))
-    } else {
-        HeaderLead::NotHeader
+    let mut after_invalid = 0;
+    for (k, _) in t.match_indices(env.recipient_key) {
+        let start = k + env.recipient_key.len();
+        if start < after_invalid {
+            continue;
+        }
+        let r = &t[start..];
+        let len = (env.recipient_len)(r);
+        if !r.is_empty() && len == r.len() {
+            return HeaderLead::Lead(Some(r.to_string()));
+        }
+        // Earlier suffixes share this invalid byte; never scan them again.
+        after_invalid = start + len + 1;
     }
+    HeaderLead::NotHeader
 }
 
 /// Whether `text` could still grow into a valid header lead.
@@ -359,11 +365,13 @@ fn envelope_bare(state: GuidedChannelState) -> EnvelopeBare {
 /// in front of the thought. Separator spaces are absorbed only together with a lead
 /// word, never alone: `Sure. <|channel|>` keeps its trailing space as prose.
 fn envelope_bare_lead(env: &ChannelEnvelope, before: &str) -> Option<(usize, Option<String>)> {
-    let (mut p, recipient) = match before
-        .rfind(env.recipient_key)
-        .map(|k| (k, envelope_parse_prefix(env, &before[k..])))
-    {
-        Some((k, HeaderLead::Lead(Some(r)))) => (k, Some(r)),
+    let (mut p, recipient) = match before.find(env.recipient_key).and_then(|k| {
+        match envelope_parse_prefix(env, &before[k..]) {
+            HeaderLead::Lead(Some(r)) => Some((k, r)),
+            _ => None,
+        }
+    }) {
+        Some((k, r)) => (k, Some(r)),
         _ => (before.len(), None),
     };
     while p > 0 && before.as_bytes()[p - 1] == b' ' {
@@ -743,6 +751,9 @@ fn envelope_lead_verdict(
     if lead_len + hold == rest.len() && !settled {
         return LeadVerdict::Pending;
     }
+    // Once the lead cannot grow into a header, preserve a guided JSON payload
+    // even though its opening bracket was also a possible recipient character.
+    let lead_len = rest[..lead_len].find(['{', '[']).unwrap_or(lead_len);
     let lead = &rest[..lead_len];
     let next = &rest[lead_len..];
     let decided = next.is_empty()
