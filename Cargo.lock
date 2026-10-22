@@ -1208,7 +1208,7 @@ dependencies = [
 
 [[package]]
 name = "dynamo-parsers-v2"
-version = "0.7.30"
+version = "0.7.31"
 dependencies = [
  "anyhow",
  "openai-harmony",
