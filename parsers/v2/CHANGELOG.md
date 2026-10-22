@@ -5,11 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.7.31](https://github.com/ai-dynamo/frontend-crates/compare/dynamo-parsers-v2-v0.7.30...dynamo-parsers-v2-v0.7.31) - Unreleased
+## [Unreleased]
 
 ### Bug fixes
 
-- *(parsers)* Drop whitespace-only text from Unified tool-only turns, so Nemotron's call framing newlines are no longer content. DeepSeek DSML keeps its separator contract ([#449](https://github.com/ai-dynamo/frontend-crates/pull/449))
+- *(parsers)* Drop whitespace-only text from Nemotron V3 Unified tool-only turns, so the call framing newlines are no longer content. Other families are unchanged ([#449](https://github.com/ai-dynamo/frontend-crates/pull/449))
+
+## [0.7.32](https://github.com/ai-dynamo/frontend-crates/compare/dynamo-parsers-v2-v0.7.31...dynamo-parsers-v2-v0.7.32) - 2026-10-22
+
+### Features
+
+- *(parsers)* Share Kimi grammars and add v2 structural tags ([#349](https://github.com/ai-dynamo/frontend-crates/pull/349))
+
+## [0.7.31](https://github.com/ai-dynamo/frontend-crates/compare/dynamo-parsers-v2-v0.7.30...dynamo-parsers-v2-v0.7.31) - 2026-10-22
+
+### Bug fixes
+
+- *(beam)* Align template tool names and grammar exclusions ([#463](https://github.com/ai-dynamo/frontend-crates/pull/463))
 
 ## [0.7.30](https://github.com/ai-dynamo/frontend-crates/compare/dynamo-parsers-v2-v0.7.29...dynamo-parsers-v2-v0.7.30) - 2026-10-22
 
