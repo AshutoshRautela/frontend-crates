@@ -1,9 +1,9 @@
 provenance:
   status: captured
   origin:
-    crate_version: 0.7.30
-    git_commit: 73240ca872e401f7ebac9668b64b69bbd49677c2
-    source_sha256: 4d60a4d5cbaf44660718b93260193b40c20b6ae5933fc4f5644dba34bb93001e
+    crate_version: 0.7.31
+    git_commit: f12e7abe712af7c6a9df55189feef927e4bd94dd
+    source_sha256: 4061f1089eaa515834b0a15d7d4770c2b804cab13a07732b5e4394bea226e75c
 document:
   mode: unified
 changes:
@@ -33,9 +33,9 @@ document_overrides:
   blank_output_without_call:
     capture_provenance:
       captured_with:
-        dynamo_v2: 0.7.30
+        dynamo_v2: 0.7.31
       capture_origin:
-        crate_version: 0.7.30
-        source_sha256: 4d60a4d5cbaf44660718b93260193b40c20b6ae5933fc4f5644dba34bb93001e
-        git_commit: 73240ca872e401f7ebac9668b64b69bbd49677c2
+        crate_version: 0.7.31
+        source_sha256: 4061f1089eaa515834b0a15d7d4770c2b804cab13a07732b5e4394bea226e75c
+        git_commit: f12e7abe712af7c6a9df55189feef927e4bd94dd
       inherited_from: null

@@ -1,9 +1,9 @@
 provenance:
   status: captured
   origin:
-    crate_version: 0.7.30
-    git_commit: 73240ca872e401f7ebac9668b64b69bbd49677c2
-    source_sha256: 4d60a4d5cbaf44660718b93260193b40c20b6ae5933fc4f5644dba34bb93001e
+    crate_version: 0.7.31
+    git_commit: f12e7abe712af7c6a9df55189feef927e4bd94dd
+    source_sha256: 4061f1089eaa515834b0a15d7d4770c2b804cab13a07732b5e4394bea226e75c
 document:
   mode: unified
 changes:
@@ -11,7 +11,7 @@ changes:
     case_key: UNIFIED.11-blank_framing_after_reasoning
     stimulus:
       ref: current
-      semantic_sha256: 03a8e2ea82c41e1ef220f4fbcc902be9b4426161694a06b099582bed7bdf9d93
+      semantic_sha256: 222d1df12a99b5a86ba4ebfeb376d9195b8872e602248d45be3f281da5b2d006
     observation:
       value:
         assembled:
@@ -23,20 +23,9 @@ changes:
             city: Paris
         chunks:
         - expected: []
-        - expected: []
-        - expected: []
         - expected:
           - kind: reasoning
             text: Check weather.
-        - expected: []
-        - expected: []
-        - expected: []
-        - expected: []
-        - expected: []
-        - expected: []
-        - expected: []
-        - expected: []
-        - expected: []
         - expected: []
         - expected: []
         - expected: []
@@ -52,18 +41,11 @@ changes:
             complete: true
         - expected: []
         - expected: []
-        - expected: []
-        - expected: []
-        - expected: []
-        - expected: []
-        - expected: []
-        - expected: []
-        - expected: []
   blank_framing_between_calls_single_chunk:
     case_key: UNIFIED.8-blank_framing_between_calls_single_chunk
     stimulus:
       ref: current
-      semantic_sha256: 628fe38932831aaa14f81114a898a70d586e89a004b1753ad5480d0133c4d6c0
+      semantic_sha256: b1f5514820a37dd3e9e6254e401a3602f385fca25d13d15414a75a5acbd0dd5c
     observation:
       value:
         assembled:
@@ -90,7 +72,7 @@ changes:
     case_key: UNIFIED.8-blank_framing_tool_only
     stimulus:
       ref: current
-      semantic_sha256: 0492e2b0b933adf2b295915a0f237509ba13bdef643aabb115e31dd0617abc4c
+      semantic_sha256: 0f32aea617d51d1b1e191a23f850ceb1d3b295416d9db139bc4621803cc11553
     observation:
       value:
         assembled:
@@ -106,15 +88,6 @@ changes:
         - expected: []
         - expected: []
         - expected: []
-        - expected: []
-        - expected: []
-        - expected: []
-        - expected: []
-        - expected: []
-        - expected: []
-        - expected: []
-        - expected: []
-        - expected: []
         - expected:
           - kind: tool_call
             name: get_weather
@@ -122,18 +95,11 @@ changes:
             complete: true
         - expected: []
         - expected: []
-        - expected: []
-        - expected: []
-        - expected: []
-        - expected: []
-        - expected: []
-        - expected: []
-        - expected: []
   blank_framing_with_prose:
     case_key: UNIFIED.8-blank_framing_with_prose
     stimulus:
       ref: current
-      semantic_sha256: 877d9c1afb9a26e7d72586c7bb7b3a14de238e95af9e219f6df9f4d330a57c2f
+      semantic_sha256: f88af99d637c6f89eeb5b44e29bd4b4f605fa8ce026b20fdddd0dc0f747c1aea
     observation:
       value:
         assembled:
@@ -151,9 +117,6 @@ changes:
 
             '
         chunks:
-        - expected: []
-        - expected: []
-        - expected: []
         - expected:
           - kind: text
             text: 'Pressing it now.
@@ -166,35 +129,22 @@ changes:
         - expected: []
         - expected: []
         - expected: []
-        - expected: []
-        - expected: []
-        - expected: []
-        - expected: []
-        - expected: []
-        - expected: []
         - expected:
           - kind: tool_call
             name: get_weather
             arguments: '{"city":"Paris"}'
             complete: true
-        - expected: []
-        - expected: []
-        - expected: []
-        - expected: []
-        - expected: []
-        - expected: []
         - expected:
           - kind: text
             text: '
 
               '
         - expected: []
-        - expected: []
   blank_output_without_call:
     case_key: UNIFIED.3-blank_output_without_call
     stimulus:
       ref: current
-      semantic_sha256: 29100324e159669f00e18e159fffd58f862b76f87ef941ad0914f61d84ae44ad
+      semantic_sha256: 3bbd8d6a224b1ed1cd05857ffba4f70b4c5bcf1905365cd4df6ee96b473f316e
     observation:
       value:
         assembled:
@@ -204,10 +154,6 @@ changes:
 
             '
         chunks:
-        - expected: []
-        - expected: []
-        - expected: []
-        - expected: []
         - expected: []
         - expected:
           - kind: text
@@ -220,45 +166,45 @@ document_overrides:
   blank_framing_after_reasoning:
     capture_provenance:
       captured_with:
-        dynamo_v2: 0.7.30
+        dynamo_v2: 0.7.31
       capture_origin:
-        crate_version: 0.7.30
-        source_sha256: 4d60a4d5cbaf44660718b93260193b40c20b6ae5933fc4f5644dba34bb93001e
-        git_commit: 73240ca872e401f7ebac9668b64b69bbd49677c2
+        crate_version: 0.7.31
+        source_sha256: 4061f1089eaa515834b0a15d7d4770c2b804cab13a07732b5e4394bea226e75c
+        git_commit: f12e7abe712af7c6a9df55189feef927e4bd94dd
       inherited_from: null
   blank_framing_between_calls_single_chunk:
     capture_provenance:
       captured_with:
-        dynamo_v2: 0.7.30
+        dynamo_v2: 0.7.31
       capture_origin:
-        crate_version: 0.7.30
-        source_sha256: 4d60a4d5cbaf44660718b93260193b40c20b6ae5933fc4f5644dba34bb93001e
-        git_commit: 73240ca872e401f7ebac9668b64b69bbd49677c2
+        crate_version: 0.7.31
+        source_sha256: 4061f1089eaa515834b0a15d7d4770c2b804cab13a07732b5e4394bea226e75c
+        git_commit: f12e7abe712af7c6a9df55189feef927e4bd94dd
       inherited_from: null
   blank_framing_tool_only:
     capture_provenance:
       captured_with:
-        dynamo_v2: 0.7.30
+        dynamo_v2: 0.7.31
       capture_origin:
-        crate_version: 0.7.30
-        source_sha256: 4d60a4d5cbaf44660718b93260193b40c20b6ae5933fc4f5644dba34bb93001e
-        git_commit: 73240ca872e401f7ebac9668b64b69bbd49677c2
+        crate_version: 0.7.31
+        source_sha256: 4061f1089eaa515834b0a15d7d4770c2b804cab13a07732b5e4394bea226e75c
+        git_commit: f12e7abe712af7c6a9df55189feef927e4bd94dd
       inherited_from: null
   blank_framing_with_prose:
     capture_provenance:
       captured_with:
-        dynamo_v2: 0.7.30
+        dynamo_v2: 0.7.31
       capture_origin:
-        crate_version: 0.7.30
-        source_sha256: 4d60a4d5cbaf44660718b93260193b40c20b6ae5933fc4f5644dba34bb93001e
-        git_commit: 73240ca872e401f7ebac9668b64b69bbd49677c2
+        crate_version: 0.7.31
+        source_sha256: 4061f1089eaa515834b0a15d7d4770c2b804cab13a07732b5e4394bea226e75c
+        git_commit: f12e7abe712af7c6a9df55189feef927e4bd94dd
       inherited_from: null
   blank_output_without_call:
     capture_provenance:
       captured_with:
-        dynamo_v2: 0.7.30
+        dynamo_v2: 0.7.31
       capture_origin:
-        crate_version: 0.7.30
-        source_sha256: 4d60a4d5cbaf44660718b93260193b40c20b6ae5933fc4f5644dba34bb93001e
-        git_commit: 73240ca872e401f7ebac9668b64b69bbd49677c2
+        crate_version: 0.7.31
+        source_sha256: 4061f1089eaa515834b0a15d7d4770c2b804cab13a07732b5e4394bea226e75c
+        git_commit: f12e7abe712af7c6a9df55189feef927e4bd94dd
       inherited_from: null
