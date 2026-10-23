@@ -2599,6 +2599,37 @@ def _deepseek_v41_input(segments):
     return text, starting_state
 
 
+PARALLEL_BOUNDARY_CASES = json.loads(
+    Path(__file__).with_name("unified_parallel_boundary_cases.json").read_text()
+)
+UNIFIED_PARALLEL_BOUNDARY_FAMILIES = frozenset(
+    family for cases in PARALLEL_BOUNDARY_CASES.values() for family in cases
+)
+
+
+def _parallel_boundary_specs():
+    specs = []
+    descriptions = {
+        "adjacent_calls_partial_header": "Adjacent calls: a delta closes one call and ends inside the next call header",
+        "three_calls_partial_header": "Three adjacent calls: retain the middle call after a partial next header",
+    }
+    for scenario, families in PARALLEL_BOUNDARY_CASES.items():
+        per_family, schedules, schemas = {}, {}, {}
+        for family, source in families.items():
+            chunks = source["input_chunks"]
+            per_family[family] = ("".join(chunks), VLLM_UNCAPTURABLE.get(family, M), M, source["golden"])
+            schedules[family] = chunks
+            schemas[family] = source["tools"]
+        specs.append((scenario, descriptions[scenario], ["I2", "I3", "I5", "I7"], [],
+                      {"starting_state": "None", "tool_output_mode": "Native", "named_tool": None},
+                      {"finish_reason": "tool_calls", "input_chunks": schedules},
+                      OnlyFamilies(per_family), schemas))
+    return specs
+
+
+EDGE += _parallel_boundary_specs()
+
+
 # Native grammars encode the oracle type; Qwen and GLM consult the request schema.
 _NULL_TEXT_INPUTS = {
     "qwen3": "<tool_call><function=get_weather><parameter=city>null</parameter></function></tool_call>",
@@ -3725,6 +3756,11 @@ def _build_edge_cases(fam, specs):
         }
         if stream_config.get("single_chunk"):
             case["input_chunks"] = [inp]
+        elif "input_chunks" in stream_config:
+            chunks = stream_config["input_chunks"][fam]
+            if not all(isinstance(chunk, str) for chunk in chunks) or "".join(chunks) != inp:
+                raise ValueError(f"{cid}: authored input_chunks must concatenate to input")
+            case["input_chunks"] = list(chunks)
         if case_tools is not None:
             case["tools"] = case_tools[fam] if isinstance(case_tools, dict) else case_tools
         cases[cid] = case
