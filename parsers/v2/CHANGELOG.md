@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.34](https://github.com/ai-dynamo/frontend-crates/compare/dynamo-parsers-v2-v0.7.33...dynamo-parsers-v2-v0.7.34) - 2026-10-23
+
+### Bug fixes
+
+- *(beam)* Preserve inline closers in newline-framed values ([#461](https://github.com/ai-dynamo/frontend-crates/pull/461))
+
 ## [0.7.32](https://github.com/ai-dynamo/frontend-crates/compare/dynamo-parsers-v2-v0.7.31...dynamo-parsers-v2-v0.7.32) - 2026-10-22
 
 ### Features
