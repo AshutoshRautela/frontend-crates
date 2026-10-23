@@ -146,6 +146,10 @@ fn feed(
 impl From<dynamo_parsers_v2::UnifiedEvent> for Ev {
     fn from(e: dynamo_parsers_v2::UnifiedEvent) -> Self {
         match e {
+            dynamo_parsers_v2::UnifiedEvent::MessageStart { .. }
+            | dynamo_parsers_v2::UnifiedEvent::MessageEnd => {
+                panic!("message phases are disabled for this capture")
+            }
             dynamo_parsers_v2::UnifiedEvent::Reasoning { text } => Ev::Reasoning { text },
             dynamo_parsers_v2::UnifiedEvent::Text { text } => Ev::Text { text },
             dynamo_parsers_v2::UnifiedEvent::ToolCall { name, arguments } => {
@@ -157,6 +161,10 @@ impl From<dynamo_parsers_v2::UnifiedEvent> for Ev {
 
 fn unified_delta_json(d: &dynamo_parsers_v2::UnifiedParserEvent) -> Value {
     match d {
+        dynamo_parsers_v2::UnifiedParserEvent::MessageStart(phase) => {
+            json!({"kind":"message_start","phase":phase})
+        }
+        dynamo_parsers_v2::UnifiedParserEvent::MessageEnd => json!({"kind":"message_end"}),
         dynamo_parsers_v2::UnifiedParserEvent::Reasoning(text) => {
             json!({"kind": "reasoning", "text": text})
         }

@@ -151,6 +151,8 @@ fn render(result: &Result<Vec<UnifiedEvent>, String>) -> String {
     events
         .iter()
         .map(|e| match e {
+            UnifiedEvent::MessageStart { phase } => format!("message_start({phase:?})"),
+            UnifiedEvent::MessageEnd => "message_end".to_string(),
             UnifiedEvent::Reasoning { text } => format!("reasoning({text:?})"),
             UnifiedEvent::Text { text } => format!("text({text:?})"),
             UnifiedEvent::ToolCall { name, arguments } => format!("tool_call({name}, {arguments})"),

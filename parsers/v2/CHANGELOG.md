@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-10-23
+
+### Added
+
+- Opt-in GPT-OSS visible message phases and boundaries in native and guided
+  Unified parsing, including empty messages. `preserve_message_phases(true)`
+  retains commentary/final structure; the default text projection is unchanged.
+
+### Breaking changes
+
+- `UnifiedParserEvent` and `UnifiedEvent` add `MessageStart` and `MessageEnd`.
+  Exhaustive consumers must handle these variants even when phases are disabled.
+
 ## [0.7.35](https://github.com/ai-dynamo/frontend-crates/compare/dynamo-parsers-v2-v0.7.34...dynamo-parsers-v2-v0.7.35) - 2026-10-23
 
 ### Bug fixes

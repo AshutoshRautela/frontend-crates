@@ -115,6 +115,9 @@ fn run_v2(case: &Case, chunks: &[&str], policy: ToolCallPolicy) -> anyhow::Resul
     };
     for event in dynamo_parsers_v2::assemble(&deltas) {
         match event {
+            UnifiedEvent::MessageStart { .. } | UnifiedEvent::MessageEnd => {
+                panic!("unexpected Beam message phase")
+            }
             UnifiedEvent::Reasoning { text } => out.reasoning += &text,
             UnifiedEvent::Text { text } => out.content += &text,
             UnifiedEvent::ToolCall { name, arguments } => out.calls.push((name, arguments)),

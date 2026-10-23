@@ -88,6 +88,10 @@ use crate::tool_calling::traits::{Result, Tool, ToolCallDelta, ToolParseResult};
 /// a reader's judgement.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UnifiedParserEvent {
+    /// Start of an explicitly routed visible assistant message.
+    MessageStart(MessagePhase),
+    /// The model explicitly closed the visible message.
+    MessageEnd,
     /// Normal assistant-visible text.
     Text(String),
     /// Reasoning text hidden from the normal content stream.
@@ -97,12 +101,24 @@ pub enum UnifiedParserEvent {
     ToolCall(ToolCallDelta),
 }
 
+/// The model's explicit label for a visible assistant message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MessagePhase {
+    Commentary,
+    FinalAnswer,
+}
+
 /// One assembled event: the order-sensitive unit the unified conformance
 /// surface compares. Serializes to the golden-corpus schema
 /// (`{kind: reasoning|text|tool_call, …}`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum UnifiedEvent {
+    MessageStart {
+        phase: MessagePhase,
+    },
+    MessageEnd,
     Reasoning {
         text: String,
     },
@@ -336,6 +352,9 @@ impl std::error::Error for InvalidGuidedPayload {}
 /// unrecognized calls would hide model misbehaviour that the caller needs to see —
 /// but it means "the parser produced a ToolCall" is not "this call is safe to run".
 pub trait UnifiedParser: Send {
+    /// Opt into explicit visible-message boundaries where the family supports them.
+    fn preserve_message_phases(&mut self, _enabled: bool) {}
+
     /// Report which input representations this parser accepts.
     fn input_capabilities(&self) -> UnifiedParserInputCapabilities {
         UnifiedParserInputCapabilities::default()
@@ -547,6 +566,7 @@ impl UnifiedParserOutput {
             UnifiedParserEvent::Text(text) => self.push_text(text),
             UnifiedParserEvent::Reasoning(text) => self.push_reasoning(text),
             UnifiedParserEvent::ToolCall(call) => self.push_call(call),
+            boundary => self.events.push(boundary),
         }
     }
 
@@ -564,6 +584,7 @@ impl UnifiedParserOutput {
                 UnifiedParserEvent::Text(t) => self.push_text(t),
                 UnifiedParserEvent::Reasoning(t) => self.push_reasoning(t),
                 UnifiedParserEvent::ToolCall(c) => self.push_call(c),
+                boundary => self.events.push(boundary),
             }
         }
     }
@@ -652,6 +673,7 @@ impl FromIterator<UnifiedParserEvent> for UnifiedParserOutput {
                 UnifiedParserEvent::Text(t) => out.push_text(t),
                 UnifiedParserEvent::Reasoning(t) => out.push_reasoning(t),
                 UnifiedParserEvent::ToolCall(c) => out.push_call(c),
+                boundary => out.events.push(boundary),
             }
         }
         out
@@ -737,6 +759,10 @@ pub fn assemble_with_tool_indices(
     let mut calls: BTreeMap<usize, (usize, String, bool)> = BTreeMap::new();
     for delta in merged {
         match delta {
+            UnifiedParserEvent::MessageStart(phase) => {
+                out.push((None, UnifiedEvent::MessageStart { phase }))
+            }
+            UnifiedParserEvent::MessageEnd => out.push((None, UnifiedEvent::MessageEnd)),
             UnifiedParserEvent::Reasoning(text) => {
                 out.push((None, UnifiedEvent::Reasoning { text }))
             }
@@ -832,6 +858,7 @@ impl ToolParseResult {
                     out.normal_text.push_str(&text)
                 }
                 UnifiedParserEvent::ToolCall(call) => out.calls.push(call),
+                UnifiedParserEvent::MessageStart(_) | UnifiedParserEvent::MessageEnd => {}
             }
         }
         out
@@ -968,6 +995,12 @@ pub(crate) enum GuidedPrefilledHeader {
 }
 
 pub(crate) trait NativeUnified {
+    fn guided_message_phase(&self) -> Option<fn(&str) -> Option<MessagePhase>> {
+        None
+    }
+
+    fn preserve_message_phases(&mut self, _enabled: bool) {}
+
     /// Whether decoding must preserve tokenizer special tokens for this grammar.
     ///
     /// Answered by the family, NOT defaulted here. An adapter that inherited
@@ -1068,6 +1101,7 @@ pub(crate) trait NativeUnified {
 /// refusal mutates nothing — is stated once instead of per family.
 pub(crate) struct GuidedRouted<N: NativeUnified> {
     native: N,
+    preserve_phases: bool,
     /// Which channel the PROMPT already opened. Held here as well as on the
     /// family parser because `reset` has to restore it, and because the guided
     /// path never reaches the family parser at all.
@@ -1091,6 +1125,7 @@ impl<N: NativeUnified> GuidedRouted<N> {
     pub(crate) fn new(native: N) -> Self {
         Self {
             native,
+            preserve_phases: false,
             starting_state: UnifiedParserStartingState::None,
             guided: None,
             guided_prefill: None,
@@ -1162,13 +1197,17 @@ impl<N: NativeUnified> GuidedRouted<N> {
                         Some(GuidedPrefilledHeader::Pending) | None => None,
                     };
                     let named_tool = named_tool.or(prefilled_tool.clone());
-                    let guided = GuidedState::new(
+                    let mut guided = GuidedState::new(
                         reasoning,
                         self.native.guided_grammar(),
                         named_tool,
                         starting_state,
                         invalid_guided_payload,
                     );
+                    guided.message_phase = self
+                        .preserve_phases
+                        .then(|| self.native.guided_message_phase())
+                        .flatten();
                     (Some(Box::new(guided)), prefill, prefilled_tool.is_some())
                 }
                 (UnifiedToolOutputMode::GuidedJson { .. }, None) => {
@@ -1242,6 +1281,16 @@ impl<N: NativeUnified> GuidedRouted<N> {
 }
 
 impl<N: NativeUnified + Send> UnifiedParser for GuidedRouted<N> {
+    fn preserve_message_phases(&mut self, enabled: bool) {
+        self.preserve_phases = enabled;
+        self.native.preserve_message_phases(enabled);
+        if let Some(guided) = &mut self.guided {
+            guided.message_phase = enabled
+                .then(|| self.native.guided_message_phase())
+                .flatten();
+        }
+    }
+
     fn input_capabilities(&self) -> UnifiedParserInputCapabilities {
         self.native.input_capabilities()
     }
@@ -1329,6 +1378,7 @@ impl<N: NativeUnified + Send> UnifiedParser for GuidedRouted<N> {
                         UnifiedParserEvent::Text(t) => out.push_text(t),
                         UnifiedParserEvent::Reasoning(t) => out.push_reasoning(t),
                         UnifiedParserEvent::ToolCall(c) => out.push_call(c),
+                        boundary => out.events.push(boundary),
                     }
                 }
                 if self.guided_token_input {
@@ -1960,6 +2010,8 @@ pub(crate) struct GuidedPrefixContext<'a> {
 }
 
 struct GuidedState {
+    message_phase: Option<fn(&str) -> Option<MessagePhase>>,
+    open_message: bool,
     prose: ProseControlState,
     /// Any control markup was stripped this turn. Used only to tell a turn that
     /// produced nothing because it was ALL markup from a model that genuinely said
@@ -3315,6 +3367,8 @@ impl GuidedState {
             .map(InvokeBoundaryFactory::create);
         let guided_prefix = grammar.guided_prefix_factory.map(|factory| factory());
         Self {
+            message_phase: None,
+            open_message: false,
             prose: ProseControlState::default(),
             stripped_markup: false,
             reasoning,
@@ -3546,6 +3600,7 @@ impl GuidedState {
     }
 
     fn reset(&mut self, starting_state: UnifiedParserStartingState) -> String {
+        self.open_message = false;
         self.prose.clear();
         let mut recovered = std::mem::take(&mut self.response_prefill_prose);
         recovered.push_str(&std::mem::take(&mut self.json));
@@ -3742,6 +3797,31 @@ impl GuidedState {
     /// payload, can route it again. Without the second half, a payload legitimately
     /// following `…<|eom|>` was emitted as text and the call was lost, which is the
     /// same defect as the one this method exists to prevent, in the other direction.
+    fn note_message_boundary(
+        &mut self,
+        at: usize,
+        len: usize,
+        output: &mut Vec<UnifiedParserEvent>,
+    ) {
+        let Some(phase_for_header) = self.message_phase else {
+            return;
+        };
+        let state = self.channel_state();
+        let transition =
+            self.reasoning.find_transition(&self.input, true, state) == Some((at, len));
+        let close = self.reasoning.find_close(&self.input, true, state) == Some((at, len))
+            || self.reasoning.find_turn_end(&self.input, true, state) == Some((at, len));
+        if close && std::mem::take(&mut self.open_message) {
+            output.push(UnifiedParserEvent::MessageEnd);
+        }
+        if (transition || self.payload_emitted)
+            && let Some(phase) = phase_for_header(&self.input[at..at + len])
+        {
+            output.push(UnifiedParserEvent::MessageStart(phase));
+            self.open_message = true;
+        }
+    }
+
     fn note_content_transition(&mut self, at: usize, len: usize) {
         let state = self.channel_state();
         if self
@@ -5362,6 +5442,7 @@ impl GuidedState {
                         }
                         self.stripped_markup = true;
                         self.note_consumed(at, close_len);
+                        self.note_message_boundary(at, close_len, &mut output);
                         self.note_content_transition(at, close_len);
                         self.prose.consume_control(
                             &self.input[..at + close_len],
@@ -5719,6 +5800,7 @@ impl GuidedState {
                         }
                         self.stripped_markup = true;
                         self.note_consumed(at, consume);
+                        self.note_message_boundary(at, consume, &mut output);
                         self.note_content_transition(at, consume);
                         self.consume_input_prefix(at + consume);
                         self.reset_invoke_candidate();
@@ -6652,6 +6734,10 @@ impl DebugUnifiedParser {
 }
 
 impl UnifiedParser for DebugUnifiedParser {
+    fn preserve_message_phases(&mut self, enabled: bool) {
+        self.inner.preserve_message_phases(enabled);
+    }
+
     fn input_capabilities(&self) -> UnifiedParserInputCapabilities {
         self.inner.input_capabilities()
     }
@@ -8721,6 +8807,7 @@ mod construction_parity_tests {
                 UnifiedParserEvent::Text(t) => out.push_text(t),
                 UnifiedParserEvent::Reasoning(t) => out.push_reasoning(t),
                 UnifiedParserEvent::ToolCall(c) => out.push_call(c),
+                boundary => out.events.push(boundary),
             }
         }
         out

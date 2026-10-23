@@ -221,6 +221,7 @@ fn push_event(output: &mut UnifiedParserOutput, event: UnifiedParserEvent) {
         UnifiedParserEvent::Text(text) => output.push_text(text),
         UnifiedParserEvent::Reasoning(text) => output.push_reasoning(text),
         UnifiedParserEvent::ToolCall(call) => output.push_call(call),
+        boundary => output.events.push(boundary),
     }
 }
 
@@ -1065,7 +1066,9 @@ mod tests {
             for event in &out {
                 let payload = match event {
                     UnifiedEvent::Reasoning { text } | UnifiedEvent::Text { text } => text.clone(),
-                    UnifiedEvent::ToolCall { .. } => continue,
+                    UnifiedEvent::ToolCall { .. }
+                    | UnifiedEvent::MessageStart { .. }
+                    | UnifiedEvent::MessageEnd => continue,
                 };
                 for m in markers {
                     assert!(

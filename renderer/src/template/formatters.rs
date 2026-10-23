@@ -530,6 +530,26 @@ fn adapt_gemma4_reasoning_template_source(source: &str) -> String {
 pub(super) fn normalize_chat_template_source(source: &str) -> String {
     let source = normalize_jinja_syntax(source);
 
+    // The published GPT-OSS template assumes every visible assistant history
+    // item is final. Responses can also echo a separate commentary message.
+    // Adapt that template's assistant branch without changing unlabelled history
+    // or tool routing, and never insert structural markers into user content.
+    const TOOL_BRANCH: &str = "{%- if \"tool_calls\" in message %}";
+    const PHASE_BRANCH: &str = r#"{%- if message.phase in ['commentary', 'final_answer'] and not message.tool_calls %}
+            {{- '<|start|>assistant<|channel|>' + ('commentary' if message.phase == 'commentary' else 'final') + '<|message|>' + message.content }}
+            {{- '<|return|>' if message.phase == 'final_answer' and loop.last and not add_generation_prompt else '<|end|>' }}
+            {%- if message.phase == 'final_answer' %}
+                {%- set last_tool_call.name = none %}
+            {%- endif %}
+        {%- elif "tool_calls" in message %}"#;
+    if source.contains("<|start|>assistant<|channel|>final<|message|>")
+        && source.contains("last_tool_call")
+        && !source.contains("message.phase")
+        && source.contains(TOOL_BRANCH)
+    {
+        return source.replacen(TOOL_BRANCH, PHASE_BRANCH, 1);
+    }
+
     if is_gemma4_reasoning_field_template_source(&source) {
         adapt_gemma4_reasoning_template_source(&source)
     } else if is_minimax_m2_template_source(&source) {

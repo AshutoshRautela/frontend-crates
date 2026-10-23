@@ -14,9 +14,9 @@ use serde_json::Value;
 
 use crate::tool_calling::traits::{Result, Tool, ToolCallDelta};
 use crate::unified::{
-    GuidedChannel, GuidedGrammar, GuidedReasoning, GuidedRouted, NativeUnified, UnifiedParser,
-    UnifiedParserInit, UnifiedParserInputCapabilities, UnifiedParserOutput,
-    UnifiedParserStartingState, UnifiedToolOutputMode,
+    GuidedChannel, GuidedGrammar, GuidedReasoning, GuidedRouted, MessagePhase, NativeUnified,
+    UnifiedParser, UnifiedParserEvent, UnifiedParserInit, UnifiedParserInputCapabilities,
+    UnifiedParserOutput, UnifiedParserStartingState, UnifiedToolOutputMode,
 };
 
 const START: &str = "<|start|>";
@@ -163,6 +163,9 @@ struct QuotedControlTail {
 }
 
 struct HarmonyRuntime {
+    preserve_phases: bool,
+    visible_phase: Option<MessagePhase>,
+    visible_started: bool,
     encoding: HarmonyEncoding,
     allow_implicit_channel_header: bool,
     legacy_tool_compatibility: bool,
@@ -196,6 +199,9 @@ impl HarmonyRuntime {
             marker_ids.insert(token_id(&encoding, marker)?, *marker);
         }
         Ok(Self {
+            preserve_phases: false,
+            visible_phase: None,
+            visible_started: false,
             parser: StreamableParser::new(encoding.clone(), None)?,
             allow_implicit_channel_header,
             legacy_tool_compatibility,
@@ -487,6 +493,18 @@ impl HarmonyRuntime {
         self.process_parser_token(id, output)
     }
 
+    fn start_visible_message(&mut self, output: &mut UnifiedParserOutput) {
+        if self.in_body
+            && self.preserve_phases
+            && !self.visible_started
+            && matches!(self.route, Some(Route::Text))
+            && let Some(phase) = self.visible_phase
+        {
+            output.events.push(UnifiedParserEvent::MessageStart(phase));
+            self.visible_started = true;
+        }
+    }
+
     fn process_parser_token(&mut self, id: u32, output: &mut UnifiedParserOutput) -> Result<()> {
         let prior_messages = self.parser.messages().len();
         if let Err(error) = self.parser.process(id) {
@@ -509,6 +527,12 @@ impl HarmonyRuntime {
         if id == self.message_id && self.inside_message && !self.in_body {
             self.in_body = true;
             self.route = Some(self.route_current_message());
+            self.visible_phase = match self.parser.current_channel().as_deref() {
+                Some("commentary") => Some(MessagePhase::Commentary),
+                Some("final") => Some(MessagePhase::FinalAnswer),
+                _ => None,
+            };
+            self.visible_started = false;
             self.call_cursor = None;
             if !self.legacy_tool_compatibility
                 && let Some(Route::Tool(name)) = &self.route
@@ -520,6 +544,8 @@ impl HarmonyRuntime {
             self.call_content.clear();
             self.call_json = Default::default();
         }
+
+        self.start_visible_message(output);
 
         if self.in_body
             && let Some(delta) = self.parser.last_content_delta()?
@@ -545,6 +571,10 @@ impl HarmonyRuntime {
 
         let messages = self.parser.messages().len();
         if messages > prior_messages {
+            if std::mem::take(&mut self.visible_started) {
+                output.events.push(UnifiedParserEvent::MessageEnd);
+            }
+            self.visible_phase = None;
             if let Some(Route::Tool(name)) = self.route.clone() {
                 if id == self.handoff_id
                     || (!self.legacy_tool_compatibility
@@ -716,6 +746,7 @@ impl HarmonyRuntime {
         while self.quoted_control_tail.is_some() {
             self.recover_quoted_control(output)?;
         }
+        self.start_visible_message(output);
         self.flush_outside_pending(output);
         if self.in_body && matches!(self.route, Some(Route::Tool(_))) {
             tracing::warn!(
@@ -787,6 +818,7 @@ impl HarmonyRuntime {
 }
 
 struct HarmonyNative {
+    preserve_phases: bool,
     encoding: Option<HarmonyEncoding>,
     init_error: Option<String>,
     runtime: Option<HarmonyRuntime>,
@@ -803,6 +835,7 @@ impl HarmonyNative {
             Err(error) => (None, Some(error.to_string())),
         };
         Self {
+            preserve_phases: false,
             encoding,
             init_error,
             runtime: None,
@@ -825,6 +858,7 @@ impl HarmonyNative {
             self.allow_implicit_channel_header,
             self.legacy_tool_compatibility,
         )?;
+        runtime.preserve_phases = self.preserve_phases;
         if init.prompt_token_ids.is_empty() {
             runtime.begin_prefilled_message(init.starting_state)?;
         } else {
@@ -834,6 +868,8 @@ impl HarmonyNative {
             }
             runtime.next_call_index = 0;
         }
+        // A prefilled body belongs to the next generated stream, not the prompt.
+        runtime.visible_started = false;
         Ok(runtime)
     }
 
@@ -919,6 +955,29 @@ impl HarmonyNative {
 }
 
 impl NativeUnified for HarmonyNative {
+    fn guided_message_phase(&self) -> Option<fn(&str) -> Option<MessagePhase>> {
+        Some(|header| {
+            let (start, end, channel) = find_header(header)?;
+            if header[start..end]
+                .split_whitespace()
+                .any(|part| part.starts_with("to="))
+            {
+                return None;
+            }
+            match channel.as_deref() {
+                Some("commentary") => Some(MessagePhase::Commentary),
+                Some("final") => Some(MessagePhase::FinalAnswer),
+                _ => None,
+            }
+        })
+    }
+    fn preserve_message_phases(&mut self, enabled: bool) {
+        self.preserve_phases = enabled;
+        if let Some(runtime) = &mut self.runtime {
+            runtime.preserve_phases = enabled;
+        }
+    }
+
     fn preserve_special_tokens(&self) -> bool {
         true
     }
@@ -1041,6 +1100,7 @@ impl NativeUnified for HarmonyNative {
                 crate::unified::UnifiedParserEvent::ToolCall(call) => {
                     call.arguments = restore_guided_literals(&call.arguments);
                 }
+                UnifiedParserEvent::MessageStart(_) | UnifiedParserEvent::MessageEnd => {}
             }
         }
     }

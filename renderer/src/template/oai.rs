@@ -849,6 +849,36 @@ mod tests {
     }
 
     #[test]
+    fn harmony_history_phases_preserve_commentary_empty_messages_and_tool_routing() {
+        let f = formatter_for(include_str!(
+            "../../tests/fixtures/gpt_oss_message_loop.jinja"
+        ));
+        let messages = json!([
+            {"role":"user","content":"Go"},
+            {"role":"assistant","content":"Checking.","phase":"commentary"},
+            {"role":"assistant","content":"","phase":"commentary"},
+            {"role":"assistant","tool_calls":[{"function":{"name":"lookup","arguments":{}}}]},
+            {"role":"assistant","content":"Waiting.","phase":"commentary"},
+            {"role":"tool","content":"OK"},
+            {"role":"assistant","content":"Done.","phase":"final_answer"}
+        ]);
+        let rendered = render_raw_shape(&f, messages).unwrap();
+        assert!(rendered.contains("<|channel|>commentary<|message|>Checking.<|end|><|start|>assistant<|channel|>commentary<|message|><|end|>"));
+        assert!(rendered.contains(
+            "<|channel|>commentary<|message|>Waiting.<|end|><|start|>functions.lookup to=assistant"
+        ));
+        assert!(rendered.ends_with(
+            "<|start|>assistant<|channel|>final<|message|>Done.<|end|><|start|>assistant"
+        ));
+        // Omitted phase retains the published template's existing behaviour.
+        let plain = render_raw_shape(&f, json!([{"role":"assistant","content":"Plain"}])).unwrap();
+        assert_eq!(
+            plain,
+            "<|start|>assistant<|channel|>final<|message|>Plain<|end|><|start|>assistant"
+        );
+    }
+
+    #[test]
     fn content_normalization_preserves_unchanged_values() {
         let messages = json!([
             {"role": "user", "content": "  中文 <special>\n", "name": "user"},

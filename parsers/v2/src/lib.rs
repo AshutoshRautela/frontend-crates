@@ -33,8 +33,8 @@ pub use tool_calling::{CalledFunctionStream, ToolCallResponseChunk, ToolCallType
 pub use unified::{ArgumentFraming, MalformedToolCall, MalformedToolCallPolicy, ToolCallPolicy};
 pub use unified::{
     CommittedCall, GuidedJsonCursor, InvalidGuidedPayload, InvalidGuidedPayloadKind,
-    InvalidGuidedPayloadPolicy, REGISTERED_UNIFIED_FAMILIES, UnifiedEvent, UnifiedParser,
-    UnifiedParserEvent, UnifiedParserExt, UnifiedParserFactory, UnifiedParserInit,
+    InvalidGuidedPayloadPolicy, MessagePhase, REGISTERED_UNIFIED_FAMILIES, UnifiedEvent,
+    UnifiedParser, UnifiedParserEvent, UnifiedParserExt, UnifiedParserFactory, UnifiedParserInit,
     UnifiedParserInputCapabilities, UnifiedParserOutput, UnifiedParserStartingState,
     UnifiedToolOutputMode, assemble, assemble_with_tool_indices, builtin_unified_families,
     canonical_unified_family, create_unified_parser_for_family, register_unified_parser,

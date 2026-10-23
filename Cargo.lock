@@ -1209,7 +1209,7 @@ dependencies = [
 
 [[package]]
 name = "dynamo-parsers-v2"
-version = "0.7.35"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "dynamo-structural-tag",
@@ -1254,7 +1254,7 @@ dependencies = [
 
 [[package]]
 name = "dynamo-renderer"
-version = "8.1.0"
+version = "8.1.1"
 dependencies = [
  "anyhow",
  "chrono",

@@ -87,7 +87,9 @@ impl HarmonyToolStreamParser {
         for event in events {
             match event {
                 UnifiedParserEvent::Text(text) => self.pending_normal_text.push_str(&text),
-                UnifiedParserEvent::Reasoning(_) => {}
+                UnifiedParserEvent::Reasoning(_)
+                | UnifiedParserEvent::MessageStart(_)
+                | UnifiedParserEvent::MessageEnd => {}
                 UnifiedParserEvent::ToolCall(call) => result.calls.push(call),
             }
         }
