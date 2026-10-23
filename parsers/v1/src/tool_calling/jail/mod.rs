@@ -3269,8 +3269,11 @@ impl JailedStreamBuilder {
     ///
     /// The jail does not parse reasoning; the name only selects parser-pair
     /// behavior. Today that is the Nemotron V3 tool-only-turn rule (#406): with
-    /// `qwen3_coder` and `nemotron_v3`, whitespace-only content on a turn that
-    /// finishes after a tool call is dropped. Without it the output is unchanged.
+    /// `qwen3_coder` and `nemotron_v3` (or `nemotron3`, any case), whitespace-only
+    /// content is dropped from a turn that completed a tool call, showed no visible
+    /// text, and finished with `stop` or `tool_calls`. On any other finish it is
+    /// kept, though it may arrive in a later chunk than it was generated in; its
+    /// logprobs stay on their chunk. For every other pair the output is unchanged.
     pub fn reasoning_parser(mut self, parser: impl Into<String>) -> Self {
         self.reasoning_parser = Some(parser.into());
         self

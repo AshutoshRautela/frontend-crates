@@ -3389,6 +3389,78 @@ mod tests {
         }
     }
 
+    // A reasoning parser outside the Nemotron pair leaves the whole chunk sequence
+    // (deltas, roles, logprobs, finishes) as it is without one, not just the text.
+    #[tokio::test]
+    async fn test_non_nemotron_pairs_keep_the_chunk_sequence() {
+        let qwen3_coder_turn = format!("\n{NEMOTRON_DIGIT_CALL}\n");
+        let hermes_turn = "\n<tool_call>{\"name\": \"enter_digit\", \"arguments\": {\"digit\": \"1\"}}</tool_call>\n";
+        let cases: [(&str, &str, &str); 4] = [
+            ("qwen3_coder", "qwen3", &qwen3_coder_turn),
+            ("qwen3_coder", "deepseek_r1", &qwen3_coder_turn),
+            ("nemotron_nano", "nemotron_v3", &qwen3_coder_turn),
+            ("hermes", "nemotron_v3", hermes_turn),
+        ];
+        // Role on the first delta only, as engines send it; logprobs on every chunk.
+        let chunks = |turn: &str| {
+            let (head, tail) = turn.split_at(1);
+            let mut middle = create_mock_response_chunk(tail[..tail.len() - 1].to_string(), 0);
+            middle.data.as_mut().unwrap().choices[0].delta.role = None;
+            let mut last = with_finish_reason(
+                create_mock_response_chunk("\n".to_string(), 0),
+                FinishReason::Stop,
+            );
+            last.data.as_mut().unwrap().choices[0].delta.role = None;
+            vec![
+                create_mock_response_chunk(head.to_string(), 0),
+                middle,
+                last,
+            ]
+        };
+        let normalized = |results: Vec<Annotated<CreateChatCompletionStreamResponse>>| {
+            let mut value = serde_json::to_value(
+                results
+                    .into_iter()
+                    .map(|result| result.data)
+                    .collect::<Vec<_>>(),
+            )
+            .unwrap();
+            for chunk in value.as_array_mut().unwrap() {
+                for choice in chunk["choices"].as_array_mut().unwrap() {
+                    for call in choice["delta"]["tool_calls"]
+                        .as_array_mut()
+                        .into_iter()
+                        .flatten()
+                    {
+                        call["id"] = serde_json::Value::Null;
+                    }
+                }
+            }
+            value
+        };
+        for (tool_parser, reasoning_parser, turn) in cases {
+            let plain: Vec<_> = JailedStream::builder()
+                .tool_call_parser(tool_parser)
+                .build()
+                .apply_with_finish_reason(stream::iter(chunks(turn)))
+                .collect()
+                .await;
+            let named: Vec<_> = JailedStream::builder()
+                .tool_call_parser(tool_parser)
+                .reasoning_parser(reasoning_parser)
+                .build()
+                .apply_with_finish_reason(stream::iter(chunks(turn)))
+                .collect()
+                .await;
+            assert_eq!(digit_calls(&plain), 1, "{tool_parser} + {reasoning_parser}");
+            assert_eq!(
+                normalized(plain),
+                normalized(named),
+                "{tool_parser} + {reasoning_parser}"
+            );
+        }
+    }
+
     // The public entry points: only the one told the reasoning parser applies the
     // Nemotron rule; `apply_tool_calling_jail` keeps its output for every caller.
     #[tokio::test]

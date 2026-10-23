@@ -5,8 +5,11 @@
 //!
 //! Nemotron frames each Qwen3-Coder call with a newline on both sides, so a turn
 //! that only calls tools parsed to `Text("\n") | call | Text("\n")`. The rule here
-//! is the one the v1 jail applies (`hold_blank_content` / `settle_blank_content` in
-//! `dynamo-parsers`), so both crates answer the same turn the same way:
+//! follows the v1 jail's (`hold_blank_content` / `settle_blank_content` in
+//! `dynamo-parsers`), with one difference: a Unified parser never sees the finish
+//! reason, so it cannot keep the whitespace on a truncated (`length`,
+//! `content_filter`) turn the way v1 does. A truncated turn that completed a call
+//! drops it here.
 //!
 //! - Whitespace-only text is held until visible (non-whitespace) text arrives. It is
 //!   then released unchanged in front of that text, and holding stops for the rest
