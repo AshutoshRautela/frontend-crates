@@ -279,7 +279,10 @@ pub fn fixture_name(path: &Path) -> String {
 }
 
 /// Fold prior family captures through the current parser release checkpoint.
-pub const STREAM_DYNAMO_V2_CURRENT_CAPTURE: &str = "dynamo_v2-0.7.24";
+pub const STREAM_DYNAMO_V2_CURRENT_CAPTURE: &str = "dynamo_v2-0.8.0";
+
+// Batch-on-stream retains its own snapshot when the streaming capture advances.
+pub const BATCH_ON_STREAM_DYNAMO_V2_CAPTURE: &str = "dynamo_v2-0.7.24";
 
 // Consumers may reuse verified archives in tagless clones; producers still require tags.
 pub const UNIFIED_DYNAMO_V2_CURRENT_CAPTURE: &str = "dynamo_v2-current";
@@ -655,6 +658,8 @@ pub fn unified_family(corpus_name: &str) -> UnifiedFamily {
 /// parsed as `Native` because its input did not happen to start with `[`.
 #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize, PartialEq)]
 pub struct Init {
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub preserve_message_phases: bool,
     #[serde(default)]
     pub starting_state: String,
     #[serde(default)]
@@ -681,6 +686,9 @@ impl Init {
             "tool_output_mode": if self.tool_output_mode.is_empty() { "Native" } else { &self.tool_output_mode },
             "named_tool": self.named_tool,
         });
+        if self.preserve_message_phases {
+            value["preserve_message_phases"] = serde_json::json!(true);
+        }
         if let Some(request) = &self.structural_tag {
             value["structural_tag"] =
                 serde_json::to_value(request).expect("structural-tag request");
@@ -827,6 +835,7 @@ impl Init {
         parser: &mut Box<dyn dynamo_parsers_v2::UnifiedParser>,
     ) -> anyhow::Result<()> {
         use dynamo_parsers_v2::{InvalidGuidedPayloadPolicy, UnifiedParserInit};
+        parser.preserve_message_phases(self.preserve_message_phases);
         parser.initialize_request(UnifiedParserInit {
             starting_state: self.starting_state(),
             tool_output_mode: self.output_mode(),

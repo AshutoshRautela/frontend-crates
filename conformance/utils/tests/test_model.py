@@ -535,7 +535,7 @@ def test_unified_descriptive_case_ids_use_dash_everywhere(model_v2):
 def test_unified_duplicate_notes_and_deepseek_prefilled_captures(model_v2):
     tab = _tab(model_v2, "tab-unified")
     for row in tab["rows"]:
-        if row["family"] != "muse_glimmer":
+        if row["family"] not in {"muse_glimmer", "muse_spark"}:
             cell = row["cells"]["guided_json_quoted_bare_tool_header_in_answer"]
             assert cell["status"] == "na"
             assert cell["duplicate_of"] == "UNIFIED.35-1"
@@ -1074,7 +1074,7 @@ def test_unified_tab_marks_uncomparable_vllm_cases_na(model_v2):
     for row in tab["rows"]:
         for key in peer_keys:
             unavailable = [cell["cmp"][key].get("na") == 1 for cell in leaf_cells(row).values()]
-            if row["family"] == "muse_glimmer":
+            if row["family"] in {"muse_glimmer", "muse_spark"}:
                 assert all(unavailable), f"{key} must say n/a for Muse"
                 continue
             for scenario, is_unavailable in zip(leaf_cells(row), unavailable):
@@ -1899,12 +1899,12 @@ def test_argument_sections_and_folds_preserve_all_authored_scenarios(model_v2):
     tab = _tab(model_v2, "tab-unified")
     sections = [group for group in tab["column_groups"] if group["key"].startswith("unified_g7_")]
     assert [group["label"] for group in sections] == list(ARGUMENT_SECTIONS.values())
-    assert [group["span"] for group in sections] == [3, 12, 6, 10, 17, 14]
+    assert [group["span"] for group in sections] == [5, 12, 6, 10, 17, 14]
     columns = [column for column in tab["columns"] if column["group_key"].startswith("unified_g7_")]
-    assert len(columns) == 62
-    assert [column["display_number"] for column in columns] == list(range(1, 63))
+    assert len(columns) == 64
+    assert [column["display_number"] for column in columns] == list(range(1, 65))
     expected = {scenario for scenario in unified_taxonomy.UNIFIED_TAX if unified_taxonomy.display_tax(scenario)[0] == 7}
-    assert len(expected) == 145
+    assert len(expected) == 147
     assert "gpt_oss_quoted_message_header_literal" in expected
     found = set()
     for row in tab["rows"]:
@@ -2021,6 +2021,15 @@ def test_merged_documented_pair_preserves_outputs_and_reason_when_candidates_rev
         stream_key: stream,
         peer_key: peer,
     }
+
+
+def test_unified_stream_assembly_keeps_phase_boundaries():
+    from generate_conformance_table import _assemble_stream
+    events=[{"kind":"message_start","phase":"commentary"},{"kind":"message_end"},
+            {"kind":"message_start","phase":"commentary"},{"kind":"text","text":"One."},
+            {"kind":"message_end"},{"kind":"message_start","phase":"final_answer"},
+            {"kind":"text","text":"Done."},{"kind":"message_end"}]
+    assert _assemble_stream([[event] for event in events]) == events
 
 
 def test_custom_quote_columns_use_the_qwen_nemotron_section(model_v2):

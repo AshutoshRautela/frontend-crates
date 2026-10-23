@@ -117,7 +117,10 @@ fn structural_response_case_checks_the_schema_before_parsing() {
         }
     }
     families.sort();
-    assert_eq!(families, ["deepseek_v4", "glm47", "gpt_oss", "qwen3"]);
+    assert_eq!(
+        families,
+        ["deepseek_v4", "glm47", "gpt_oss", "muse_spark", "qwen3"]
+    );
 }
 
 fn has_unified_parser(family: &str) -> bool {
@@ -151,6 +154,8 @@ fn render(result: &Result<Vec<UnifiedEvent>, String>) -> String {
     events
         .iter()
         .map(|e| match e {
+            UnifiedEvent::MessageStart { phase } => format!("message_start({phase:?})"),
+            UnifiedEvent::MessageEnd => "message_end".into(),
             UnifiedEvent::Reasoning { text } => format!("reasoning({text:?})"),
             UnifiedEvent::Text { text } => format!("text({text:?})"),
             UnifiedEvent::ToolCall { name, arguments } => format!("tool_call({name}, {arguments})"),
@@ -380,6 +385,7 @@ fn reference_argument_and_dotted_name_cases_preserve_results_at_every_split() {
         "kimi_k2",
         "kimi_k3",
         "muse_glimmer",
+        "muse_spark",
         "nemotron_v3",
         "qwen3",
     ];

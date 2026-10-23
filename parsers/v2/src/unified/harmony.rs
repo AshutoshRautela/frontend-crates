@@ -959,6 +959,7 @@ impl NativeUnified for HarmonyNative {
             find_transition: guided_content_header,
             holdback: guided_header_holdback,
             strip_text: guided_strip_text,
+            reasoning_filter: None,
             competitors: CONTROL_MARKERS,
             close_markers: &[MESSAGE_END, TURN_END],
             response_literal_markers: CONTROL_MARKERS,
@@ -1041,6 +1042,8 @@ impl NativeUnified for HarmonyNative {
                 crate::unified::UnifiedParserEvent::ToolCall(call) => {
                     call.arguments = restore_guided_literals(&call.arguments);
                 }
+                crate::unified::UnifiedParserEvent::MessageStart(_)
+                | crate::unified::UnifiedParserEvent::MessageEnd => {}
             }
         }
     }
