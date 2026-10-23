@@ -1,0 +1,15 @@
+provenance:
+  status: captured
+  origin:
+    crate_version: 0.8.0
+    git_commit: f2781494d2144ce6afbbdfe98c2b75b6c5d2c614
+    source_sha256: d4f640ea2d369a0422d36db1994cbbb6c6687712c2ba55d58c0ba2d37541ade7
+document:
+  mode: unified
+changes: {}
+metadata_changes:
+  dotted_name_minimal: {}
+  dotted_name_mixed_punctuation: {}
+  dotted_name_multiple_segments: {}
+  dotted_name_shared_prefix: {}
+document_overrides: {}
