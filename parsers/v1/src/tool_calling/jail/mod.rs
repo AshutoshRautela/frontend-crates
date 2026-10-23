@@ -82,12 +82,17 @@ fn drops_held_blank(finish: Option<FinishReason>, made_tool_call: bool) -> bool 
 /// chat template trims assistant content, so dropping the call framing newlines
 /// re-renders the same prompt tokens. Other templates render content verbatim, and
 /// dropping it there would cost prefix-cache reuse on the next turn.
+///
+/// The reasoning name is matched case-insensitively, as the reasoning parser
+/// registry resolves it; the tool parser name is exact, as the jail resolves it.
 fn holds_blank_tool_only_content(
     tool_parser: Option<&str>,
     reasoning_parser: Option<&str>,
 ) -> bool {
     tool_parser == Some("qwen3_coder")
-        && matches!(reasoning_parser, Some("nemotron_v3" | "nemotron3"))
+        && reasoning_parser.is_some_and(|name| {
+            name.eq_ignore_ascii_case("nemotron_v3") || name.eq_ignore_ascii_case("nemotron3")
+        })
 }
 
 fn is_harmony_parser(parser: Option<&str>) -> bool {
@@ -1053,7 +1058,6 @@ impl ChoiceJailState {
         for emission in emissions.iter_mut() {
             emission.choice_mut().finish_reason = None;
         }
-        emissions.retain(|emission| !emission.is_empty_remainder());
 
         // A terminal marker may still be buffered. `finalize` owns the finish
         // reason in that case and reads it from `stream_finish_reason`.

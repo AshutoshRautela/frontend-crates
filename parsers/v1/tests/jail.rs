@@ -3238,7 +3238,7 @@ mod tests {
     const DSML_RUN_CALL: &str = "<｜DSML｜tool_calls><｜DSML｜invoke name=\"run\"><｜DSML｜parameter name=\"value\" string=\"true\">Paris</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>";
 
     #[tokio::test]
-    async fn test_dsml_content_whitespace_survives_the_blank_hold() {
+    async fn test_dsml_content_whitespace_is_kept() {
         let turn = format!("\n\n\n\n{DSML_RUN_CALL}");
         let mut deliveries: Vec<Vec<Annotated<CreateChatCompletionStreamResponse>>> = vec![
             vec![
@@ -3312,7 +3312,7 @@ mod tests {
             assert_eq!(digit_calls(&results), 1, "{case}");
         }
 
-        for reasoning_parser in ["nemotron_v3", "nemotron3"] {
+        for reasoning_parser in ["nemotron_v3", "nemotron3", "Nemotron_V3"] {
             let results: Vec<_> = JailedStream::builder()
                 .tool_call_parser("qwen3_coder")
                 .reasoning_parser(reasoning_parser)
@@ -3325,6 +3325,67 @@ mod tests {
                 .await;
             assert_eq!(reconstruct_content(&results), "", "{reasoning_parser}");
             assert_eq!(digit_calls(&results), 1, "{reasoning_parser}");
+        }
+    }
+
+    // Review finding: the Nemotron change must not touch any other parser's chunk
+    // sequence. After a Kimi K3 call, a terminal prefix of the orphan suffix is held
+    // by `hold_terminal_suffix`, which leaves an empty delta that main emits.
+    // Content-level checks cannot see that chunk, so pin the sequence itself.
+    #[tokio::test]
+    async fn test_kimi_k3_held_suffix_keeps_main_chunk_sequence() {
+        const K3_CALL: &str = concat!(
+            "<|open|>tools<|sep|>",
+            "<|open|>call tool=\"kvv_walle_case\" index=\"1\"<|sep|>",
+            "<|open|>argument key=\"value\" type=\"object\"<|sep|>{}",
+            "<|close|>argument<|sep|>",
+            "<|close|>call<|sep|>",
+            "<|close|>tools<|sep|>"
+        );
+        // Engines send `role` only on the first delta, and logprobs only on request.
+        let bare = |mut chunk: Annotated<CreateChatCompletionStreamResponse>| {
+            let choice = &mut chunk.data.as_mut().unwrap().choices[0];
+            choice.delta.role = None;
+            choice.logprobs = None;
+            chunk
+        };
+        for reasoning_parser in [None, Some("nemotron_v3")] {
+            let mut builder = JailedStream::builder().tool_call_parser("kimi_k3");
+            if let Some(reasoning_parser) = reasoning_parser {
+                builder = builder.reasoning_parser(reasoning_parser);
+            }
+            let results: Vec<_> = builder
+                .build()
+                .apply_with_finish_reason(stream::iter(vec![
+                    bare(create_mock_response_chunk(K3_CALL.to_string(), 0)),
+                    bare(with_finish_reason(
+                        create_mock_response_chunk("message".to_string(), 0),
+                        FinishReason::Stop,
+                    )),
+                ]))
+                .collect()
+                .await;
+            let choices: Vec<_> = results
+                .iter()
+                .flat_map(|result| &result.data.as_ref().unwrap().choices)
+                .collect();
+            assert_eq!(choices.len(), 3, "{reasoning_parser:?}");
+            assert!(
+                choices[0].delta.tool_calls.is_some(),
+                "{reasoning_parser:?}"
+            );
+            assert!(
+                choices[1].delta.content.is_none()
+                    && choices[1].delta.tool_calls.is_none()
+                    && choices[1].finish_reason.is_none(),
+                "{reasoning_parser:?}: the empty delta survives"
+            );
+            assert_eq!(
+                reconstruct_content(&results),
+                "message",
+                "{reasoning_parser:?}"
+            );
+            assert_eq!(choices[2].finish_reason, Some(FinishReason::ToolCalls));
         }
     }
 
