@@ -22,19 +22,18 @@
 //! that can move is where held whitespace sits relative to an earlier reasoning or
 //! call event, because it is released in front of the visible text that decided it.
 //!
-//! # Why a wrapper in the factory, not a scanner change
+//! # Why a wrapper in the factory, and only for Nemotron V3
 //!
 //! The rule is about the turn, not a grammar: whether whitespace is framing depends
 //! on bytes that have not arrived yet (a later call, or later prose), which no single
-//! family's scanner position can see. Applying it once around whatever parser the
-//! factory builds gives every built-in and vendor family the same answer from one
-//! implementation, the same way the v1 jail applies it to every tool parser.
+//! scanner position can see, so it wraps whatever parser the factory builds.
 //!
-//! DeepSeek DSML is the exception. Its parsers already own their call framing
-//! (#405): the encoder renders `content + "\n\n" + calls`, the parser consumes
-//! exactly that separator, and any other whitespace is content that must survive so
-//! re-rendering reproduces the generated tokens. Dropping it would break that
-//! contract, so those families are not wrapped (see [`owns_call_framing`]).
+//! It applies to `nemotron_v3` (and its aliases) only, because that is where it was
+//! measured. Nemotron's chat template trims assistant content, so a history turn
+//! with the framing newlines and one with no content render the same prompt tokens,
+//! and dropping them costs no prefix-cache reuse. Templates that render content
+//! verbatim would lose reuse at that turn on every later request, so other families
+//! keep their output unchanged (see [`applies_to`]).
 
 use super::{
     ToolCallPolicy, UnifiedParser, UnifiedParserEvent, UnifiedParserInit,
@@ -45,19 +44,17 @@ use crate::tool_calling::traits::Result;
 /// Whitespace held before visible text is released past this size. Matches the v1 jail.
 pub(crate) const MAX_HELD_BLANK_BYTES: usize = 4096;
 
-/// Families whose parser defines its own call framing and keeps the remaining
-/// whitespace as content. Keyed by canonical family name.
-pub(crate) fn owns_call_framing(canonical_family: &str) -> bool {
-    matches!(canonical_family, "deepseek_v4" | "deepseek_v41")
+/// Families that get the tool-only-turn rule. Keyed by canonical family name.
+pub(crate) fn applies_to(canonical_family: &str) -> bool {
+    canonical_family == "nemotron_v3"
 }
 
-/// Wrap `inner` with the tool-only-turn whitespace rule unless its family owns its
-/// call framing.
+/// Wrap `inner` with the tool-only-turn whitespace rule if its family gets it.
 pub(crate) fn wrap(
     canonical_family: &str,
     inner: Box<dyn UnifiedParser>,
 ) -> Box<dyn UnifiedParser> {
-    if owns_call_framing(canonical_family) {
+    if !applies_to(canonical_family) {
         return inner;
     }
     Box::new(BlankToolTurn::new(inner))
@@ -193,5 +190,37 @@ impl UnifiedParser for BlankToolTurn {
 
     fn tool_call_id(&self, tool_index: usize) -> Option<&str> {
         self.inner.tool_call_id(tool_index)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn applies_only_to_nemotron_v3() {
+        assert!(applies_to("nemotron_v3"));
+        for family in [
+            "qwen3",
+            "qwen3_coder",
+            "deepseek_v4",
+            "deepseek_v41",
+            "gpt_oss",
+            "beam",
+        ] {
+            assert!(!applies_to(family), "{family}");
+        }
+    }
+
+    /// The wrapper forwards the request-scoped tool-call policy (Beam supports one);
+    /// without forwarding, the trait default would reject every non-default policy.
+    #[test]
+    fn tool_call_policy_reaches_the_wrapped_parser() {
+        let policy = ToolCallPolicy {
+            argument_framing: crate::ArgumentFraming::ConstrainedJson,
+            ..Default::default()
+        };
+        let mut wrapped = BlankToolTurn::new(super::super::beam::beam_unified(&[]));
+        wrapped.set_tool_call_policy(policy).unwrap();
     }
 }

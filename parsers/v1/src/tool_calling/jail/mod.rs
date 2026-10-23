@@ -76,6 +76,20 @@ fn drops_held_blank(finish: Option<FinishReason>, made_tool_call: bool) -> bool 
     made_tool_call && matches!(finish, Some(FinishReason::Stop | FinishReason::ToolCalls))
 }
 
+/// Whether the jail holds whitespace-only content for the tool-only-turn rule (#406).
+///
+/// Only the parser pair Nemotron V3 serves with, where the rule was measured: its
+/// chat template trims assistant content, so dropping the call framing newlines
+/// re-renders the same prompt tokens. Other templates render content verbatim, and
+/// dropping it there would cost prefix-cache reuse on the next turn.
+fn holds_blank_tool_only_content(
+    tool_parser: Option<&str>,
+    reasoning_parser: Option<&str>,
+) -> bool {
+    tool_parser == Some("qwen3_coder")
+        && matches!(reasoning_parser, Some("nemotron_v3" | "nemotron3"))
+}
+
 fn is_harmony_parser(parser: Option<&str>) -> bool {
     parser == Some("harmony")
 }
@@ -1908,12 +1922,8 @@ pub struct JailedStream {
     marker_matcher: MarkerMatcher,
     jail_mode: JailMode,
     /// Whether whitespace-only content is held for the tool-only-turn rule (#406).
-    ///
-    /// False for DSML parsers (`deepseek_v3_2`, `deepseek_v4` and their aliases).
-    /// They own their call framing (#405): the parser consumes the encoder's
-    /// `"\n\n"` separator, and any other whitespace is content that must survive so
-    /// re-rendering reproduces the generated tokens. This mirrors
-    /// `owns_call_framing` in `dynamo-parsers-v2`'s `unified::blank_tool_turn`.
+    /// See `holds_blank_tool_only_content`; false unless the caller names the
+    /// Nemotron V3 reasoning parser.
     holds_blank_content: bool,
     /// Release guided calls as they arrive instead of at the closing brace.
     ///
@@ -3191,6 +3201,7 @@ pub struct JailedStreamBuilder {
     emission_mode: EmissionMode,
     jail_mode: JailMode,
     guided_streaming: bool,
+    reasoning_parser: Option<String>,
 }
 
 impl JailedStreamBuilder {
@@ -3206,6 +3217,7 @@ impl JailedStreamBuilder {
             tool_definitions: None,
             emission_mode: EmissionMode::default(),
             jail_mode: JailMode::MarkerBased,
+            reasoning_parser: None,
         }
     }
 
@@ -3246,6 +3258,17 @@ impl JailedStreamBuilder {
     /// Set the tool call parser to use for detection and parsing
     pub fn tool_call_parser(mut self, parser: impl Into<String>) -> Self {
         self.tool_call_parser = Some(parser.into());
+        self
+    }
+
+    /// Name the request's reasoning parser.
+    ///
+    /// The jail does not parse reasoning; the name only selects parser-pair
+    /// behavior. Today that is the Nemotron V3 tool-only-turn rule (#406): with
+    /// `qwen3_coder` and `nemotron_v3`, whitespace-only content on a turn that
+    /// finishes after a tool call is dropped. Without it the output is unchanged.
+    pub fn reasoning_parser(mut self, parser: impl Into<String>) -> Self {
+        self.reasoning_parser = Some(parser.into());
         self
     }
 
@@ -3335,7 +3358,10 @@ impl JailedStreamBuilder {
             }
         }
 
-        let holds_blank_content = !matches!(parser_config, Some(ParserConfig::Dsml(_)));
+        let holds_blank_content = holds_blank_tool_only_content(
+            self.tool_call_parser.as_deref(),
+            self.reasoning_parser.as_deref(),
+        );
 
         let completion_strategy = if self.has_custom_end_sequences {
             CompletionStrategy::EndMarker
@@ -3477,6 +3503,7 @@ where
         tool_definitions,
         uses_tool_call_structural_tag,
         false,
+        None,
         stream,
     )
 }
@@ -3503,6 +3530,39 @@ where
         tool_definitions,
         uses_tool_call_structural_tag,
         true,
+        None,
+        stream,
+    )
+}
+
+/// Like [`apply_tool_calling_jail`], but also told the request's reasoning parser,
+/// with `guided_streaming` as in [`apply_tool_calling_jail_with_guided_streaming`].
+///
+/// The reasoning parser selects parser-pair behavior the tool parser name alone
+/// cannot: with `qwen3_coder` and `nemotron_v3`, a turn that only calls tools
+/// streams no whitespace-only content (#406). See
+/// [`JailedStreamBuilder::reasoning_parser`]. Every other pair matches
+/// [`apply_tool_calling_jail`] exactly. A separate entry point so existing
+/// callers keep their output.
+pub fn apply_tool_calling_jail_with_reasoning_parser<S>(
+    tool_call_parser: Option<String>,
+    reasoning_parser: Option<String>,
+    tool_choice: Option<dynamo_protocols::types::ChatCompletionToolChoiceOption>,
+    tool_definitions: Option<Vec<crate::tool_calling::ToolDefinition>>,
+    uses_tool_call_structural_tag: bool,
+    guided_streaming: bool,
+    stream: S,
+) -> impl Stream<Item = Annotated<CreateChatCompletionStreamResponse>> + Send
+where
+    S: Stream<Item = Annotated<CreateChatCompletionStreamResponse>> + Send + 'static,
+{
+    apply_tool_calling_jail_configured(
+        tool_call_parser,
+        tool_choice,
+        tool_definitions,
+        uses_tool_call_structural_tag,
+        guided_streaming,
+        reasoning_parser,
         stream,
     )
 }
@@ -3513,6 +3573,7 @@ fn apply_tool_calling_jail_configured<S>(
     tool_definitions: Option<Vec<crate::tool_calling::ToolDefinition>>,
     uses_tool_call_structural_tag: bool,
     guided_streaming: bool,
+    reasoning_parser: Option<String>,
     stream: S,
 ) -> impl Stream<Item = Annotated<CreateChatCompletionStreamResponse>> + Send
 where
@@ -3521,6 +3582,9 @@ where
     use dynamo_protocols::types::ChatCompletionToolChoiceOption;
 
     let mut builder = JailedStream::builder().guided_streaming(guided_streaming);
+    if let Some(reasoning_parser) = reasoning_parser {
+        builder = builder.reasoning_parser(reasoning_parser);
+    }
 
     let uses_native_forced_format = tool_call_parser
         .as_deref()

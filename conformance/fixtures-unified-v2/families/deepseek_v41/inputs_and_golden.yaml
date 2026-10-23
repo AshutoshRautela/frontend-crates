@@ -14548,7 +14548,7 @@ cases:
   blank_output_without_call:
     lifecycle: active
     scenario: blank_output_without_call
-    description: Whitespace-only output with no call is visible content and is kept unchanged.
+    description: Whitespace-only output with no call is visible content and is kept unchanged by every family.
     policy:
     - P8
     - I1

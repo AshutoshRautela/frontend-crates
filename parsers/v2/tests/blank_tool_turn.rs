@@ -3,17 +3,23 @@
 
 //! Whitespace-only text in a tool-only turn (issue #406).
 //!
-//! Nemotron frames each Qwen3-Coder call with a newline on both sides. A turn that
-//! only calls tools must not return that framing as text; a turn with any visible
-//! text keeps every whitespace byte.
+//! Nemotron frames each Qwen3-Coder call with a newline on both sides. A Nemotron V3
+//! turn that only calls tools must not return that framing as text; a turn with any
+//! visible text keeps every whitespace byte. Every other family is unchanged: the
+//! rule is scoped to the template where dropping the framing was measured to keep
+//! prefix-cache reuse.
 
-use anyhow::Result;
 use dynamo_parsers_v2::{
-    Tool, ToolCallDelta, UnifiedEvent, UnifiedParser, UnifiedParserExt, UnifiedParserInit,
-    UnifiedParserOutput, UnifiedParserStartingState, assemble, create_unified_parser_for_family,
+    Tool, UnifiedEvent, UnifiedParserExt, UnifiedParserInit, UnifiedParserOutput,
+    UnifiedParserStartingState, assemble, create_unified_parser_for_family,
 };
 
-const FAMILIES: [&str; 3] = ["nemotron_v3", "qwen3", "qwen3_coder"];
+/// The Nemotron V3 family and its alias.
+const FAMILIES: [&str; 2] = ["nemotron_v3", "nemotron3"];
+
+/// Families that share Nemotron's call grammar but not its template. Their output
+/// is unchanged by this rule.
+const UNCHANGED_FAMILIES: [&str; 2] = ["qwen3", "qwen3_coder"];
 
 /// Recorded Nemotron 3.5 Lightning call for "Press digit 1 using the tool."
 const DIGIT_CALL: &str = "<tool_call>\n<function=enter_digit>\n<parameter=digit>\n1\n</parameter>\n</function>\n</tool_call>";
@@ -196,13 +202,6 @@ fn reasoning_then_a_tool_only_turn_keeps_reasoning_and_drops_framing() {
             &[reason("Press it."), call("1")],
         );
     }
-    let explicit = format!("<think>Press it.</think>\n{DIGIT_CALL}\n");
-    assert_every_split(
-        "qwen3",
-        UnifiedParserStartingState::None,
-        &explicit,
-        &[reason("Press it."), call("1")],
-    );
 }
 
 #[test]
@@ -234,7 +233,7 @@ fn hold_is_bounded_and_releases_past_the_cap() {
 }
 
 /// DSML parsers own their call framing (#405): whitespace that is not the
-/// encoder's separator stays content, so they are not subject to this rule.
+/// encoder's separator stays content. The rule does not touch them.
 #[test]
 fn dsml_families_keep_their_whitespace_contract() {
     for (family, call) in [
@@ -264,96 +263,63 @@ fn dsml_families_keep_their_whitespace_contract() {
     }
 }
 
-/// A vendor parser that echoes text, emits a call for `CALL`, and fails on `ERR`.
-struct ScriptedVendor {
-    calls: usize,
-}
-
-impl UnifiedParser for ScriptedVendor {
-    fn parse_into(&mut self, delta: &str, output: &mut UnifiedParserOutput) -> Result<()> {
-        match delta {
-            "ERR" => anyhow::bail!("scripted failure"),
-            "CALL" => {
-                output.push_call(ToolCallDelta {
-                    tool_index: self.calls,
-                    name: Some("enter_digit".into()),
-                    arguments: "{\"digit\":\"1\"}".into(),
-                    complete: true,
-                });
-                self.calls += 1;
-            }
-            _ => output.push_text(delta),
-        }
-        Ok(())
-    }
-
-    fn finish(&mut self) -> Result<UnifiedParserOutput> {
-        Ok(UnifiedParserOutput::default())
-    }
-}
-
-fn scripted_vendor(_tools: &[Tool]) -> Result<Box<dyn UnifiedParser>> {
-    Ok(Box::new(ScriptedVendor { calls: 0 }))
-}
-
+/// GPT-OSS ingests token ids; its framing text is unchanged on both input paths.
 #[test]
-fn vendor_parsers_get_the_same_rule_and_errors_keep_committed_text() {
-    let family = "blank_tool_turn_vendor";
-    dynamo_parsers_v2::register_unified_parser(family, scripted_vendor);
-
-    let mut parser = create_unified_parser_for_family(family, &[]).unwrap();
-    let events = parser.parse_complete("\n").unwrap();
-    assert_eq!(events, [text("\n")], "whitespace without a call is kept");
-
-    let mut parser = create_unified_parser_for_family(family, &[]).unwrap();
-    let mut events = Vec::new();
-    for chunk in ["\n", "CALL", "\n"] {
-        events.extend(parser.push(chunk).unwrap());
-    }
-    events.extend(parser.finish().unwrap().events);
-    assert_eq!(assemble(&events), [call("1")]);
-
-    // On `Err`, held whitespace was committed by the parser, so it reaches the caller.
-    let mut parser = create_unified_parser_for_family(family, &[]).unwrap();
-    let mut output = UnifiedParserOutput::default();
-    parser.parse_into("\n", &mut output).unwrap();
-    assert!(
-        output.is_empty(),
-        "whitespace is held before the turn decides"
-    );
-    assert!(parser.parse_into("ERR", &mut output).is_err());
-    assert_eq!(assemble(&output.events), [text("\n")]);
-
-    // `reset` starts a fresh stream: nothing held carries over.
-    parser
-        .parse_into(" ", &mut UnifiedParserOutput::default())
-        .unwrap();
-    parser.reset();
-    let events = parser.parse_complete("Hi").unwrap();
-    assert_eq!(events, [text("Hi")]);
-
-    dynamo_parsers_v2::unregister_unified_parser(family);
-}
-
-/// GPT-OSS ingests token ids; the rule applies to that path as well as text.
-#[test]
-fn gpt_oss_token_ids_drop_framing_in_a_tool_only_turn() {
+fn gpt_oss_output_is_unchanged() {
     let native_call = "<|start|>assistant<|channel|>commentary to=functions.enter_digit <|constrain|>json<|message|>{\"digit\": \"1\"}<|call|>";
     let blank = "<|start|>assistant<|channel|>final<|message|>\n<|return|>";
     let turn = format!("{blank}{native_call}{blank}");
     let ids = dynamo_parsers_v2::unified::harmony::encode_harmony(&turn).unwrap();
 
     let mut parser = create_unified_parser_for_family("gpt_oss", &tools()).unwrap();
-    assert!(parser.input_capabilities().token_ids);
     parser.initialize(&[]).unwrap();
     let mut output = UnifiedParserOutput::default();
     parser.parse_token_ids_into(&ids, &mut output).unwrap();
     output.append(&mut parser.finish().unwrap());
-    assert_eq!(assemble(&output.events), [call("1")]);
+    assert_eq!(
+        assemble(&output.events),
+        [text("\n"), call("1"), text("\n")]
+    );
 
     let mut parser = create_unified_parser_for_family("gpt_oss", &tools()).unwrap();
     parser.initialize(&[]).unwrap();
-    assert_eq!(parser.parse_complete(&turn).unwrap(), [call("1")]);
+    assert_eq!(
+        parser.parse_complete(&turn).unwrap(),
+        [text("\n"), call("1"), text("\n")]
+    );
+}
+
+/// Qwen3 and Qwen3-Coder parse the same grammar but render content verbatim, so
+/// the framing stays text, as before #406.
+#[test]
+fn qwen3_families_keep_framing_whitespace() {
+    let turn = format!("\n{DIGIT_CALL}\n");
+    let between = format!("\n{}\n\n{}\n", digit_call("1"), digit_call("2"));
+    for family in UNCHANGED_FAMILIES {
+        assert_eq!(
+            run(family, RESPONSE, &RECORDED_CHUNKS),
+            [text("\n"), call("1"), text("\n")],
+            "{family}"
+        );
+        assert_every_split(
+            family,
+            RESPONSE,
+            &turn,
+            &[text("\n"), call("1"), text("\n")],
+        );
+        assert_every_split(
+            family,
+            RESPONSE,
+            &between,
+            &[text("\n"), call("1"), text("\n\n"), call("2"), text("\n")],
+        );
+        assert_every_split(
+            family,
+            UnifiedParserStartingState::Reasoning,
+            &format!("Press it.</think>\n\n{DIGIT_CALL}\n"),
+            &[reason("Press it."), text("\n\n"), call("1"), text("\n")],
+        );
+    }
 }
 
 /// Review finding: reset returns the wrapper's held whitespace with the inner
@@ -397,7 +363,7 @@ fn reset_returns_held_whitespace_before_the_inner_remainder() {
 fn whitespace_is_kept_when_no_call_completes() {
     let truncated = "<tool_call><function=enter_digit><parameter=digit>1";
     let duplicate = "<tool_call>\n<function=enter_digit>\n<parameter=digit>\n1\n</parameter>\n<parameter=digit>\n2\n</parameter>\n</function>\n</tool_call>";
-    for family in ["qwen3", "nemotron_v3", "qwen3_coder"] {
+    for family in FAMILIES {
         assert_eq!(
             run(family, RESPONSE, &["\n", truncated]),
             [text("\n")],
@@ -422,18 +388,4 @@ fn whitespace_is_kept_when_no_call_completes() {
             "{family}: no split invalidated the duplicate"
         );
     }
-}
-
-/// The wrapper forwards the request-scoped tool-call policy (Beam supports one);
-/// without forwarding, the trait default would reject every non-default policy.
-#[test]
-fn tool_call_policy_reaches_the_wrapped_parser() {
-    let policy = dynamo_parsers_v2::ToolCallPolicy {
-        argument_framing: dynamo_parsers_v2::ArgumentFraming::ConstrainedJson,
-        ..Default::default()
-    };
-    let mut beam = create_unified_parser_for_family("beam", &tools()).unwrap();
-    beam.set_tool_call_policy(policy).unwrap();
-    let mut qwen = create_unified_parser_for_family("qwen3", &tools()).unwrap();
-    assert!(qwen.set_tool_call_policy(policy).is_err());
 }

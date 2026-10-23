@@ -1924,14 +1924,22 @@ def _assert_cross_family_contract(corpus):
                             call["arguments"]["x"] = json.loads(call["arguments"]["x"])
             by_scenario[scenario][family] = (events, init, case["finish_reason"], case["policy"], suppressed)
     assert set(by_scenario) == set(UNIFIED_TAX) - taxonomy.RETIRED_SCENARIOS
+    assert all(family in by_scenario.get(scenario, {}) for scenario, family in G.INHERITED_GOLDEN), "INHERITED_GOLDEN names a case that does not exist"
     for scenario, families in by_scenario.items():
         assert set(families) == (set(G.scenario_families(scenario)) & set(NATIVE_FAMILIES)), (scenario, "applicability", set(families))
         # Beam authors its own golden where its grammar changes the outcome (its parameter
         # tags are plain text outside a routed header; its reasoning markers are special
         # tokens), so it stands outside the shared contract for those scenarios only.
+        # A family-scoped parser rule declares its own golden in `INHERITED_GOLDEN`
+        # (Nemotron V3's tool-only-turn whitespace, issue #406); that cell is checked
+        # against the declaration instead of the shared contract.
+        for family in families:
+            if (scenario, family) in G.INHERITED_GOLDEN:
+                assert families[family][0] == G.INHERITED_GOLDEN[(scenario, family)], (scenario, family, "inherited golden")
         contracts = [
             (family, contract) for family, contract in families.items()
             if not (family == "beam" and scenario in BEAM_GRAMMAR_EXCEPTIONS)
+            and (scenario, family) not in G.INHERITED_GOLDEN
         ]
         first_family, reference = contracts[0]
         for family, contract in contracts[1:]:
