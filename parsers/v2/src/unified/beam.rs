@@ -195,6 +195,7 @@ struct BeamBoundary {
     /// The recipient's schema admits an empty argument body (declared, nothing
     /// required), so the grammar lets the stream end right after the header.
     empty_body_ok: bool,
+    at_eos: bool,
 }
 
 fn malformed(discard: usize, reason: &'static str) -> BodyScan {
@@ -214,6 +215,13 @@ impl InvokeBoundary for BeamBoundary {
         self.open_value = ValueCursor::default();
     }
 
+    fn channel_body_at_eos(&mut self, body: &str) -> BodyScan {
+        self.at_eos = true;
+        let result = self.channel_body(body, true);
+        self.at_eos = false;
+        result
+    }
+
     fn channel_body(&mut self, body: &str, flush: bool) -> BodyScan {
         let lenient = self.malformed != MalformedToolCallPolicy::Reject;
         loop {
@@ -221,18 +229,19 @@ impl InvokeBoundary for BeamBoundary {
             let t = rest.trim_start_matches([' ', '\t', '\n', '\r']);
             let at = self.scanned + (rest.len() - t.len());
             self.scanned = at;
-            if t.is_empty() {
-                // The serving grammar lets EOS end a call right after its last
-                // parameter, without the closer: a body of complete parameters is a
-                // call at the end of the stream. A header alone still is not.
-                return match (flush, self.complete) {
-                    (false, _) => BodyScan::Wait,
-                    (true, 0) if !self.empty_body_ok => {
+            if t.is_empty() || (self.at_eos && t == RETURN) {
+                // Preserve permissive EOF recovery; rejecting policies require confirmed EOS.
+                return match (flush, self.at_eos, self.complete) {
+                    (false, _, _) => BodyScan::Wait,
+                    (true, false, _) if !lenient => {
                         malformed(body.len(), "missing call terminator")
                     }
-                    (true, _) => BodyScan::Complete {
+                    (true, _, 0) if !self.empty_body_ok => {
+                        malformed(body.len(), "missing call terminator")
+                    }
+                    (true, _, _) => BodyScan::Complete {
                         body_end: at,
-                        consume: at,
+                        consume: body.len(),
                     },
                 };
             }
@@ -552,6 +561,7 @@ impl InvokeEmitter for BeamEmitter {
             open_from: 0,
             open_value: ValueCursor::default(),
             empty_body_ok: recipient_admits_empty_arguments(&self.tools, recipient) == Some(true),
+            at_eos: false,
         }))
     }
 
@@ -1061,6 +1071,13 @@ mod tests {
             for name in ["noop", "maybe"] {
                 for input in [header(name), format!("{}<|call|>", header(name))] {
                     for got in splits_with(&empty_body_tools(), &input, policy) {
+                        if malformed == MalformedToolCallPolicy::Reject && !input.ends_with(CALL) {
+                            assert!(
+                                got.is_err(),
+                                "unconfirmed EOF must not complete a held call"
+                            );
+                            continue;
+                        }
                         assert_eq!(
                             got.unwrap(),
                             vec![call(name, json!({}))],
@@ -1557,19 +1574,9 @@ mod tests {
 
     #[test]
     fn strict_rejects_unterminated_header_only_and_malformed() {
-        // A delimited call that the stream ends after is a call (the serving grammar
-        // lets EOS stand for the closer), under the strict policy too.
-        for got in splits(&format!("{HDR}{LONDON}"), strict()) {
-            assert_eq!(
-                got.unwrap(),
-                vec![call("weather", json!({"location": "London"}))]
-            );
-        }
-        // `weather` requires nothing, so its header alone is the call `{}` as well.
-        for got in splits(HDR, strict()) {
-            assert_eq!(got.unwrap(), vec![call("weather", json!({}))]);
-        }
         for tail in [
+            format!("{HDR}{LONDON}"),
+            HDR.to_string(),
             format!("{HDR}<rfl:parameter name=\"location\">\nLondon\n"),
             format!("{HDR}<rfl:parameter name=\"location\">\nLondon\n</wrong><|call|>"),
             format!("{HDR}{LONDON}<|start|>assistant<|channel|>final<|message|>x<|return|>"),
@@ -1584,9 +1591,9 @@ mod tests {
                     "{error}"
                 );
             }
-            // `Drop` never dispatches a partial call either: an unterminated call and a
-            // call with an unclosed parameter are both gone (the builder's parser
-            // contract: `truncated_parameter`, `malformed_parameter`).
+            if tail == HDR || tail == format!("{HDR}{LONDON}") {
+                continue;
+            }
             for got in splits(&tail, ToolCallPolicy::default()) {
                 assert!(
                     !got.unwrap()
@@ -1595,6 +1602,63 @@ mod tests {
                     "{tail}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn confirmed_eos_closes_complete_arguments_only() {
+        for (body, valid) in [
+            (LONDON, true),
+            (&format!("{LONDON}{RETURN}"), true),
+            ("", true),
+            ("<rfl:parameter name=\"location\">\nLondon\n", false),
+        ] {
+            let input = format!("{HDR}{body}");
+            for at in (0..=input.len()).filter(|&at| input.is_char_boundary(at)) {
+                let mut parser = beam_unified(&tools());
+                parser
+                    .set_tool_call_policy(ToolCallPolicy {
+                        malformed: MalformedToolCallPolicy::Reject,
+                        ..constrained()
+                    })
+                    .unwrap();
+                let mut events = parser.push(&input[..at]).unwrap();
+                events.extend(parser.push(&input[at..]).unwrap());
+                let finished = parser.finish_at_eos();
+                assert_eq!(finished.is_ok(), valid, "{input}, split {at}");
+                if let Ok(finished) = finished {
+                    events.extend(finished);
+                    assert_eq!(
+                        assemble(&events),
+                        vec![call(
+                            "weather",
+                            if body.is_empty() {
+                                json!({})
+                            } else {
+                                json!({"location": "London"})
+                            }
+                        )]
+                    );
+                }
+            }
+        }
+        for (body, valid) in [
+            (LONDON, true),
+            ("<rfl:parameter name=\"location\">\nLondon\n", false),
+        ] {
+            let mut parser = beam_unified(&tools());
+            parser
+                .set_tool_call_policy(ToolCallPolicy {
+                    malformed: MalformedToolCallPolicy::Reject,
+                    ..constrained()
+                })
+                .unwrap();
+            parser.push(&format!("{HDR}{body}")).unwrap();
+            assert_eq!(parser.finish_at_eos().is_ok(), valid);
+            assert!(parser.finish_at_eos().is_err(), "finish remains single-use");
+            parser.reset();
+            parser.push(&format!("{HDR}{LONDON}")).unwrap();
+            assert!(parser.finish().is_err(), "reset must clear EOS permission");
         }
     }
 
@@ -1682,10 +1746,8 @@ mod tests {
     fn strict_rejects_header_truncated_inside_channel_marker_and_reset_keeps_start() {
         // A complete header for `fn` (nothing required) is the call `{}` at EOS.
         let complete = "<|start|>assistant to=fn<|channel|>analysis <|constrain|>xml<|message|>";
-        for policy in [strict(), ToolCallPolicy::default()] {
-            for got in splits(complete, policy) {
-                assert_eq!(got.unwrap(), vec![call("fn", json!({}))]);
-            }
+        for got in splits(complete, ToolCallPolicy::default()) {
+            assert_eq!(got.unwrap(), vec![call("fn", json!({}))]);
         }
         for input in [
             "<|start|>assistant to=fn<|chan",
