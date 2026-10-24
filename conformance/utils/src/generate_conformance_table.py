@@ -129,7 +129,7 @@ from impls import (  # noqa: E402
 # rendering code below and the test suite keep referring to them as module attributes.
 import markers  # noqa: E402  (module handle: structured comparison model, DIS-2434)
 from null_cases import null_group
-from case_variants import group_null_variants, group_schema_variants
+from case_variants import group_null_variants, group_unified_variants
 
 import unified_taxonomy  # noqa: E402  (shared UNIFIED scenario->numbered-id taxonomy)
 import gen_unified_golden  # noqa: E402  (authored Unified scenario scope)
@@ -2199,6 +2199,12 @@ def _assemble_stream(chunk_deltas: list, *, recorded_assembly: list | None = Non
                     events[-1]["text"] += dl.get("text") or ""
                 else:
                     events.append({"kind": k, "text": dl.get("text") or ""})
+            elif k in ("message_start", "message_end"):
+                cur_tool = None
+                event = {"kind": k}
+                if k == "message_start":
+                    event["phase"] = dl["phase"]
+                events.append(event)
             elif k == "tool_call":
                 name, args = dl.get("name"), dl.get("arguments")
                 if name:  # a name delta opens a new call
@@ -2315,6 +2321,19 @@ def _unified_capture_failure(record: dict | None) -> dict:
     if "unavailable" in failure and "unavailable_code" in record:
         failure["unavailable_code"] = record["unavailable_code"]
     return failure
+
+
+def _unified_chunk_rows(input_chunks, capture_chunks):
+    """Show the terminal observation when a published stimulus uses implicit EOF."""
+    delivery = list(input_chunks)
+    if (len(capture_chunks) == len(delivery) + 1
+            and (not delivery or delivery[-1].get("delta_text") != "‹finish›")):
+        delivery.append({"delta_text": "‹finish›"})
+    return [
+        {"delta_text": chunk.get("delta_text", ""),
+         "dynamo": (capture_chunks[index].get("expected") if index < len(capture_chunks) else []) or []}
+        for index, chunk in enumerate(delivery)
+    ]
 
 
 def _load_unified_fixtures(base: Path):
@@ -2478,6 +2497,7 @@ def _load_unified_fixtures(base: Path):
             "tools": _unified_case_schemas(inp, shared_schema_signature),
             "policy": inp.get("policy") or [], "policy_tags": inp.get("policy") or [],
             "init": {
+                **raw_init,
                 "starting_state": raw_init.get("starting_state") or "None",
                 "tool_output_mode": raw_init.get("tool_output_mode") or "Native",
                 "named_tool": raw_init.get("named_tool"),
@@ -2514,11 +2534,7 @@ def _load_unified_fixtures(base: Path):
                 }
                 for impl in _UNIFIED_PEER_SOURCES
             },
-            "chunks": [
-                {"delta_text": ic.get("delta_text", ""),
-                 "dynamo": (dyn_chunks[i].get("expected") if i < len(dyn_chunks) else []) or []}
-                for i, ic in enumerate(in_chunks)
-            ],
+            "chunks": _unified_chunk_rows(in_chunks, dyn_chunks),
         })
         for impl in _UNIFIED_PEER_SOURCES:
             edoc = engine_cases.get(impl, {}).get((fam, key))
@@ -2686,12 +2702,22 @@ def _unified_tab_model(artifact_root: Path, hrefs: dict) -> dict | None:
     }
     duplicate_cases.update({
         (family, "guided_json_quoted_bare_tool_header_in_answer"): "UNIFIED.35-1"
-        for family in families if family != "muse_glimmer"
+        for family in families if family not in gen_unified_golden.MUSE_FAMILIES
     })
     no_native_unified_note = (
         "No native Dynamo Unified parser is registered for this family; recorded legacy "
         "batch captures are compared separately against GOLDEN."
     )
+
+    def _dynamo_path(family: str, version: str) -> dict:
+        # GPT-OSS gained UnifiedParser in 0.7.28 (#434); older captures used the split adapter.
+        native = family in gen_unified_golden.UNIFIED_FAMILIES and (
+            family != "gpt_oss"
+            or fixtures._version_sort_key(version) >= fixtures._version_sort_key("0.7.28")
+        )
+        mode = "stream" if native else "split: v1 reasoning + v2 tool parser"
+        return {"label": _full_label(BASELINE_STREAM_IMPL, version, mode),
+                "parse_mode": "unified" if native else "split"}
 
     def _unified_na_cell(family: str, scenario: str, group_num: int) -> dict:
         duplicate_of = duplicate_cases.get((family, scenario))
@@ -2728,6 +2754,8 @@ def _unified_tab_model(artifact_root: Path, hrefs: dict) -> dict | None:
                     {"key": candidate["key"], "label": candidate["label"],
                      "impl": candidate["impl"], "version": candidate["version"],
                      "parse_mode": candidate["parse_mode"], "leak": False,
+                     **(_dynamo_path(family, candidate["version"])
+                        if candidate["impl"] == "dynamo" else {}),
                      "block": unavailable}
                     for candidate in candidates
                 ],
@@ -2781,8 +2809,9 @@ def _unified_tab_model(artifact_root: Path, hrefs: dict) -> dict | None:
                 dyn_chunk_deltas = []
             dyn = _assemble_stream(dyn_chunk_deltas, recorded_assembly=c.get("dynamo"))
             gsig, dsig = _sig(gold), _sig(dyn)
-            has_native_unified = f in gen_unified_golden.UNIFIED_FAMILIES
-            dverd = _unified_classify(f, gold, dyn) if has_native_unified else "NA"
+            is_native = f in gen_unified_golden.UNIFIED_FAMILIES
+            has_dynamo_capture = is_native or bool(c.get("dynamo_by_ver"))
+            dverd = _unified_classify(f, gold, dyn) if has_dynamo_capture else "NA"
             if dynamo_failure:
                 # Missing evidence must stay red even when the oracle expects no events.
                 dsig = gsig ^ 1
@@ -2812,7 +2841,7 @@ def _unified_tab_model(artifact_root: Path, hrefs: dict) -> dict | None:
                     markers.cmp_entry(
                         dsig, leak=1 if dverd == "LEAK" else 0, err=1 if dynamo_failure else 0,
                     )
-                    if has_native_unified else markers.cmp_entry(0, na=1)
+                    if has_dynamo_capture else markers.cmp_entry(0, na=1)
                 ),
             }
             for spec in peer_specs:
@@ -2834,7 +2863,7 @@ def _unified_tab_model(artifact_root: Path, hrefs: dict) -> dict | None:
             prev_by_ver = c.get("dynamo_by_ver") or {}
             prev_results_by_ver = {}
             for pv in dynamo_history_vers:
-                if not has_native_unified:
+                if not has_dynamo_capture:
                     cmp[f"dynamo@{pv}"] = markers.cmp_entry(0, na=1)
                     prev_results_by_ver[pv] = {"chunks": [], "block": {"unavailable": no_native_unified_note}}
                     continue
@@ -2903,9 +2932,9 @@ def _unified_tab_model(artifact_root: Path, hrefs: dict) -> dict | None:
                 "input": {"kind": "chunks" if chunk_rows else "text", "text": c["input"], "chunks": chunk_rows,
                           "family": unified_taxonomy.marker_family(f)},
                 "candidates": [
-                    {"key": "dynamo", "label": dynamo_label, "impl": "dynamo",
-                     "version": dynamo_ver_label, "parse_mode": "unified", "leak": dverd == "LEAK",
-                      "block": ({"unavailable": no_native_unified_note} if not has_native_unified else
+                    {"key": "dynamo", **_dynamo_path(f, dynamo_ver_label), "impl": "dynamo",
+                     "version": dynamo_ver_label, "leak": dverd == "LEAK",
+                      "block": ({"unavailable": no_native_unified_note} if not has_dynamo_capture else
                                 dynamo_failure if dynamo_failure else
                                {"events": dyn, "verdict": dverd,
                                 "todo": None,
@@ -2938,15 +2967,15 @@ def _unified_tab_model(artifact_root: Path, hrefs: dict) -> dict | None:
                     # that never recorded this case says so instead of showing an empty
                     # event list that reads like the parser produced nothing.
                     {"key": f"dynamo@{pv}",
-                     "label": _full_label(BASELINE_STREAM_IMPL, pv, "stream"),
-                     "impl": "dynamo", "version": pv, "parse_mode": "unified",
+                     **_dynamo_path(f, pv),
+                     "impl": "dynamo", "version": pv,
                      "leak": bool(cmp.get(f"dynamo@{pv}", {}).get("leak")),
                      "block": prev_results_by_ver[pv]["block"]}
                     for pv in reversed(dynamo_history_vers)
                 ],
                 "baseline": None, "reasons": reasons, "dynamo_notes": [], "refs": [],
                 "leak_note": None,
-                "na_note": None if has_native_unified else no_native_unified_note,
+                "na_note": None if has_dynamo_capture else no_native_unified_note,
                 "duplicate_of": None,
             }
             for spec in peer_specs:
@@ -3155,7 +3184,7 @@ def build_combined_model(output_path: Path | None = None,
                                       "version": None,
                                       "parse_mode": "batch" if tab["mode"] == "batch" else "stream"})
         group_null_variants(tab)
-        group_schema_variants(tab)
+        group_unified_variants(tab)
         if tab["id"] == "tab-unified":
             # Rank the visible columns after variants have been folded into parents.
             labels = unified_taxonomy.display_case_labels(column["sub"] for column in tab["columns"])

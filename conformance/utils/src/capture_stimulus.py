@@ -126,6 +126,10 @@ def capture_peer_results(
         def unavailable(code: str, detail: str) -> dict:
             return unavailable_result(code, detail, capture=requested)
 
+        if requested["init"].get("structural_tag") is not None:
+            results[key] = unavailable("unsupported_request_mode", "Parser-only peer capture does not execute structural-tag generation constraints.")
+            continue
+
         reason = unsupported_reason(case) if unsupported_reason is not None else None
         if reason is not None:
             if key in results:
@@ -205,6 +209,19 @@ def original_capture_input(record: dict, raw: bytes, relative: str, bindings: di
     return original
 
 
+def _without_synthetic_finish_step(request: dict) -> dict:
+    chunks = request.get("chunks")
+    input_text = request.get("input")
+    if not isinstance(chunks, list) or not chunks or not isinstance(input_text, str):
+        return request
+    if (
+        chunks[-1] == {"delta_text": "‹finish›"}
+        and "".join(chunk.get("delta_text", "") for chunk in chunks[:-1]) == input_text
+    ):
+        return {**request, "chunks": chunks[:-1]}
+    return request
+
+
 def select_peer_observation(record: dict, current: dict, *, implementation: str, version: str) -> dict:
     """Use a bound recapture while retaining the original historical observation."""
     recapture = record.get("verified_recapture")
@@ -272,13 +289,15 @@ def comparison_failure(record: dict, current: dict, raw: bytes, relative: str, b
         return "Capture stimulus unavailable: displayed request tool schema was not retained; request equality cannot be verified."
     if not isinstance(original, dict) or original.keys() != expected.keys():
         raise ValueError(f"incomplete capture input binding: {relative}")
+    original = _without_synthetic_finish_step(original)
+    expected = _without_synthetic_finish_step(expected)
     changed = [key for key in expected if original[key] != expected[key]]
     if changed:
         return f"Capture stimulus mismatch ({', '.join(changed)}): historical output belongs to a different request and is not scored against this input."
     return None
 
 
-def _effective_capture_records(directory: Path, input_aliases: dict) -> dict:
+def _effective_capture_records(directory: Path, input_aliases: dict, families: set[str] | None = None) -> dict:
     captures = {}
     bindings = read_bindings(directory)
     for path in sorted(directory.glob("*/*.yaml")):
@@ -286,6 +305,8 @@ def _effective_capture_records(directory: Path, input_aliases: dict) -> dict:
         doc = yaml.safe_load(raw)
         if doc["family"] != path.parent.name:
             raise ValueError(f"capture family differs from its directory: {path}")
+        if families is not None and doc["family"] not in families:
+            continue
         for key, record in doc["cases"].items():
             ident = canonical_unified_record_key(doc["family"], key, input_aliases)
             if ident in captures and captures[ident][0] != record:
@@ -312,7 +333,7 @@ def validated_current_capture_docs(
         ident = canonical_unified_record_key(family, key, input_aliases)
         if inputs.get(ident) == record:
             input_keys[ident] = key
-    captures = _effective_capture_records(directory, input_aliases)
+    captures = _effective_capture_records(directory, input_aliases, families)
     if not inputs or inputs.keys() != captures.keys():
         raise ValueError(f"current capture/input sets differ: missing={sorted(inputs.keys() - captures.keys())}, extra={sorted(captures.keys() - inputs.keys())}")
     for ident, current in inputs.items():

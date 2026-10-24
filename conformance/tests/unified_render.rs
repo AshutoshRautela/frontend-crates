@@ -75,6 +75,10 @@ struct Expect {
 #[derive(Deserialize, serde::Serialize, Clone, PartialEq, Debug)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum Ev {
+    MessageStart {
+        phase: String,
+    },
+    MessageEnd,
     Reasoning {
         text: String,
     },
@@ -91,6 +95,8 @@ enum Ev {
 impl Ev {
     fn render(&self) -> String {
         match self {
+            Ev::MessageStart { phase } => format!("message_start({phase})"),
+            Ev::MessageEnd => "message_end".into(),
             Ev::Reasoning { text } => format!("reasoning({text:?})"),
             Ev::Text { text } => format!("text({text:?})"),
             Ev::ToolCall { name, arguments } => format!("tool_call({name}, {arguments})"),
@@ -146,6 +152,14 @@ fn feed(
 impl From<dynamo_parsers_v2::UnifiedEvent> for Ev {
     fn from(e: dynamo_parsers_v2::UnifiedEvent) -> Self {
         match e {
+            dynamo_parsers_v2::UnifiedEvent::MessageStart { phase } => Ev::MessageStart {
+                phase: serde_json::to_value(phase)
+                    .unwrap()
+                    .as_str()
+                    .unwrap()
+                    .to_owned(),
+            },
+            dynamo_parsers_v2::UnifiedEvent::MessageEnd => Ev::MessageEnd,
             dynamo_parsers_v2::UnifiedEvent::Reasoning { text } => Ev::Reasoning { text },
             dynamo_parsers_v2::UnifiedEvent::Text { text } => Ev::Text { text },
             dynamo_parsers_v2::UnifiedEvent::ToolCall { name, arguments } => {
@@ -157,6 +171,10 @@ impl From<dynamo_parsers_v2::UnifiedEvent> for Ev {
 
 fn unified_delta_json(d: &dynamo_parsers_v2::UnifiedParserEvent) -> Value {
     match d {
+        dynamo_parsers_v2::UnifiedParserEvent::MessageStart(phase) => {
+            json!({"kind":"message_start","phase":phase})
+        }
+        dynamo_parsers_v2::UnifiedParserEvent::MessageEnd => json!({"kind":"message_end"}),
         dynamo_parsers_v2::UnifiedParserEvent::Reasoning(text) => {
             json!({"kind": "reasoning", "text": text})
         }
@@ -199,15 +217,30 @@ fn dynamo_events_with_tools(
         });
     }
 
-    let mut tp = create_tool_parser_for_family(&tool_family, tool_schemas)
+    let chunks: Vec<String> = split.normal_text.chars().map(|ch| ch.to_string()).collect();
+    out.extend(tool_events_with_chunks(
+        &tool_family,
+        tool_schemas,
+        chunks
+            .iter()
+            .map(|text| dynamo_parsers_v2::ToolParserInput::Text(text)),
+    ));
+    out
+}
+
+fn tool_events_with_chunks<'a>(
+    tool_family: &str,
+    tool_schemas: &[dynamo_parsers_v2::Tool],
+    chunks: impl IntoIterator<Item = dynamo_parsers_v2::ToolParserInput<'a>>,
+) -> Vec<Ev> {
+    let mut tp = create_tool_parser_for_family(tool_family, tool_schemas)
         .unwrap_or_else(|e| panic!("create tool parser for `{tool_family}`: {e}"));
+    let mut out = Vec::new();
     let mut slots: BTreeMap<usize, usize> = BTreeMap::new();
     let mut raw_args: BTreeMap<usize, String> = BTreeMap::new();
-    let mut buf = [0u8; 4];
-    for ch in split.normal_text.chars() {
-        let s = ch.encode_utf8(&mut buf);
+    for chunk in chunks {
         let r = tp
-            .push(s)
+            .push_input(chunk)
             .unwrap_or_else(|e| panic!("push `{tool_family}`: {e}"));
         feed(r, &mut out, &mut slots, &mut raw_args);
     }
@@ -230,6 +263,57 @@ fn dynamo_events_with_tools(
     out
 }
 
+#[test]
+fn dotted_harmony_split_matches_golden_at_every_boundary() {
+    use dynamo_parsers_v2::ToolParserInput::{Text, Tokens};
+    let path = common::ensure_unified_golden().join(common::unified_family("gpt_oss").golden_spec);
+    let file: GoldenFile = serde_yaml::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let mut checked = 0;
+    for (id, case) in file.cases {
+        if !id.starts_with("UNIFIED.dotted_name_") {
+            continue;
+        }
+        let tools = common::unified_tools_for_schemas(case.tools.as_ref());
+        let mut reasoning = ReasoningParserType::get_reasoning_parser_from_name("gpt_oss");
+        let split = reasoning.detect_and_parse_reasoning(&case.input, &[]);
+        assert!(split.reasoning_text.is_empty(), "{id}");
+        assert_eq!(
+            dynamo_events_with_tools("gpt_oss", &case.input, &case.init, &tools),
+            case.golden,
+            "{id}: native character input"
+        );
+        assert_eq!(
+            tool_events_with_chunks("harmony", &tools, [Text(&split.normal_text)]),
+            case.golden,
+            "{id}: whole"
+        );
+        for offset in split
+            .normal_text
+            .char_indices()
+            .map(|(offset, _)| offset)
+            .chain(std::iter::once(split.normal_text.len()))
+        {
+            let (left, right) = split.normal_text.split_at(offset);
+            assert_eq!(
+                tool_events_with_chunks("harmony", &tools, [Text(left), Text(right)]),
+                case.golden,
+                "{id}: text split {offset}"
+            );
+        }
+        let tokens = dynamo_parsers_v2::encode_harmony(&split.normal_text).unwrap();
+        for offset in 0..=tokens.len() {
+            let (left, right) = tokens.split_at(offset);
+            assert_eq!(
+                tool_events_with_chunks("harmony", &tools, [Tokens(left), Tokens(right)]),
+                case.golden,
+                "{id}: token split {offset}"
+            );
+        }
+        checked += 1;
+    }
+    assert_eq!(checked, 4);
+}
+
 fn capture_native_case(
     family: &str,
     chunks: &[String],
@@ -239,6 +323,10 @@ fn capture_native_case(
     let mut parser = create_unified_parser_for_family(family, tool_schemas)
         .unwrap_or_else(|e| panic!("create native parser {family}: {e}"));
     init.apply(&mut parser, family);
+    capture::capture_step(
+        init.validate_capture(family, tool_schemas, chunks),
+        "structural tag",
+    )?;
     let rows = capture::native_capture(&mut parser, chunks)?;
     let deltas: Vec<_> = rows.iter().flatten().cloned().collect();
     let assembled = assemble(&deltas).into_iter().map(Ev::from).collect();
@@ -373,7 +461,7 @@ fn classify(family: &str, golden: &[Ev], got: &[Ev]) -> &'static str {
             .copied()
             .chain(family_leak.iter().map(String::as_str))
             .any(|m| text.contains(m)),
-        Ev::ToolCall { .. } => false,
+        Ev::ToolCall { .. } | Ev::MessageStart { .. } | Ev::MessageEnd => false,
     });
     if leaks {
         return "LEAK";
@@ -537,6 +625,12 @@ fn render_unified_conformance_html() {
         );
     }
     files.sort_by(|a, b| a.family.cmp(&b.family));
+    let selected_families = common::capture_families();
+    files.retain(|file| {
+        selected_families
+            .as_ref()
+            .is_none_or(|selected| selected.contains(&file.family))
+    });
 
     let mut rows = String::new();
     let mut dynamo_red = 0usize;

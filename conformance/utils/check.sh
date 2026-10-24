@@ -81,13 +81,14 @@ run_ci_render() {
   echo "conformance matrix rendered: $(wc -c < "$out") bytes"
   # The uploaded CI artifact name predates the v1/v2 split; keep it stable.
   \cp -f "$out" "$UTILS/CONFORMITY.html"
+  \cp -f "$status" "$UTILS/CONFORMITY.json"
   run_coverage
   python3 "$TOOLS/validate_legacy_convention.py"
 }
 
 run_ci_tests() {
   if [ "$DRY" = 1 ]; then
-    echo "[dry-run] python3 -m pytest $UTILS/tests -q"
+    echo "[dry-run] python3 -m pytest $UTILS/tests -q --durations=20"
     return
   fi
   # The WHOLE tests/ dir, not a hand-maintained file list: the old list named three
@@ -95,7 +96,7 @@ run_ci_tests() {
   # and a new test file was gated only by remembering to add it here. The browser
   # tests skip themselves when Selenium isn't installed (CI installs pyyaml/jinja2/
   # pytest only), so this stays a no-engine, no-browser gate.
-  python3 -m pytest "$UTILS/tests" -q
+  python3 -m pytest "$UTILS/tests" -q --durations=20
 }
 
 run_ci() {

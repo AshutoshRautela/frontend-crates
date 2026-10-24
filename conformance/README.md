@@ -37,6 +37,8 @@ Before adding a conformance case, inspect every registered family. Always evalua
 
 ## Ownership
 
+New conformance cases and captures are added only to Unified for the v2 parser. Do not add new v1 cases or v1 batch/jail captures. The default report displays only Unified; legacy suites are retained for regression checks. Existing v1 captures remain available as historical comparisons in Unified.
+
 Parser v1/v2 terminology, migration steps, and fixture ownership are documented in [`../docs/PARSERS-V2-MIGRATION-PLAN.md`](../docs/PARSERS-V2-MIGRATION-PLAN.md). New streaming parser authors should also read [`../parsers/v2/README.md`](../parsers/v2/README.md); it explains the vLLM-shaped Rust parser contract, the v2 fixture schema, and the exact `conformance/toolcalling/*` files to add. This README covers conformance layout, render outputs, and test commands.
 
 ## Parser paths and modes (universal convention)
@@ -238,6 +240,12 @@ Use `bash conformance/utils/regenerate_unified.sh` to run this sequence as one g
 
 Do not substitute a loose harness feed for the package step. The v2 table reads the extracted packaged snapshot, so an un-packaged family cannot appear in its Unified tab.
 
+### Structural-tag request checks
+
+Unified cases may carry `init.structural_tag` with a response `schema` and complete `rejected` streams. The shared Rust request handler builds the real family structural tag and invokes `utils/src/check_structural_tag.py` before feeding the accepted stream into the parser. The CPU matcher checks the authored chunk schedule, every character split, and each rejection probe. A schema-only fixture with parser checks alone does not cover generation constraints. Parser-only peer adapters report unsupported request mode.
+
+Install the pinned CPU verifier with `python3 -m pip install --no-deps -r conformance/utils/structural-tag-requirements.in`. Set `CONFORMANCE_GRAMMAR_PYTHON` to that interpreter when it differs from `python3`. The verifier loads XGrammar's native TVM-FFI binding and does not import torch or transformers. Rust CI installs this environment before running conformance. `UNIFIED.36-structured_response_after_reasoning` covers the available GPT-OSS, Qwen3, GLM and DeepSeek V4 builders.
+
 ### 3. Version rule: one capture name per crate version
 
 Unified captures use plain crate versions, such as `dynamo_v2-0.6.1.yaml`. The first capture records its source SHA and Git commit as origin metadata. Later commits with the same version reuse that version; they do not create patch files or hash-qualified names. Readers select the version without inspecting source hashes or release tags, and carry unchanged family outputs forward from the latest capture at or before that version. Avoid changing existing test inputs; if an input must change, rerun and update every prior version affected by it. Crate publication follows [`../RELEASING.md`](../RELEASING.md#manual-version-peg-fixture-synced-releases).
@@ -254,9 +262,9 @@ The `rust` CI job checks out the LFS store (`lfs: true`), extracts the manifest-
 
 A parser change that alters output fails CI until the fixtures are re-captured and committed (workflow 2) — CI compares Dynamo against the pinned shard YAMLs, nothing else. The `conformance-table` CI job runs exactly one command, `conformance/utils/check.sh ci`, which re-renders both HTML pages from the same pinned store, runs the coverage/marker lint (section 8), and the chart-invariant guards. To add or change a conformance gate, edit `run_ci()` in `check.sh`; the workflow file stays untouched.
 
-### 5. Add a new test case (e.g. a new `TOOLCALLING.streamv1.5.h`)
+### 5. Maintain a legacy test case
 
-A "case" is one scenario, either shared across applicable families or a Single Family Test. Use "Single Family Test" for a case currently exercised on one family, even when its behavior could be shared. This label describes test coverage, not parser capability. Move a case into shared coverage when another family is tested. Match the suite's existing labels: legacy Tool Calling groups use dot-letter suffixes such as `7.g` and `51.a`; Unified uses descriptive suffixes such as `7-arg_unicode` and `glm5-reference_type_intersection`, owned by `utils/src/unified_taxonomy.py`. Numeric and dotted Unified forms are historical aliases; internal scenario names, subgroup headings, and ordering stay separate from display IDs. A recorded case ID keeps its original meaning; display aliases may organize it without rewriting captures. Adding one is FOUR edits, in order:
+A "case" is one scenario, either shared across applicable families or a Single Family Test. Use "Single Family Test" for a case currently exercised on one family, even when its behavior could be shared. This label describes test coverage, not parser capability. Move a case into shared coverage when another family is tested. Match the suite's existing labels: legacy Tool Calling groups use dot-letter suffixes such as `7.g` and `51.a`; Unified uses descriptive suffixes such as `7-arg_unicode` and `glm5-reference_type_intersection`, owned by `utils/src/unified_taxonomy.py`. Numeric and dotted Unified forms are historical aliases; internal scenario names, subgroup headings, and ordering stay separate from display IDs. A recorded case ID keeps its original meaning; display aliases may organize it without rewriting captures. For existing legacy cases that need maintenance, the storage and capture steps are:
 
 1. **Input.** Add the case to `toolcalling/fixtures-stream-v1/inputs/<family>/TOOLCALLING.streamv1.<N>.yaml` for each family it applies to — the shared per-chunk `delta_text` (schema in [`toolcalling/fixtures-stream-v1/README.md`](toolcalling/fixtures-stream-v1/README.md#fixture-schema)). Batch cases go under `toolcalling/fixtures-batch-v1/inputs/<family>/` instead.
 2. **Description.** Add a bullet to `utils/lib/parsers/TOOLCALLING_STREAMING_V1_CASES.md` (or the batch/reasoning CASES.md) — the HTML "Case descriptions" section renders it, and the tooltip links to it.

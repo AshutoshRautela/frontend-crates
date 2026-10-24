@@ -32,6 +32,7 @@
 //! Non-default requests are then recorded as unavailable, never as default-mode data.
 //! Builds predating UnifiedParser instead use `--cfg conformance_split_only`.
 //! Builds without ToolCallDelta::complete also require `--cfg conformance_legacy_terminal`.
+//! Builds without the reasoning-aware structural-tag API use `--cfg conformance_no_structural_tag`.
 //!
 //! No-op unless `XVER_INPUTS` is set, so it costs nothing in a normal test run.
 
@@ -88,6 +89,7 @@ fn requires_request_init(init: &common::Init) -> bool {
     !matches!(init.starting_state.as_str(), "" | "None")
         || !matches!(init.tool_output_mode.as_str(), "" | "Native")
         || init.named_tool.is_some()
+        || init.structural_tag.is_some()
 }
 
 fn unavailable_init(init: &common::Init, native: bool) -> bool {
@@ -123,6 +125,7 @@ fn capture_request_init_availability() {
             starting_state: "None".into(),
             tool_output_mode: "Native".into(),
             named_tool: None,
+            ..Default::default()
         },
     ] {
         assert!(!unavailable_init(&init, false));
@@ -477,7 +480,7 @@ fn capture_marks_legacy_terminal_metadata_unavailable() {
 fn split_path_chunks_with_parsers(
     reasoning_name: &str,
     tool_family: &str,
-    input: &str,
+    chunks: &[String],
     tool_schemas: &[dynamo_parsers_v2::Tool],
 ) -> Result<Vec<Vec<Value>>, CaptureFailure> {
     let mut rp = ReasoningParserType::get_reasoning_parser_from_name(reasoning_name);
@@ -486,9 +489,9 @@ fn split_path_chunks_with_parsers(
     })?;
 
     let mut rows = Vec::new();
-    for chunk in chunk_input(input) {
+    for chunk in chunks {
         let mut deltas: Vec<Value> = Vec::new();
-        let rr = rp.parse_reasoning_streaming_incremental(&chunk, &[]);
+        let rr = rp.parse_reasoning_streaming_incremental(chunk, &[]);
         if !rr.reasoning_text.is_empty() {
             deltas.push(json!({"kind": "reasoning", "text": rr.reasoning_text}));
         }
@@ -509,9 +512,7 @@ fn split_path_chunks_with_parsers(
         tool_deltas(&tr, &mut tail);
     }
     tool_deltas(&capture_step(tp.finish(), "split chunk finish")?, &mut tail);
-    if !tail.is_empty() {
-        rows.push(tail);
-    }
+    rows.push(tail);
     Ok(rows)
 }
 
@@ -590,7 +591,23 @@ fn split_path_capture_with_parsers(
     input: &str,
     tool_schemas: &[dynamo_parsers_v2::Tool],
 ) -> Result<(Vec<Vec<Value>>, Vec<serde_yaml::Value>), CaptureFailure> {
-    let rows = split_path_chunks_with_parsers(reasoning_name, tool_family, input, tool_schemas)?;
+    split_path_capture_with_schedule(
+        reasoning_name,
+        tool_family,
+        input,
+        &chunk_input(input),
+        tool_schemas,
+    )
+}
+
+fn split_path_capture_with_schedule(
+    reasoning_name: &str,
+    tool_family: &str,
+    input: &str,
+    chunks: &[String],
+    tool_schemas: &[dynamo_parsers_v2::Tool],
+) -> Result<(Vec<Vec<Value>>, Vec<serde_yaml::Value>), CaptureFailure> {
+    let rows = split_path_chunks_with_parsers(reasoning_name, tool_family, chunks, tool_schemas)?;
 
     // The split serving path assembles reasoning over the WHOLE input before it
     // streams the leftover through the tool parser. Its raw chunk evidence comes
@@ -657,11 +674,21 @@ fn capture_case_with_chunks(
     #[cfg(not(conformance_split_only))]
     let native_error = match create_unified_parser_for_family(family, tool_schemas) {
         Ok(mut parser) => {
+            if cfg!(conformance_no_structural_tag) && init.structural_tag.is_some() {
+                return Err(CaptureFailure::Unavailable(
+                    "this build has no reasoning-aware structural-tag request API".into(),
+                ));
+            }
             if unavailable_init(init, true) {
                 return Err(CaptureFailure::Unavailable(
                     "this build has no request initialization API".into(),
                 ));
             }
+            #[cfg(not(conformance_legacy_init))]
+            capture_step(
+                init.validate_capture(family, tool_schemas, chunks),
+                "structural tag",
+            )?;
             return native_capture(&mut parser, chunks, init);
         }
         Err(error) => format!("{error:#}"),
@@ -676,13 +703,8 @@ fn capture_case_with_chunks(
             "split capture cannot apply the requested initialization".into(),
         ));
     }
-    assert_eq!(
-        chunks,
-        chunk_input(input),
-        "legacy split capture cannot replay this schedule"
-    );
     let (rows, assembled) =
-        split_path_capture_with_parsers(&reasoning, &tool, input, tool_schemas)?;
+        split_path_capture_with_schedule(&reasoning, &tool, input, chunks, tool_schemas)?;
     let rows = rows
         .into_iter()
         .map(|row| {
@@ -717,6 +739,12 @@ fn split_capture_assembles_reasoning_over_the_whole_input() {
 #[cfg(not(conformance_split_only))]
 fn delta_to_yaml(d: &dynamo_parsers_v2::UnifiedParserEvent) -> serde_yaml::Value {
     let v = match d {
+        dynamo_parsers_v2::UnifiedParserEvent::MessageStart(phase) => {
+            serde_json::json!({"kind":"message_start","phase":phase})
+        }
+        dynamo_parsers_v2::UnifiedParserEvent::MessageEnd => {
+            serde_json::json!({"kind":"message_end"})
+        }
         dynamo_parsers_v2::UnifiedParserEvent::Reasoning(text) => {
             serde_json::json!({"kind": "reasoning", "text": text})
         }
@@ -797,8 +825,25 @@ fn capture_this_build_against_the_current_corpus() {
     families.sort();
 
     let mut total = 0usize;
+    let selected_families = common::capture_families();
+    if let Some(selected) = &selected_families {
+        for family in selected {
+            assert!(
+                families
+                    .iter()
+                    .any(|path| path.file_name().is_some_and(|name| name == family.as_str())),
+                "requested capture family has no input directory: {family}"
+            );
+        }
+    }
     for fam_dir in families {
         let family = fam_dir.file_name().unwrap().to_string_lossy().to_string();
+        if selected_families
+            .as_ref()
+            .is_some_and(|selected| !selected.contains(&family))
+        {
+            continue;
+        }
         let mut cases: BTreeMap<String, serde_yaml::Value> = BTreeMap::new();
         let mut files: Vec<PathBuf> = std::fs::read_dir(&fam_dir)
             .expect("family dir")
@@ -859,11 +904,7 @@ fn capture_this_build_against_the_current_corpus() {
                     .collect();
                 let stimulus = serde_json::json!({
                     "input":input,
-                    "init": {
-                        "starting_state": if init.starting_state.is_empty() { "None" } else { &init.starting_state },
-                        "tool_output_mode": if init.tool_output_mode.is_empty() { "Native" } else { &init.tool_output_mode },
-                        "named_tool":init.named_tool,
-                    },
+                    "init": init.applied(),
                     "finish_reason":finish_reason, "tools":tool_schema_json, "chunks":chunks,
                 });
                 record.as_mapping_mut().unwrap().insert(
@@ -874,6 +915,7 @@ fn capture_this_build_against_the_current_corpus() {
             }
         }
         let fam_out = out_root.join(&family);
+        assert!(!cases.is_empty(), "capture family has no cases: {family}");
         std::fs::create_dir_all(&fam_out).expect("mkdir");
         for (cid, case) in &cases {
             let mut cw = serde_yaml::Mapping::new();

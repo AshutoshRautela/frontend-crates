@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 from __future__ import annotations
 
+import json
 import shutil
 import re
 from pathlib import Path
@@ -65,6 +66,33 @@ def load(driver, rendered_page: Path, query=""):
     driver.get(rendered_page.resolve().as_uri() + query)
     WebDriverWait(driver, 20).until(lambda browser: browser.find_elements(By.CSS_SELECTOR, ".tab-panel.active .capture-slots"))
     WebDriverWait(driver, 20).until(lambda browser: browser.find_elements(By.CSS_SELECTOR, ".tab-panel.active table[data-parity-table]"))
+
+
+def test_structural_response_popup_shows_generation_constraints(matrix_driver, rendered_page):
+    driver = matrix_driver
+    load(driver, rendered_page)
+    try:
+        host = driver.execute_script("""
+            return [...document.querySelectorAll('#tab-unified td.cell[data-family="gpt_oss"]')]
+                .find(cell => (window.__conformanceCellModel(cell) || {}).case_id ===
+                    'UNIFIED.36-structured_response_after_reasoning');
+        """)
+        assert host is not None
+        driver.execute_script("arguments[0].scrollIntoView({block:'center',inline:'center'})", host)
+        host.send_keys(Keys.ENTER)
+        popup = WebDriverWait(driver, 10).until(
+            lambda browser: browser.find_element(By.CSS_SELECTOR, "body > .ttip-pinned"))
+        config = next(node for node in popup.find_elements(By.CSS_SELECTOR, ".ttip-config code")
+                      if node.get_attribute("textContent").startswith("structural_tag="))
+        request = json.loads(config.get_attribute("textContent").removeprefix("structural_tag="))
+        assert request["schema"]["additionalProperties"] is False
+        assert request["schema"]["required"] == ["location", "temperature", "conditions"]
+        assert len(request["rejected"]) == 6
+        assert "[object Object]" not in config.text
+        assert driver.execute_script("return getComputedStyle(arguments[0]).whiteSpace", config) == "pre-wrap"
+        popup.find_element(By.CSS_SELECTOR, ".ttip-close").click()
+    finally:
+        load(driver, rendered_page)
 
 
 def selection(driver):
@@ -132,7 +160,7 @@ def test_capture_legend_matches_segments_in_both_themes_and_views(matrix_driver,
                 assert "slot order" in legend.text
                 assert "Not applicable or unsupported" in legend.text
                 assert "Order/chunk not applicable for batch" not in legend.text
-                assert "Dynamo v1 is the batch parser; Dynamo v2 is the UnifiedParser." in legend.text
+                assert "Dynamo v1 is the batch parser; Dynamo v2 details identify native UnifiedParser or split capture paths." in legend.text
                 assert not legend.find_element(By.CSS_SELECTOR, "[data-output-formats]").is_displayed()
                 assert not d.find_elements(By.CSS_SELECTOR, "#tab-unified .legend.summary-only,#tab-unified .legend.details-only")
                 styles = d.execute_script("""
@@ -151,7 +179,9 @@ def test_capture_legend_matches_segments_in_both_themes_and_views(matrix_driver,
                     return styles;
                 """)
                 assert d.execute_script(legend_matches)
-                assert {item["status"] for item in styles} == {"pass", "unsupported", "diverge"}
+                # The legend follows visible captures; a passing selection need not diverge.
+                assert styles
+                assert {item["status"] for item in styles} <= {"pass", "unsupported", "diverge"}
                 assert all(item["matches"] and item["width"] > 0 for item in styles)
         choose_slot(d, 1, "vllm", "vllm_python_batch@0.26.0")
         assert d.execute_script(legend_matches)
@@ -532,77 +562,94 @@ def test_narrow_picker_opens_the_normal_version_select(matrix_driver, rendered_p
         d.set_window_size(2400, 1200)
 
 
-@pytest.mark.parametrize("close_over_control", [False, True])
-def test_segments_click_only_popup_keyboard_and_immediate_selection(matrix_driver, rendered_page, close_over_control):
+@pytest.mark.parametrize("close_over_control,viewport_width", [(False, 2400), (True, 2400), (True, 2300)])
+def test_segments_click_only_popup_keyboard_and_immediate_selection(matrix_driver, rendered_page, close_over_control, viewport_width):
     d = matrix_driver
-    load(d, rendered_page)
-    cell = d.find_element(By.CSS_SELECTOR, "#tab-unified td.cell[data-cmp][data-ttip-id]")
-    assert len(cell.find_elements(By.CSS_SELECTOR, ".matrix-status")) == 1
-    d.execute_script("arguments[0].dispatchEvent(new PointerEvent('pointerover',{bubbles:true}));arguments[0].focus()", cell)
-    assert not cell.find_elements(By.CSS_SELECTOR, ".ttip-built")
-    assert not d.find_elements(By.CSS_SELECTOR, ".ttip-visible")
-    cell.send_keys(Keys.ENTER)
-    popup = WebDriverWait(d, 10).until(lambda b: b.find_element(By.CSS_SELECTOR, "body > .ttip-visible"))
-    close_styles = d.execute_script("""
-        const root = document.documentElement, original = root.dataset.theme;
-        const popup = arguments[0], close = popup.querySelector('.ttip-close');
-        const styles = ['light', 'dark'].map(theme => {
-            root.dataset.theme = theme;
-            return {color: getComputedStyle(close).color, ink: getComputedStyle(popup).color,
-                    weight: getComputedStyle(close).fontWeight};
-        });
-        root.dataset.theme = original;
-        return styles;
-    """, popup)
-    assert all(style["color"] == style["ink"] and int(style["weight"]) >= 600 for style in close_styles)
-    assert d.execute_script("""
-        const backdrop = getComputedStyle(document.body, '::after');
-        return backdrop.content !== 'none' && backdrop.backgroundColor === 'rgba(0, 0, 0, 0.18)'
-            && Number(backdrop.zIndex) < Number(getComputedStyle(arguments[0]).zIndex)
-            && backdrop.pointerEvents === 'none';
-    """, popup)
-    bounds = d.execute_script("const r=arguments[0].getBoundingClientRect();return [r.width,r.height,r.left,r.top,innerWidth,innerHeight]", popup)
-    assert bounds[0] <= bounds[4] * .97 + 1
-    assert bounds[1] <= bounds[5] * .97 + 1
-    assert abs(bounds[2] - (bounds[4] - bounds[0]) / 2) <= 1
-    assert abs(bounds[3] - (bounds[5] - bounds[1]) / 2) <= 1
-    d.find_element(By.TAG_NAME, "body").send_keys(Keys.ESCAPE)
-    assert_popup_closed(d, popup, cell)
-    assert d.execute_script("return getComputedStyle(document.body, '::after').content") == "none"
-    for slot, engine, capture in ((1, "sglang", "sglang_python_batch@0.5.14"), (2, "vllm", "vllm_python_batch@0.26.0")):
-        choose_slot(d, slot, engine, capture)
-        segments = cell.find_elements(By.CSS_SELECTOR, ".matrix-status")
-        assert len(segments) == slot + 1
-        widths = d.execute_script("return [...arguments[0].querySelectorAll('.matrix-status')].map(n=>n.getBoundingClientRect().width)", cell)
-        assert max(widths) - min(widths) <= 1
-        assert [segment.get_attribute("data-capture") for segment in segments] == selection(d)["keys"]
-    cell.click()
-    popup = d.find_element(By.CSS_SELECTOR, "body > .ttip-visible")
-    capture_select = d.find_element(By.CSS_SELECTOR, "[data-slot-capture='0']")
-    Select(capture_select).select_by_value("dynamo_v1@9.2.10")
-    assert d.execute_script("return document.activeElement===arguments[0]", capture_select)
-    assert selection(d)["keys"][0] == "dynamo_v1@9.2.10"
-    visible = d.execute_script("return [...arguments[0].querySelectorAll('.ttip-chunks th[data-cand]:not(.col-hidden)')].map(n=>n.dataset.cand)", popup)
-    assert "dynamo_v1@9.2.10" in visible and DEFAULTS[0] not in visible
-    assert visible == selection(d)["keys"]
-    Select(capture_select).select_by_value("dynamo_v1@9.2.7")
-    assert popup.is_displayed()
-    assert selection(d)["keys"][0] == "dynamo_v1@9.2.7"
+    d.set_window_size(viewport_width, 1200)
     try:
+        load(d, rendered_page)
+        cell = d.find_element(By.CSS_SELECTOR, "#tab-unified td.cell[data-cmp][data-ttip-id]")
+        assert len(cell.find_elements(By.CSS_SELECTOR, ".matrix-status")) == 1
+        d.execute_script("arguments[0].dispatchEvent(new PointerEvent('pointerover',{bubbles:true}));arguments[0].focus()", cell)
+        assert not cell.find_elements(By.CSS_SELECTOR, ".ttip-built")
+        assert not d.find_elements(By.CSS_SELECTOR, ".ttip-visible")
+        cell.send_keys(Keys.ENTER)
+        popup = WebDriverWait(d, 10).until(lambda b: b.find_element(By.CSS_SELECTOR, "body > .ttip-visible"))
+        close_styles = d.execute_script("""
+            const root = document.documentElement, original = root.dataset.theme;
+            const popup = arguments[0], close = popup.querySelector('.ttip-close');
+            const styles = ['light', 'dark'].map(theme => {
+                root.dataset.theme = theme;
+                return {color: getComputedStyle(close).color, ink: getComputedStyle(popup).color,
+                        weight: getComputedStyle(close).fontWeight};
+            });
+            root.dataset.theme = original;
+            return styles;
+        """, popup)
+        assert all(style["color"] == style["ink"] and int(style["weight"]) >= 600 for style in close_styles)
+        assert d.execute_script("""
+            const backdrop = getComputedStyle(document.body, '::after');
+            return backdrop.content !== 'none' && backdrop.backgroundColor === 'rgba(0, 0, 0, 0.18)'
+                && Number(backdrop.zIndex) < Number(getComputedStyle(arguments[0]).zIndex)
+                && backdrop.pointerEvents === 'none';
+        """, popup)
+        bounds = d.execute_script("const r=arguments[0].getBoundingClientRect();return [r.width,r.height,r.left,r.top,innerWidth,innerHeight]", popup)
+        assert bounds[0] <= bounds[4] * .97 + 1
+        assert bounds[1] <= bounds[5] * .97 + 1
+        assert abs(bounds[2] - (bounds[4] - bounds[0]) / 2) <= 1
+        assert abs(bounds[3] - (bounds[5] - bounds[1]) / 2) <= 1
+        d.find_element(By.TAG_NAME, "body").send_keys(Keys.ESCAPE)
+        assert_popup_closed(d, popup, cell)
+        assert d.execute_script("return getComputedStyle(document.body, '::after').content") == "none"
+        for slot, engine, capture in ((1, "sglang", "sglang_python_batch@0.5.14"), (2, "vllm", "vllm_python_batch@0.26.0")):
+            choose_slot(d, slot, engine, capture)
+            segments = cell.find_elements(By.CSS_SELECTOR, ".matrix-status")
+            assert len(segments) == slot + 1
+            widths = d.execute_script("return [...arguments[0].querySelectorAll('.matrix-status')].map(n=>n.getBoundingClientRect().width)", cell)
+            assert max(widths) - min(widths) <= 1
+            assert [segment.get_attribute("data-capture") for segment in segments] == selection(d)["keys"]
+        cell.click()
+        popup = d.find_element(By.CSS_SELECTOR, "body > .ttip-visible")
+        capture_select = d.find_element(By.CSS_SELECTOR, "[data-slot-capture='0']")
+        Select(capture_select).select_by_value("dynamo_v1@9.2.10")
+        assert d.execute_script("return document.activeElement===arguments[0]", capture_select)
+        assert selection(d)["keys"][0] == "dynamo_v1@9.2.10"
+        orders = d.execute_script("""
+            return [...arguments[0].querySelectorAll('.ttip-chunks')].map(table =>
+                [...table.querySelectorAll('th[data-cand]:not(.col-hidden)')].map(node => node.dataset.cand));
+        """, popup)
+        expected_tables = d.execute_script("""
+            const model = window.__conformanceCellModel(arguments[0]);
+            return model.variants ? model.variants.length : 1;
+        """, cell)
+        assert len(orders) == expected_tables
+        assert all("dynamo_v1@9.2.10" in order and DEFAULTS[0] not in order for order in orders)
+        assert all(order == selection(d)["keys"] for order in orders)
+        Select(capture_select).select_by_value("dynamo_v1@9.2.7")
+        assert popup.is_displayed()
+        assert selection(d)["keys"][0] == "dynamo_v1@9.2.7"
         close = popup.find_element(By.CSS_SELECTOR, ".ttip-close")
         if close_over_control:
             geometry = d.execute_script("""
                 const close = arguments[0].getBoundingClientRect(), x = close.x + close.width / 2;
-                const control = [...document.querySelectorAll('[data-col-toggle]')].find(node => {
-                    const r = node.getBoundingClientRect(); return r.width && r.left <= x && x <= r.right;
+                const control = [...document.querySelectorAll('.tab-panel.active [data-col-toggle]')].find(node => {
+                    const r = node.getBoundingClientRect(); return r.width && r.height && r.left + r.width / 2 >= x;
                 });
+                if (!control) return null;
+                // The close button can land in a gap between controls. Pan the
+                // matrix to place a real control beneath it before testing clicks.
+                const target = control.getBoundingClientRect();
+                window.scrollBy(target.x + target.width / 2 - x, 0);
                 const r = control.getBoundingClientRect();
                 return {control, height: outerHeight + 2 * (r.y + r.height / 2 - close.y - close.height / 2)};
             """, close)
-            d.set_window_size(2400, round(geometry["height"]))
+            assert geometry is not None, "active matrix has no column control to align beneath the popup close button"
+            d.set_window_size(viewport_width, round(geometry["height"]))
             WebDriverWait(d, 5).until(lambda browser: browser.execute_script("""
                 const c = arguments[0].getBoundingClientRect(), r = arguments[1].getBoundingClientRect();
-                return r.top < c.y + c.height / 2 && c.y + c.height / 2 < r.bottom;
+                const x = c.x + c.width / 2, y = c.y + c.height / 2;
+                return r.left < x && x < r.right && r.top < y && y < r.bottom
+                    && arguments[0].contains(document.elementFromPoint(x, y));
             """, close, geometry["control"]))
         close.click()
         assert_popup_closed(d, popup, cell)
@@ -612,8 +659,8 @@ def test_segments_click_only_popup_keyboard_and_immediate_selection(matrix_drive
                 "return arguments[0]._ttip.classList.contains('ttip-visible')", geometry["control"]))
             assert_popup_closed(d, popup, cell)
     finally:
-        if close_over_control:
-            d.set_window_size(2400, 1200)
+        d.set_window_size(2400, 1200)
+        load(d, rendered_page)
 
 
 @pytest.mark.parametrize("detailed", [False, True])
@@ -702,22 +749,30 @@ def test_transposed_table_keeps_group_rows_without_vertical_case_rules(matrix_dr
 def test_case_headings_and_cells_stay_click_only_in_all_views(matrix_driver, rendered_page, query, detailed):
     d = matrix_driver
     load(d, rendered_page, query)
-    if detailed:
-        d.find_element(By.CSS_SELECTOR, "[data-view-detailed]").click()
-    for selector in ("td.cell[data-ttip-id]", "th[data-ttip-id]"):
-        host = next(element for element in d.find_elements(By.CSS_SELECTOR, "#tab-unified " + selector) if element.is_displayed())
-        d.execute_script("arguments[0].dispatchEvent(new PointerEvent('pointerover',{bubbles:true}));arguments[0].focus()", host)
-        assert not d.find_elements(By.CSS_SELECTOR, ".ttip-visible")
-        assert not host.find_elements(By.CSS_SELECTOR, ".ttip-built")
-        host.send_keys(Keys.SPACE)
-        popup = WebDriverWait(d, 10).until(lambda b: b.find_element(By.CSS_SELECTOR, "body > .ttip-visible"))
-        assert popup.is_displayed()
-        d.find_element(By.TAG_NAME, "body").send_keys(Keys.ESCAPE)
-        assert_popup_closed(d, popup, host)
-        host.send_keys(Keys.SPACE)
-        popup = d.find_element(By.CSS_SELECTOR, "body > .ttip-pinned")
-        popup.find_element(By.CSS_SELECTOR, ".ttip-close").click()
-        assert_popup_closed(d, popup, host)
+    try:
+        if detailed:
+            d.find_element(By.CSS_SELECTOR, "[data-view-detailed]").click()
+        for selector in ("td.cell[data-ttip-id]", "th[data-ttip-id]"):
+            host = next(element for element in d.find_elements(By.CSS_SELECTOR, "#tab-unified " + selector) if element.is_displayed())
+            # Closing the modal can expose a hover-enabled control under the pointer.
+            ActionChains(d).move_to_element(host).perform()
+            WebDriverWait(d, 5).until(lambda browser: not browser.find_elements(
+                By.CSS_SELECTOR, ".column-control-tooltip.ttip-visible"))
+            d.execute_script("arguments[0].dispatchEvent(new PointerEvent('pointerover',{bubbles:true}));arguments[0].focus()", host)
+            assert not d.find_elements(By.CSS_SELECTOR, ".ttip-visible")
+            assert not host.find_elements(By.CSS_SELECTOR, ".ttip-built")
+            host.send_keys(Keys.SPACE)
+            popup = WebDriverWait(d, 10).until(lambda b: b.find_element(By.CSS_SELECTOR, "body > .ttip-visible"))
+            assert popup.is_displayed()
+            d.find_element(By.TAG_NAME, "body").send_keys(Keys.ESCAPE)
+            assert_popup_closed(d, popup, host)
+            host.send_keys(Keys.SPACE)
+            popup = d.find_element(By.CSS_SELECTOR, "body > .ttip-pinned")
+            popup.find_element(By.CSS_SELECTOR, ".ttip-close").click()
+            assert_popup_closed(d, popup, host)
+
+    finally:
+        load(d, rendered_page)
 
 
 def test_status_palette_and_source_blocker_are_distinct(matrix_driver, rendered_page):
@@ -759,6 +814,31 @@ def test_status_palette_and_source_blocker_are_distinct(matrix_driver, rendered_
     assert all(color != "rgba(0, 0, 0, 0)" for row in colors_by_theme.values() for color in row.values())
     assert all(colors_by_theme["light"][status] != colors_by_theme["dark"][status]
                for status in ("pass", "diverge", "leak", "error", "missing", "blocked"))
+
+
+@pytest.mark.parametrize("vertical", [False, True])
+def test_shared_parent_displays_missing_child_capture(matrix_driver, rendered_page, vertical):
+    d = matrix_driver
+    query = "?slots_tab-unified=vllm_python_batch%400.26.0%2C%2C"
+    load(d, rendered_page, query + ("&vertical=1" if vertical else ""))
+    result = d.execute_script("""
+        const hosts = [...document.querySelectorAll('#tab-unified td.cell[data-ttip-id]')];
+        const host = hosts.find(node => {
+            const cell = window.__conformanceCellModel(node);
+            return node.getBoundingClientRect().height > 0 && cell && cell.family === 'gpt_oss'
+                && cell.sub === 'tool_in_reason';
+        });
+        if (!host) return null;
+        const cell = window.__conformanceCellModel(host);
+        return {status:window.__conformanceOutputStatus({id:'tab-unified'}, cell,
+                    {key:'vllm_python_batch@0.26.0'}, 'golden'),
+                painted:host.querySelector('[data-capture="vllm_python_batch@0.26.0"]').className,
+                variants:cell.variants.map(variant=>variant.sub)};
+    """)
+    assert result is not None
+    assert result["status"] == "missing"
+    assert "status-missing" in result["painted"]
+    assert "gpt_oss_interrupted_reasoning_then_tool" in result["variants"]
 
 
 def test_popup_columns_follow_slot_order_after_swapping_engines(matrix_driver, rendered_page):

@@ -296,9 +296,10 @@ class History:
             ),
         )
 
-    def resolve(self, capture_id: str) -> dict:
+    def resolve(self, capture_id: str, *, view_capture_id: str | None = None) -> dict:
         if capture_id not in self.captures:
             raise ValueError(f"unknown capture in {self.directory}: {capture_id}")
+        view_capture_id = view_capture_id or capture_id
         state = {}
         for current in self.ordered_capture_ids():
             capture = self.captures[current]
@@ -359,15 +360,15 @@ class History:
             record = copy.deepcopy(change)
             record_metadata = record.pop("_record_metadata", None)
             metadata_capture_id = record.pop("_record_metadata_capture_id", None)
-            if record_metadata and metadata_capture_id != capture_id:
+            if record_metadata and metadata_capture_id != view_capture_id:
                 # Peer import and report readers must not treat an earlier recapture
-                # as a verified execution of a later sparse checkpoint.
+                # as a verified execution of a later checkpoint or derived view.
                 record_metadata.pop("verified_recapture", None)
             overrides = record.pop("_document_overrides", {})
             origin_capture_id = record.pop("_origin_capture_id")
             origin_capture = self.captures[origin_capture_id]
             case_document = _capture_document_metadata(origin_capture, self.implementation)
-            if origin_capture_id != capture_id:
+            if origin_capture_id != view_capture_id:
                 case_document["inherited_from"] = origin_capture["runtime_version"]
             provenance_override = overrides.pop("capture_provenance", None)
             if provenance_override is not None:
@@ -397,6 +398,13 @@ class Store:
     root: Path
     families: dict[str, Family]
     histories: dict[tuple[str, str], History]
+
+    def history_for_capture(self, family_name: str, implementation: str) -> History:
+        key = (family_name, implementation)
+        if key not in self.histories:
+            family = self.families[family_name]
+            self.histories[key] = History(family, implementation, {}, family.path.parent, {})
+        return self.histories[key]
 
 
 class PublicationCommitIndeterminate(OSError):
@@ -1373,7 +1381,7 @@ def materialize_store(
                         history.captures[capture_id]["runtime_version"]
                     ),
                 )
-                state = history.resolve(source_id)
+                state = history.resolve(source_id, view_capture_id=target_id)
                 if target_id == current_capture_id:
                     state = {
                         case_id: change
@@ -1650,11 +1658,12 @@ def _add_bound_legacy_cases(
     for case_id in additions:
         record = records[case_id]
         stimulus = record["stimulus"]
+        origin = record["document"].get("capture_origin")
         if (
             len(stimulus.keys() & {"ref", "inline"}) != 1
             or not isinstance(stimulus.get("semantic_sha256"), str)
             or not stimulus["semantic_sha256"]
-            or "capture_origin" in record["document"]
+            or (origin is not None and origin.get("crate_version") != capture["runtime_version"])
         ):
             return False
 
@@ -1867,9 +1876,9 @@ def _update_from_loose(
                 )
         for family_name in families:
             key = (family_name, implementation)
-            history = store.histories.get(key)
-            if history is None:
-                raise ValueError(f"no history file owns {capture_dir.name}/{family_name}")
+            if family_name not in store.families:
+                raise ValueError(f"no canonical family owns {capture_dir.name}/{family_name}")
+            history = store.history_for_capture(family_name, implementation)
             case_by_external = {}
             for case_id, case in history.family.cases.items():
                 for external_id in [case["display_id"], *case["historical_ids"]]:
@@ -1896,6 +1905,28 @@ def _update_from_loose(
                     # view is ingested again.
                     if metadata.get("capture_provenance") == {"format": MATERIALIZED_FORMAT}:
                         metadata.pop("capture_provenance")
+                    capture_origin = metadata.get("capture_origin")
+                    source_provenance = metadata.get("capture_provenance")
+                    if capture_origin is None and isinstance(source_provenance, dict):
+                        origin_fields = {
+                            key: source_provenance[key]
+                            for key in (
+                                "crate_version",
+                                "source_sha256",
+                                "git_commit",
+                                "adapter_sha256",
+                                "job_sha256",
+                            )
+                            if key in source_provenance
+                        }
+                        if {"crate_version", "source_sha256"} <= origin_fields.keys():
+                            capture_origin = origin_fields
+                    if capture_origin is not None:
+                        capture_origin = _validate_source_origin(
+                            capture_origin,
+                            f"{path}.capture_origin",
+                            runtime_version,
+                        )
                 for case_key, record in document["cases"].items():
                     external = (
                         family_name,
@@ -1935,6 +1966,7 @@ def _update_from_loose(
                         "observation": observation,
                         "document": {
                             **metadata,
+                            **({"capture_origin": capture_origin} if capture_origin else {}),
                             **({"record_metadata": record_metadata} if record_metadata else {}),
                         },
                     }
@@ -2000,12 +2032,21 @@ def _update_from_loose(
                 # Non-required snapshots are sparse deltas; absent rows inherit the prior result.
                 conflicts = []
                 corrections = []
+                provenance_enrichments = []
                 for case_id in sorted(set(resolved) & set(records)):
                     before = resolved[case_id]
                     after = records[case_id]
                     if _canonical_json(_capture_semantic(before, case_id)) == _canonical_json(
                         _capture_semantic(after, case_id)
                     ):
+                        origin = after["document"].get("capture_origin")
+                        captured_with = before["document"].get("captured_with", {})
+                        if (
+                            captured_with.get(implementation) != runtime_version
+                            and isinstance(origin, dict)
+                            and origin.get("crate_version") == runtime_version
+                        ):
+                            provenance_enrichments.append(case_id)
                         continue
                     if _is_correctable_capture_placeholder(
                         before,
@@ -2025,6 +2066,13 @@ def _update_from_loose(
                     for case_id in corrections:
                         target[case_id] = copy.deepcopy(records[case_id])
                     _replace_capture_snapshot(history, capture_dir.name, target)
+                    resolved = target
+                if provenance_enrichments:
+                    target = copy.deepcopy(resolved)
+                    for case_id in provenance_enrichments:
+                        target[case_id] = copy.deepcopy(records[case_id])
+                    _replace_capture_snapshot(history, capture_dir.name, target)
+                    resolved = target
                 additions = sorted(set(records) - set(resolved))
                 if not additions:
                     _compact_history(history)
@@ -2095,6 +2143,8 @@ def _update_from_loose(
                 "document_overrides": document_overrides,
             }
             captures[capture_dir.name] = capture
+            if not ordered_ids:
+                _set_capture_snapshot(history, capture_dir.name, history.resolve(capture_dir.name), {})
             capture_path = history.family.path.parent / f"{capture_dir.name}.yaml"
             history.capture_paths[capture_dir.name] = capture_path
             documents[capture_path] = capture

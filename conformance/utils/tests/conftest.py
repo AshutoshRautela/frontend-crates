@@ -5,6 +5,8 @@
 Both browser modules must take the page from here. test_browser_smoke.py used to
 declare its own module-scoped copy of this fixture, so a full run rendered the table
 twice — and the two renders were the bulk of the suite's wall clock."""
+import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -15,14 +17,28 @@ UTILS = Path(__file__).resolve().parents[1]
 REPO = UTILS.parents[1]
 sys.path.insert(0, str(UTILS / "src"))
 
+import unified_history  # noqa: E402
+
+
+@pytest.fixture(scope="session")
+def committed_unified_store():
+    # Read-only corpus guards share parsing; resolve() returns independent records.
+    return unified_history.load_store(UTILS.parent / "fixtures-unified-v2")
+
 
 @pytest.fixture(scope="session")
 def rendered_page(tmp_path_factory) -> Path:
     out = tmp_path_factory.mktemp("render") / "CONFORMANCE_v2.html"
-    subprocess.run(
-        [str(UTILS / "render_table_v2.sh"), "--output", str(out)],
-        check=True, cwd=REPO, capture_output=True, text=True,
-    )
+    if "CONFORMANCE_REPORT_HTML" in os.environ:
+        # CI supplies the canonical report from the render job to avoid rendering it twice.
+        report_html = Path(os.environ["CONFORMANCE_REPORT_HTML"])
+        shutil.copyfile(report_html, out)
+        shutil.copyfile(report_html.with_suffix(".json"), out.with_suffix(".json"))
+    else:
+        subprocess.run(
+            [str(UTILS / "render_table_v2.sh"), "--output", str(out)],
+            check=True, cwd=REPO, capture_output=True, text=True,
+        )
     return out
 
 

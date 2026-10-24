@@ -37,15 +37,19 @@ use crate::tool_calling::muse_glimmer::{
     GUIDED_CLOSE_MARKERS, GUIDED_COMPETITORS, GUIDED_CONTROL_MARKERS, MuseChannelScanner,
     guided_content_header, guided_header_holdback, guided_reasoning_close, guided_reasoning_open,
     guided_routing_header, guided_stray_header, guided_strip_text, guided_turn_end, muse_scanner,
+    muse_spark_guided_content_header, muse_spark_guided_header_holdback,
+    muse_spark_guided_reasoning_filter, muse_spark_guided_stray_header,
 };
 use crate::tool_calling::traits::{Result, Tool};
 use crate::unified::{
     GuidedChannel, GuidedGrammar, GuidedPrefix, GuidedPrefixContext, GuidedPrefixFactory,
     GuidedPrefixScanner, GuidedReasoning, GuidedRouted, NativeUnified, UnifiedParser,
-    UnifiedParserEvent, UnifiedParserOutput, UnifiedParserStartingState, count_guided_prefix_bytes,
+    UnifiedParserEvent, UnifiedParserInit, UnifiedParserOutput, UnifiedParserStartingState,
+    count_guided_prefix_bytes,
 };
 
-const INVOKE_START: &str = "<atem:invoke name=\"";
+// Share the exact ATEM opener with Spark's guided grammar to avoid format drift.
+pub(crate) const INVOKE_START: &str = "<atem:invoke name=\"";
 const INVOKE_END: &str = "</atem:invoke>";
 
 fn guided_invoke_prefix(context: GuidedPrefixContext<'_>) -> GuidedPrefix {
@@ -129,6 +133,10 @@ impl GuidedPrefixScanner for MuseGuidedPrefix {
 }
 
 impl NativeUnified for MuseChannelScanner {
+    fn preserve_message_phases(&mut self, enabled: bool) {
+        self.set_message_phases(enabled);
+    }
+
     fn preserve_special_tokens(&self) -> bool {
         true
     }
@@ -139,18 +147,40 @@ impl NativeUnified for MuseChannelScanner {
     /// prefilled thought and guided tool output are both honourable. Returning
     /// `None` here would silently reinstate the refusal this replaced.
     fn guided_reasoning(&self) -> Option<GuidedReasoning> {
+        // The shared scanner needs Spark's recipient/filter hooks on guided turns too.
+        if self.commentary_is_content() {
+            return Some(GuidedReasoning::Channel(GuidedChannel {
+                find_open: guided_reasoning_open,
+                find_close: |haystack, _, _| guided_reasoning_close(haystack),
+                find_turn_end: |haystack, _, _| guided_turn_end(haystack),
+                find_stray: muse_spark_guided_stray_header,
+                find_routing: guided_routing_header,
+                find_transition: muse_spark_guided_content_header,
+                holdback: muse_spark_guided_header_holdback,
+                strip_text: guided_strip_text,
+                reasoning_filter: Some(muse_spark_guided_reasoning_filter),
+                competitors: &GUIDED_COMPETITORS,
+                close_markers: &GUIDED_CLOSE_MARKERS,
+                response_literal_markers: &[],
+                header_pending: None,
+                envelope_owned: false,
+            }));
+        }
         Some(GuidedReasoning::Channel(GuidedChannel {
             find_open: guided_reasoning_open,
-            find_close: guided_reasoning_close,
-            find_turn_end: guided_turn_end,
+            find_close: |haystack, _, _| guided_reasoning_close(haystack),
+            find_turn_end: |haystack, _, _| guided_turn_end(haystack),
             find_stray: guided_stray_header,
             find_routing: guided_routing_header,
             find_transition: guided_content_header,
             holdback: guided_header_holdback,
             strip_text: guided_strip_text,
+            reasoning_filter: None,
             competitors: &GUIDED_COMPETITORS,
             close_markers: &GUIDED_CLOSE_MARKERS,
             response_literal_markers: &[],
+            header_pending: None,
+            envelope_owned: false,
         }))
     }
 
@@ -161,7 +191,9 @@ impl NativeUnified for MuseChannelScanner {
                 .map(|m| m.to_string())
                 .collect(),
             invoke_start: INVOKE_START.to_string(),
+            invoke_start_alternates: Vec::new(),
             invoke_end: INVOKE_END.to_string(),
+            native_body_start: None,
             // The marker-only rules are enough here: an ATEM invoke is delimited by a
             // literal opener and closer, with no grammar-aware location rule of the
             // kind gemma4's value wrapping needs.
@@ -171,9 +203,10 @@ impl NativeUnified for MuseChannelScanner {
         }
     }
 
-    fn apply_native_init(&mut self, starting_state: UnifiedParserStartingState) {
+    fn apply_native_init(&mut self, init: &UnifiedParserInit) -> Result<()> {
         self.reset_stream();
-        self.apply_starting_state(starting_state);
+        self.apply_starting_state(init.starting_state);
+        Ok(())
     }
 
     fn restore_native_state(&mut self, starting_state: UnifiedParserStartingState) {
@@ -215,6 +248,8 @@ fn push_event(output: &mut UnifiedParserOutput, event: UnifiedParserEvent) {
         UnifiedParserEvent::Text(text) => output.push_text(text),
         UnifiedParserEvent::Reasoning(text) => output.push_reasoning(text),
         UnifiedParserEvent::ToolCall(call) => output.push_call(call),
+        // Boundaries must survive aggregation for independent Responses message lifecycles.
+        boundary => output.events.push(boundary),
     }
 }
 
@@ -1059,7 +1094,9 @@ mod tests {
             for event in &out {
                 let payload = match event {
                     UnifiedEvent::Reasoning { text } | UnifiedEvent::Text { text } => text.clone(),
-                    UnifiedEvent::ToolCall { .. } => continue,
+                    UnifiedEvent::ToolCall { .. }
+                    | UnifiedEvent::MessageStart { .. }
+                    | UnifiedEvent::MessageEnd => continue,
                 };
                 for m in markers {
                     assert!(
