@@ -275,6 +275,18 @@ unified:
     tool_parser: kimi_k3
     golden_spec: kimi_k3.yaml
     leak_markers: ["<|open|>", "<|close|>", "<|sep|>", "<|end_of_msg|>"]
+  minimax_m3:
+    capture_pipelines:
+      vllm_python: ["minimax_m3", "minimax_m3"]
+      sglang_python: ["minimax-m3", "minimax-m3"]
+      dynamo_v1: ["minimax_m3", "minimax_m3"]
+    vllm_tokenizer_markers: ["<mm:think>", "</mm:think>", "]<]minimax[>["]
+    registry: minimax_m3
+    native: true
+    reasoning_parser: minimax_m3
+    tool_parser: minimax_m3
+    golden_spec: minimax_m3.yaml
+    leak_markers: ["]<]minimax[>["]
   muse_glimmer:
     capture_pipelines:
       sglang_python: ["muse", "muse"]
@@ -405,6 +417,7 @@ unified_display:
     kimi_k2: 'Single Family Test: Kimi K2-specific tests'
     qwen3: 'XML function-header boundaries: Qwen3 and Nemotron 3'
     kimi: 'Single Family Test: Kimi K3 XTML'
+    minimax_m3: 'Single Family Test: MiniMax M3 native recovery'
     muse: 'Single Family Test: Muse-specific'
     dsml: 'DSML framing: DeepSeek V4 and V4.1 content-to-call separator'
   group_overrides:

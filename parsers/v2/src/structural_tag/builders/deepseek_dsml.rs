@@ -44,6 +44,7 @@ impl DeepSeekDsmlFormat {
                     json_schema: resolve_tool_schema(tool, policy.schema_mode),
                     style: JsonSchemaStyle::DeepseekXml,
                     any_order: tool_arguments_any_order,
+                    max_whitespace_cnt: None,
                 })),
                 end: INVOKE_END.to_string(),
             })

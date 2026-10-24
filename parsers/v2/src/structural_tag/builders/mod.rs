@@ -3,11 +3,13 @@
 
 mod deepseek_dsml;
 mod glm47;
+mod minimax_m3;
 mod qwen3_coder;
 mod templated_tool_calls;
 
 pub(crate) use deepseek_dsml::DEEPSEEK_DSML;
 pub(crate) use glm47::GLM47;
+pub(crate) use minimax_m3::MINIMAX_M3;
 pub(crate) use qwen3_coder::QWEN3_CODER;
 
 use serde_json::Value;
@@ -29,6 +31,13 @@ pub struct StructuralTagBuilder {
 impl StructuralTagBuilder {
     pub(super) const fn new(grammar: &'static dyn ToolCallGrammar) -> Self {
         Self { grammar }
+    }
+
+    /// Whether this grammar is tested with a backend's reasoning gate bypassed.
+    /// Consumers must also check backend support and apply the override only
+    /// after successfully building a tag for the request.
+    pub fn supports_reasoning_gate_override(&self) -> bool {
+        self.grammar.supports_reasoning_gate_override()
     }
 
     /// Returns `None` when this request needs no structural constraint.
@@ -82,6 +91,7 @@ impl StructuralTagBuilder {
         let format = if options.reasoning_boundary == ReasoningBoundary::StructuralTag {
             wrap_reasoning_if_needed(
                 context.starts_in_reasoning,
+                context.allow_unprefilled_reasoning,
                 self.grammar,
                 exclude_special_tokens,
                 format,
@@ -94,6 +104,10 @@ impl StructuralTagBuilder {
 }
 
 pub(super) trait ToolCallGrammar: Send + Sync {
+    fn supports_reasoning_gate_override(&self) -> bool {
+        false
+    }
+
     fn reasoning_begin(&self) -> Option<&'static str>;
 
     fn reasoning_end(&self) -> Option<&'static str>;
@@ -133,6 +147,7 @@ pub(super) trait ToolCallGrammar: Send + Sync {
                     json_schema: schema.clone(),
                     style: JsonSchemaStyle::Json,
                     any_order: false,
+                    max_whitespace_cnt: None,
                 }),
             ],
         }))
@@ -211,11 +226,12 @@ fn reasoning_content(grammar: &dyn ToolCallGrammar, exclude_special_tokens: bool
 
 fn reasoning_tag(
     grammar: &dyn ToolCallGrammar,
+    reasoning_begin: &str,
     reasoning_end: &str,
     exclude_special_tokens: bool,
 ) -> Format {
     Format::Tag(TagFormat {
-        begin: String::new(),
+        begin: reasoning_begin.to_string(),
         content: Box::new(reasoning_content(grammar, exclude_special_tokens)),
         end: reasoning_end.to_string(),
     })
@@ -223,20 +239,29 @@ fn reasoning_tag(
 
 fn wrap_reasoning_if_needed(
     starts_in_reasoning: bool,
+    allow_unprefilled_reasoning: bool,
     grammar: &dyn ToolCallGrammar,
     exclude_special_tokens: bool,
     suffix: Format,
 ) -> anyhow::Result<Format> {
-    if !starts_in_reasoning {
+    if !starts_in_reasoning && !allow_unprefilled_reasoning {
         return Ok(suffix);
     }
 
+    let reasoning_begin = if starts_in_reasoning {
+        ""
+    } else {
+        grammar.reasoning_begin().ok_or_else(|| {
+            anyhow::anyhow!("reasoning begin tag is not configured for structural tag")
+        })?
+    };
     let reasoning_end = grammar
         .reasoning_end()
         .ok_or_else(|| anyhow::anyhow!("reasoning end tag is not configured for structural tag"))?;
 
     let mut elements = vec![reasoning_tag(
         grammar,
+        reasoning_begin,
         reasoning_end,
         exclude_special_tokens,
     )];
@@ -244,6 +269,17 @@ fn wrap_reasoning_if_needed(
         elements.push(Format::ConstString(ConstStringFormat {
             value: grammar.reasoning_suffix().to_string(),
         }));
+    }
+    if !starts_in_reasoning {
+        // Only the reasoning prefix is optional; keep one copy of the tool schemas.
+        elements = vec![Format::Or(OrFormat {
+            elements: vec![
+                Format::ConstString(ConstStringFormat {
+                    value: String::new(),
+                }),
+                Format::Sequence(SequenceFormat { elements }),
+            ],
+        })];
     }
     elements.push(suffix);
 

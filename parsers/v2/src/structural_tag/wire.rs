@@ -85,6 +85,7 @@ pub(crate) struct SequenceFormat {
 pub(crate) enum JsonSchemaStyle {
     Json,
     QwenXml,
+    MinimaxM3Xml,
     DeepseekXml,
     GlmXml,
 }
@@ -95,6 +96,8 @@ pub(crate) struct JsonSchemaFormat {
     pub style: JsonSchemaStyle,
     #[serde(skip_serializing_if = "is_false")]
     pub any_order: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_whitespace_cnt: Option<usize>,
 }
 
 fn is_false(value: &bool) -> bool {

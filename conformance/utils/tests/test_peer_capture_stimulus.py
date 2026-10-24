@@ -563,7 +563,11 @@ def test_vllm_reasoning_close_ids_appear_only_when_each_split_marker_completes(p
     adapter = sys.modules["capture_vllm_unified"]
     for family in adapter.FAMILY_PARSERS:
         tokenizer = adapter.StubTokenizer(family)
-        close = "<|close|>think<|sep|>" if family == "kimi_k3" else "<channel|>" if family == "gemma4" else "</think>"
+        close = {
+            "kimi_k3": "<|close|>think<|sep|>",
+            "gemma4": "<channel|>",
+            "minimax_m3": "</mm:think>",
+        }.get(family, "</think>")
         marker_ids = tokenizer.encode(close)
         for split in range(1, len(close)):
             partial = close[:split]

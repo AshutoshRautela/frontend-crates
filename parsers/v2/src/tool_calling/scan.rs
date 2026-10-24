@@ -304,12 +304,14 @@ pub(crate) struct InvokeScan {
 }
 
 /// Immutable family recipe for a request-local invoke boundary.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(crate) enum InvokeBoundaryFactory {
     Stateless(InvokeScan),
     Custom(fn() -> Box<dyn InvokeBoundary>),
     /// Native XML boundaries with a separate guided-prefix grammar.
     NativeOnly(fn() -> Box<dyn InvokeBoundary>),
+    /// Grammars whose raw parameter boundaries depend on request tool schemas.
+    Configured(std::sync::Arc<dyn Fn() -> Box<dyn InvokeBoundary> + Send + Sync>),
 }
 
 #[derive(Clone, Copy)]
@@ -322,6 +324,9 @@ pub(crate) struct GuidedInvokePrefixContext {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum GuidedInvokePrefix {
     NoMatch,
+    /// A complete family header owns a native body, not a guided JSON prefix.
+    /// Routing may recover it only at an eligible request/payload boundary.
+    NativeBody,
     Pending,
     Match(usize),
     Strip(usize),
@@ -336,6 +341,7 @@ impl InvokeBoundaryFactory {
         match self {
             Self::Stateless(scan) => Box::new(StatelessInvokeBoundary { scan }),
             Self::Custom(create) | Self::NativeOnly(create) => create(),
+            Self::Configured(create) => create(),
         }
     }
 
@@ -1035,6 +1041,7 @@ impl<E: InvokeEmitter> WrappedBlockScanner<E> {
     pub(crate) fn new(spec: WrappedBlockSpec, emitter: E) -> Self {
         let invoke_boundary = spec
             .invoke_boundary_factory
+            .clone()
             .map(InvokeBoundaryFactory::create);
         Self {
             spec,
@@ -1133,7 +1140,7 @@ impl<E: InvokeEmitter> WrappedBlockScanner<E> {
     }
 
     pub(crate) fn invoke_boundary_factory(&self) -> Option<InvokeBoundaryFactory> {
-        self.spec.invoke_boundary_factory
+        self.spec.invoke_boundary_factory.clone()
     }
 
     /// The model-emitted id for a call at `tool_index`, delegated to the
@@ -1624,7 +1631,7 @@ impl<E: InvokeEmitter> WrappedBlockScanner<E> {
                             flush,
                             &self.spec.invoke_start,
                             &self.spec.invoke_end,
-                            self.spec.invoke_boundary_factory,
+                            self.spec.invoke_boundary_factory.clone(),
                         )
                     },
                 );

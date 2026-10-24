@@ -26,7 +26,7 @@ SRC = UTILS / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from conformance.utils.tests.schema_oracle import matches_schema
+from conformance.utils.tests.schema_oracle import _local_reference, matches_schema
 
 import pytest  # noqa: E402
 import yaml  # noqa: E402
@@ -837,6 +837,7 @@ def test_unified_case_counts_match_the_generator():
             "glm47": 117,
             "kimi_k2": 117,
             "kimi_k3": 124,
+            "minimax_m3": 118,
             "muse_glimmer": 126,
             "qwen3": 122,
             "nemotron_v3": 124,
@@ -845,14 +846,14 @@ def test_unified_case_counts_match_the_generator():
             assert per_family[fam] == 159
         else:
             assert per_family[fam] == family_specific + len(CONFORMANCE_CASES), f"{fam} diverged from the expected case count"
-    assert sum(per_family.values()) == 1098 + len(NATIVE_FAMILIES) * len(CONFORMANCE_CASES) + 159
+    assert sum(per_family.values()) == 1216 + len(NATIVE_FAMILIES) * len(CONFORMANCE_CASES) + 159
 
 
 def test_deferred_case_ids_are_not_in_the_active_taxonomy():
     deferred = {"1-2", "5-5", "6-2", "32-6", "50-1", "50-2"} | {
         f"31-{number}" for number in range(31, 41)
     }
-    assert len(UNIFIED_TAX) == 160 + len(CONFORMANCE_CASES)
+    assert len(UNIFIED_TAX) == 162 + len(CONFORMANCE_CASES)
     assert not {f"UNIFIED.{case_id}" for case_id in deferred} & {
         numbered_id(scenario) for scenario in UNIFIED_TAX
     }
@@ -1128,6 +1129,7 @@ def _family_value(scenario, family):
             "kimi_k3": "<|close|>call<|sep|>",
             "muse_glimmer": "</atem:function_calls>",
             "qwen3": "</tool_call>",
+            "minimax_m3": "]<]minimax[>[</tool_call>",
         }[family]
         return f"git log {close} --oneline"
     if scenario in {"reason_markup_in_arg", "reason_markup_in_arg_with_text"}:
@@ -1220,13 +1222,108 @@ def _parse_gemma_value(raw, index=0):
     return json.loads(token[0]), index + token.end()
 
 
-def _native_input_calls(family, raw):
+def _fixture_property_schema(parameters, key, root=None, references=()):
+    root = parameters if root is None else root
+    if key in parameters.get("properties", {}):
+        return parameters["properties"][key]
+    if "$ref" in parameters:
+        reference = parameters["$ref"]
+        assert reference not in references, ("cyclic fixture root reference", reference)
+        return _fixture_property_schema(
+            _local_reference(root, reference), key, root, references + (reference,)
+        )
+    for keyword in ("allOf", "anyOf", "oneOf"):
+        found = [_fixture_property_schema(branch, key, root, references) for branch in parameters.get(keyword, [])]
+        found = [schema for schema in found if schema]
+        if found:
+            return found[0] if len(found) == 1 else {keyword: found}
+    return {}
+
+
+def _m3_input_calls(raw, tools):
+    """Read complete authored tags independently of the Rust recovery scanner.
+
+    This intentionally handles fixture grammar only. A malformed or unfinished
+    node is not treated as evidence for a complete expected call.
+    """
+    ns = "]<]minimax[>["
+    header = re.compile(re.escape(ns) + r'<invoke name="([^"]+)">')
+    opener = re.compile(re.escape(ns) + r'<([^<>/\s]+)>')
+
+    def node(at, schema, root):
+        match = opener.match(raw, at)
+        if match is None:
+            return None
+        key = match[1]
+        at = match.end()
+        close = ns + f"</{key}>"
+        declared = schema.get("type")
+        string = declared == "string" or isinstance(declared, list) and "string" in declared
+        if not string and opener.match(raw, at):
+            values = {}
+            items = []
+            while not raw.startswith(close, at):
+                child_match = opener.match(raw, at)
+                if child_match is None:
+                    return None
+                child_schema = schema.get("items", {}) if declared == "array" else _fixture_property_schema(schema, child_match[1])
+                child = node(at, child_schema, root)
+                if child is None:
+                    return None
+                child_key, value, at = child
+                values[child_key] = value
+                items.append(value)
+            value = items if declared == "array" else values
+        else:
+            end = raw.find(close, at)
+            if end < 0:
+                return None
+            value = raw[at:end]
+            at = end
+            if declared == "array" and not value.startswith("["):
+                schema = schema.get("items", {})
+            if value == "null" and matches_schema(None, schema, root):
+                value = None
+            elif not matches_schema(value, schema, root):
+                try:
+                    decoded = json.loads(value)
+                except json.JSONDecodeError:
+                    pass
+                else:
+                    if matches_schema(decoded, schema, root):
+                        value = decoded
+        return key, value, at + len(close)
+
+    calls = []
+    cursor = 0
+    while match := header.search(raw, cursor):
+        name = match[1]
+        root = next((tool.get("parameters", {}) for tool in tools if tool["name"] == name), {})
+        arguments = {}
+        cursor = match.end()
+        while parameter := opener.match(raw, cursor):
+            parsed = node(cursor, _fixture_property_schema(root, parameter[1]), root)
+            if parsed is None:
+                break
+            key, value, cursor = parsed
+            if key in arguments:
+                previous = arguments[key]
+                arguments[key] = (previous if isinstance(previous, list) else [previous]) + [value]
+            else:
+                arguments[key] = value
+        calls.append({"kind": "tool_call", "name": name, "arguments": arguments})
+    return calls
+
+
+def _native_input_calls(family, raw, tools=()):
     """Read authored complete argument fields, not runtime recovery decisions.
 
     This fixture-only projection ignores invoke EOF policy: a syntactically present
     body is not evidence that the parser must dispatch it. The caller keeps DSML's
     empty-output EOF contract separate.
     """
+    if family == "minimax_m3":
+        return _m3_input_calls(raw, tools)
     if family == "glm47":
         calls = []
         cursor = 0
@@ -1393,6 +1490,7 @@ def _assert_malformed_recovery(family, case):
         "deepseek_v41": '<｜DSML｜ invoke name="echo">',
         "gemma4": "<|tool_call>call:echo{",
         "muse_glimmer": "<|start|>assistant to=echo<|message|>",
+        "minimax_m3": ']<]minimax[>[<invoke name="echo">',
     }
     at = raw.index(openers[family])
     prefix, suffix = raw[:at], raw[at:]
@@ -1405,6 +1503,7 @@ def _assert_malformed_recovery(family, case):
         "deepseek_v4": "</｜DSML｜parameter></｜DSML｜invoke>",
         "deepseek_v41": "</｜DSML｜ parameter></｜DSML｜ invoke>",
         "gemma4": "}}<tool_call|>", "muse_glimmer": "</atem:invoke>",
+        "minimax_m3": "]<]minimax[>[</value>]<]minimax[>[</invoke>",
     }
     assert closers[family] in prefix
     echoes = [{"kind": "tool_call", "name": "echo", "arguments": {"value": value}} for value in ("é", "Café")]
@@ -1412,7 +1511,7 @@ def _assert_malformed_recovery(family, case):
     bad = []
     if family == "kimi_k2":
         bad = [{"kind": "tool_call", "name": "bad", "arguments": {}}]
-    elif family in {"qwen3", "glm47", "deepseek_v4", "muse_glimmer"}:
+    elif family in {"qwen3", "glm47", "deepseek_v4", "muse_glimmer", "minimax_m3"}:
         bad = [{"kind": "tool_call", "name": "bad", "arguments": {"value": '{"x":"unfinished'}}]
     assert case["golden"] == bad + echoes
     assert case["tools"] == [
@@ -1420,6 +1519,40 @@ def _assert_malformed_recovery(family, case):
         {"name": "echo", "parameters": {"type": "object", "properties": {"value": {"type": "string"}}, "required": ["value"]}},
     ]
     return echoes
+
+
+_GUIDED_NATIVE_RECOVERY_SCENARIOS = (
+    "guided_json_native_markup_only",
+    "guided_native_after_prefilled_reasoning_required",
+    "guided_native_after_prefilled_reasoning_named",
+)
+
+
+def _assert_guided_native_recovery(family, scenario, case):
+    """Pin the native stimulus and the deliberate M3-only recovery contract."""
+    assert family == "minimax_m3"
+    assert scenario in _GUIDED_NATIVE_RECOVERY_SCENARIOS
+    prefilled = scenario != "guided_json_native_markup_only"
+    named = scenario == "guided_native_after_prefilled_reasoning_named"
+    call = {"kind": "tool_call", "name": "get_weather", "arguments": {"city": "Paris"}}
+    reasoning = [{"kind": "reasoning", "text": "Check."}] if prefilled else []
+    assert case["init"] == {
+        "starting_state": "Reasoning" if prefilled else "None",
+        "tool_output_mode": "GuidedJson",
+        "named_tool": "get_weather" if named else None,
+    }, (family, scenario, "native-recovery request contract")
+    prefix = "Check." + control_tokens(family)[1] if prefilled else G.default_response_prefix(family)
+    assert case["input"] == prefix + G.r_tool(family, "get_weather", "city", "Paris", 0), (
+        family, scenario, "native-recovery input framing",
+    )
+    # Check the semantic call independently of the generator's golden output.
+    assert _native_input_calls(family, case["input"]) == [call], (
+        family, scenario, "native-recovery input contract",
+    )
+    expected = reasoning + [call]
+    assert case["golden"] == expected, (family, scenario, "native-recovery output contract")
+    assert case["finish_reason"] == "stop", (family, scenario, "native-recovery backend finish")
+    return reasoning
 
 
 def _assert_input_carries_events(family: str, scenario: str, case: dict) -> None:
@@ -1431,8 +1564,9 @@ def _assert_input_carries_events(family: str, scenario: str, case: dict) -> None
     raw = case["input"]
     tools = [event for event in case["golden"] if event["kind"] == "tool_call"]
     if tools:
-        if case["init"]["tool_output_mode"] == "Native":
-            candidates = _native_input_calls(family, raw)
+        if (case["init"]["tool_output_mode"] == "Native"
+                or (family == "minimax_m3" and scenario in _GUIDED_NATIVE_RECOVERY_SCENARIOS)):
+            candidates = _native_input_calls(family, raw, case.get("tools", []))
             for candidate in candidates:
                 tool_schema = next(
                     (tool for tool in case.get("tools", []) if tool["name"] == candidate["name"]),
@@ -1443,16 +1577,15 @@ def _assert_input_carries_events(family: str, scenario: str, case: dict) -> None
                 parameters = tool_schema.get("parameters", {})
                 properties = parameters.get("properties", {})
                 for key, value in candidate["arguments"].items():
-                    schema = properties.get(key, {})
-                    if family not in {"qwen3", "glm47"} or not isinstance(value, str):
+                    schema = _fixture_property_schema(parameters, key)
+                    if family not in {"qwen3", "glm47", "minimax_m3"} or not isinstance(value, str):
                         continue
                     if value == "null" and matches_schema(None, schema, parameters):
                         candidate["arguments"][key] = None
                     elif (not matches_schema(value, schema, parameters)
-                          or (family == "qwen3" and scenario in {
+                          or (family in {"qwen3", "minimax_m3"} and scenario in {
                               "schema_integer_const_ambiguous", "schema_object_const_union",
-                              "schema_type_array_string_integer",
-                          })):
+                          }) or (family == "qwen3" and scenario == "schema_type_array_string_integer")):
                         try:
                             decoded = json.loads(value)
                         except json.JSONDecodeError:
@@ -1524,6 +1657,8 @@ def _assert_cross_family_contract(corpus):
     for family in NATIVE_FAMILIES:
         for cid, case in corpus[family].items():
             scenario = _scenario_of(cid, family)
+            if family == "minimax_m3" and scenario in _GUIDED_NATIVE_RECOVERY_SCENARIOS:
+                _assert_guided_native_recovery(family, scenario, case)
             _assert_input_carries_events(family, scenario, case)
             if scenario == "guided_json_quoted_bare_tool_header_in_answer":
                 # A tool name inside a thought is prose, not a recipient header.
@@ -1537,6 +1672,10 @@ def _assert_cross_family_contract(corpus):
                 init["starting_state"] = "None"
             events = (_assert_malformed_recovery(family, case) if scenario == "malformed_json_then_two_valid_calls"
                       else _logical_events(scenario, family, case["golden"]))
+            if family == "minimax_m3" and scenario in _GUIDED_NATIVE_RECOVERY_SCENARIOS:
+                # Exact input/output assertions above precede normalization of
+                # this documented exception; unrelated guided cases stay strict.
+                events = [event for event in events if event["kind"] != "tool_call"]
             if scenario in {"schema_integer_const_ambiguous", "schema_object_const_union", "schema_type_array_string_integer"}:
                 probe = next(probe for probe in CONFORMANCE_CASES if scenario == f"schema_{probe['name']}")
                 expected_events = [{"kind": "tool_call", "name": "schema_probe", "arguments": schema_arguments(family, probe)}]
@@ -1594,6 +1733,20 @@ def _assert_cross_family_contract(corpus):
 
 def test_all_scenarios_preserve_cross_family_input_and_output_contracts():
     _assert_cross_family_contract({family: build_cases(family) for family in NATIVE_FAMILIES})
+
+
+@pytest.mark.parametrize("scenario", _GUIDED_NATIVE_RECOVERY_SCENARIOS)
+@pytest.mark.parametrize("mutation", ["dispatch", "native_argument"])
+def test_guided_native_recovery_contract_rejects_changed_calls(scenario, mutation):
+    family = "minimax_m3"
+    case = build_cases(family)[f"UNIFIED.{scenario}.{family}"]
+    _assert_guided_native_recovery(family, scenario, case)
+    if mutation == "dispatch":
+        case["golden"] = [event for event in case["golden"] if event["kind"] != "tool_call"]
+    else:
+        case["input"] = case["input"].replace("Paris", "Rome")
+    with pytest.raises(AssertionError, match="native-recovery"):
+        _assert_guided_native_recovery(family, scenario, case)
 
 
 @pytest.mark.parametrize("family", [family for family in NATIVE_FAMILIES if family != "muse_glimmer"])
