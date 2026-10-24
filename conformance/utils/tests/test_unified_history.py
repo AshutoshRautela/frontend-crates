@@ -180,6 +180,20 @@ def test_complete_snapshot_skips_a_family_without_a_native_unified_parser(tmp_pa
     with pytest.raises(ValueError, match="missing family: qwen3"):
         unified_history._sync_current_corpus(store, loose, complete_snapshot=True)
 
+    # The exemption covers only a family absent from both roots: an input-only
+    # document (here with no cases) must not slip past the guard and retire the
+    # stored cases.
+    input_dir = loose / "inputs/gpt_oss"
+    input_dir.mkdir(parents=True)
+    (input_dir / "UNIFIED.1-1.yaml").write_text(
+        unified_history.dump_yaml(
+            {"family": "gpt_oss", "mode": "unified", "model_label": "gpt_oss", "cases": {}}
+        )
+    )
+    store = unified_history.load_store(root)
+    with pytest.raises(ValueError, match="missing family: gpt_oss"):
+        unified_history._sync_current_corpus(store, loose, complete_snapshot=True)
+
 
 def test_current_corpus_adds_a_registered_family(tmp_path):
     loose = tmp_path / "loose"

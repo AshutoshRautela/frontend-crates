@@ -2253,11 +2253,12 @@ def _sync_current_corpus(
             for root in golden_roots
             for path in sorted((root / family_name).glob("*.yaml"))
         ]
-        if (
-            complete_snapshot
-            and (not input_paths or not golden_paths)
-            and family_name not in uncaptured_families
-        ):
+        # Only a family with no native capture may be absent, and only when it is absent
+        # on both sides: an input-only document would otherwise retire its stored cases.
+        absent_uncaptured = (
+            family_name in uncaptured_families and not input_paths and not golden_paths
+        )
+        if complete_snapshot and (not input_paths or not golden_paths) and not absent_uncaptured:
             raise ValueError(f"complete current snapshot is missing family: {family_name}")
         input_documents = [
             (path, _load_loose_document(path, family_name)) for path in input_paths
