@@ -156,10 +156,20 @@ def _write_loose_gemma4(loose: Path) -> None:
     (golden_dir / f"{case_key}.yaml").write_text(unified_history.dump_yaml(golden_document))
 
 
-def test_complete_snapshot_skips_a_family_without_a_native_unified_parser(tmp_path):
-    # `gpt_oss` is registered for the Unified report with `native: false` (the split
-    # Harmony parser, dynamo_v1 captures only): the live Unified capture never produces
-    # it, so a complete current snapshot does not have to carry it.
+def test_complete_snapshot_skips_a_family_without_a_native_unified_parser(tmp_path, monkeypatch):
+    # A family registered for the Unified report with `native: false` (as GPT-OSS was on the
+    # split Harmony parser before #434) has no live Unified capture, so a complete current
+    # snapshot does not have to carry it. The shipped registry has no such family today, so
+    # the test supplies its own.
+    monkeypatch.setattr(
+        unified_history,
+        "_unified_registry_rows",
+        lambda: {
+            "gemma4": {"native": True},
+            "gpt_oss": {"native": False},
+            "qwen3": {"native": True},
+        },
+    )
     root = tmp_path / "store"
     _write_family(root)
     _write_capture(root, "0.26.0", {"text_only": _change()})

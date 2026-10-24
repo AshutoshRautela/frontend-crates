@@ -2187,6 +2187,14 @@ def _preserve_historical_stimulus(
     )
 
 
+def _unified_registry_rows() -> dict:
+    """The `unified` rows of the parser registry; tests substitute their own registry."""
+    registry = yaml.safe_load(
+        (Path(__file__).resolve().parent / "parser_families.yaml").read_text()
+    ) or {}
+    return registry.get("unified", {})
+
+
 def _shared_corpus_roots(loose_root: Path, base: str) -> list[Path]:
     """The canonical authored corpus has one current root per document type."""
     return [loose_root / base]
@@ -2209,9 +2217,7 @@ def _sync_current_corpus(
     input_roots = _shared_corpus_roots(loose_root, "inputs")
     golden_roots = _shared_corpus_roots(loose_root, "golden")
 
-    unified_rows = (
-        yaml.safe_load((Path(__file__).resolve().parent / "parser_families.yaml").read_text()) or {}
-    ).get("unified", {})
+    unified_rows = _unified_registry_rows()
     registered_families = set(unified_rows)
     # A family registered for the Unified report without a native Unified parser
     # (`native: false`, e.g. GPT-OSS on the split Harmony parser) has no live capture to
