@@ -284,3 +284,22 @@ fn decoder_matches_the_flatten_oracle_from_a_value() {
         }
     }
 }
+
+#[test]
+#[ignore = "F1: role-first decoding skips the number-range refusal on unknown fields"]
+fn review_f1_unknown_number_keeps_the_oracle_refusal() {
+    let input = r#"{"role":"user","content":"hi","x":1e400}"#;
+    let oracle = text(
+        serde_json::from_str::<Oracle>(input)
+            .err()
+            .expect("oracle refuses"),
+    );
+    assert_eq!(oracle, "number out of range");
+    let fallback = r#"{"content":"hi","x":1e400,"role":"user"}"#;
+    assert_eq!(
+        text(serde_json::from_str::<ChatCompletionRequestMessage>(fallback).unwrap_err()),
+        oracle
+    );
+    let decoded = serde_json::from_str::<ChatCompletionRequestMessage>(input).map_err(text);
+    assert_eq!(decoded, Err(oracle), "{input}");
+}
