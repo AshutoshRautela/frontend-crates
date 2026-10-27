@@ -388,6 +388,10 @@ fn check(
     let on = run(chunks, &init, end, true);
     tally.runs += 1;
     let at = format!("{} {mode:?} {label} {end:?}", stream.id);
+    check_runs(&at, &input, chunks, &off, &on, tally);
+}
+
+fn check_runs(at: &str, input: &str, chunks: &[&str], off: &Run, on: &Run, tally: &mut Tally) {
     if on.calls != off.calls {
         tally.fail(format!(
             "{at}: recording changed the output\n  off: {:?}\n  on:  {:?}",
@@ -710,4 +714,49 @@ fn recording_is_refused_after_parsing_starts() {
         )
         .unwrap();
     assert!(!parser.record_sources());
+}
+
+#[test]
+fn range_checker_rejects_text_sourced_from_the_channel_header() {
+    let input = "<|channel|>final<|message|>final";
+    let metadata = input.find("final").unwrap();
+    let body = input.rfind("final").unwrap();
+    assert_ne!(metadata, body);
+    let init = UnifiedParserInit::default();
+    let mut splits = vec![vec![input]];
+    splits.push(
+        char_boundaries(input)
+            .windows(2)
+            .map(|pair| &input[pair[0]..pair[1]])
+            .collect(),
+    );
+    for split in char_boundaries(input) {
+        splits.push(vec![&input[..split], &input[split..]]);
+    }
+    let mut accepted = 0;
+    for chunks in &splits {
+        let off = run(chunks, &init, End::Finish, false);
+        let mut on = run(chunks, &init, End::Finish, true);
+        let mut control = Tally::default();
+        check_runs("correct sources", input, chunks, &off, &on, &mut control);
+        assert!(control.failures.is_empty());
+        assert_eq!(
+            on.calls.iter().map(committed_text).collect::<String>(),
+            "final"
+        );
+        for range in on.ranges.iter_mut().flatten() {
+            assert!(range.start >= body);
+            range.start -= body - metadata;
+            range.end -= body - metadata;
+        }
+        let mut tally = Tally::default();
+        check_runs("header sources", input, chunks, &off, &on, &mut tally);
+        accepted += usize::from(tally.failures.is_empty());
+    }
+    assert_eq!(
+        accepted,
+        0,
+        "accepted header bytes for {accepted}/{} splits",
+        splits.len()
+    );
 }
