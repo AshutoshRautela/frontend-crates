@@ -663,3 +663,45 @@ fn registry_drift_does_not_hide_native_format_mismatches() {
         "an unrelated native-format regression must fail the parity replay"
     );
 }
+
+#[test]
+#[ignore = "F3: v2 registry drift hides v1 startup validation regressions"]
+fn v2_registry_drift_cannot_exempt_v1_validation() {
+    let data = Data::load();
+    let mut tally = Tally::new(&data);
+    // Keep the check meaningful even when replaying with Dynamo's exact pins.
+    tally.drift.insert("muse_spark".to_string());
+    let reasoning = data
+        .names
+        .iter()
+        .position(|name| name.as_deref() == Some("muse_spark"))
+        .unwrap();
+    let row = data
+        .rows("pair")
+        .find(|row| data.name(&row[1]).is_none())
+        .unwrap();
+    // Mode index 2 records V1 with no jail requirement.
+    let expected = data.value(&row[6][reasoning][2]);
+    assert!(
+        expected["error"]
+            .as_str()
+            .unwrap()
+            .contains("no compatible v1 parser")
+    );
+    assert!(route::validate_parser_version(ParserVersion::V1, None, Some("muse_spark")).is_err());
+
+    // Replay the same comparison as pair_rules_match_dynamo, with a regression
+    // that accepts this v2-only name as a v1 parser.
+    tally.check_registry(
+        [None, Some("muse_spark")],
+        || "validate_parser_version V1 (None, Some(muse_spark))".to_string(),
+        expected,
+        &Value::Null,
+    );
+    assert_eq!(
+        tally.mismatches.len(),
+        1,
+        "registering a v2 family cannot make an unavailable v1 parser valid"
+    );
+    assert_eq!(tally.drifted, 0);
+}
