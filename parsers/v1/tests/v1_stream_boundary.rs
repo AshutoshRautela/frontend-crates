@@ -324,3 +324,39 @@ async fn stages_keep_item_fields_and_scrub_flush_chunks() {
     let tokens: Vec<_> = out.iter().map(|item| item.chunk_tokens).collect();
     assert_eq!(tokens, vec![Some(4), None], "got: {out:#?}");
 }
+
+// The jail still sees an end of stream after an error, so its finalize runs,
+// as in dynamo. The contract drops what it emits; only the error escapes.
+#[tokio::test]
+async fn terminal_error_drops_jail_finalize_output() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    let finalized = Arc::new(AtomicUsize::new(0));
+    let finalized_in = Arc::clone(&finalized);
+    let out: Vec<Chunk> = apply_jail_terminal_error_contract(
+        stream::iter(vec![error_item("backend failed")]),
+        move |mut input| {
+            async_stream::stream! {
+                while let Some(item) = input.next().await {
+                    yield item;
+                }
+                finalized_in.fetch_add(1, Ordering::SeqCst);
+                yield text_chunk(0, "EOF finalize output");
+            }
+        },
+    )
+    .collect()
+    .await;
+
+    assert_eq!(out.len(), 1);
+    assert!(out[0].is_error());
+    assert_eq!(out[0].error.as_deref(), Some("backend failed"));
+    assert_eq!(
+        finalized.load(Ordering::SeqCst),
+        1,
+        "the jail's finalize runs once; its output is dropped"
+    );
+}

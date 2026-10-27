@@ -26,9 +26,10 @@ use crate::chat_stream::ChatStreamItem;
 /// jail the same contract:
 ///
 /// * The first error item (see [`ChatStreamItem::is_error`]) is latched and
-///   ends the jail's input there, so the jail's finalize never runs on an
-///   error-caused end.
-/// * Output that the jail emits after the latch is dropped.
+///   ends the jail's input there. The jail sees a plain end of stream and may
+///   still finalize.
+/// * Output that the jail emits after the latch is dropped, so nothing that
+///   finalize builds reaches the caller.
 /// * The original error item is yielded last.
 ///
 /// `jail` is the stage under the contract. It gets the input stream without
