@@ -712,7 +712,7 @@ fn normalized_args_request_preserves_render_transformations() {
         }]}]
     }))
     .unwrap();
-    let normalized = NormalizedArgsRequest::new(&request, true, true);
+    let normalized = NormalizedArgsRequest::new(&request, true, true).unwrap();
     assert!(request.typed_messages().is_some());
     assert!(normalized.typed_messages().is_none());
 
@@ -748,7 +748,7 @@ fn render_with_continue_final_message(
     let continue_final = request.continue_final_message == Some(true);
     let rendered = if continue_final {
         formatter
-            .render_prompt(&NormalizedArgsRequest::new(request, false, true))
+            .render_prompt(&NormalizedArgsRequest::new(request, false, true).unwrap())
             .unwrap()
     } else {
         formatter.render_prompt(request).unwrap()

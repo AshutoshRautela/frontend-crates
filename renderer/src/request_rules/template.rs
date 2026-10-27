@@ -74,17 +74,7 @@ pub fn render_chat_prompt(
             "Cannot continue the final message because the prompt formatter moves it before other messages",
         ));
     }
-    let formatted_prompt = if options.normalize_tool_call_args || continue_final {
-        render_text_prompt(
-            formatter,
-            &NormalizedArgsRequest::new(request, options.normalize_tool_call_args, continue_final),
-            options.use_raw_prompt,
-            raw_prompt,
-        )?
-    } else {
-        render_text_prompt(formatter, request, options.use_raw_prompt, raw_prompt)?
-    };
-    let Some(prompt) = formatted_prompt else {
+    let Some(prompt) = render_text_prompt(formatter, request, options, raw_prompt)? else {
         return Ok(None);
     };
     if !continue_final {
@@ -98,31 +88,51 @@ pub fn render_chat_prompt(
 fn render_text_prompt(
     formatter: &dyn OAIPromptFormatter,
     request: &dyn OAIChatLikeRequest,
-    use_raw_prompt: bool,
+    options: ChatPromptOptions,
     raw_prompt: impl FnOnce() -> Option<String>,
 ) -> Result<Option<RenderedPrompt>, PromptRenderError> {
     if let PromptInput::Text(_) = request.prompt_input_type()
         && let Some(TextInput::Single(_)) = request.extract_text()
     {
-        let formatted_prompt = if use_raw_prompt {
+        let formatted_prompt = if options.use_raw_prompt {
             match raw_prompt() {
                 Some(prompt) => RenderedPrompt::text(prompt),
                 None => {
                     tracing::warn!("Raw prompt requested but not available");
-                    formatter
-                        .render_prompt(request)
-                        .map_err(map_prompt_render_error)?
+                    render_template(formatter, request, options)?
                 }
             }
         } else {
-            formatter
-                .render_prompt(request)
-                .map_err(map_prompt_render_error)?
+            render_template(formatter, request, options)?
         };
         Ok(Some(formatted_prompt))
     } else {
         Ok(None)
     }
+}
+
+/// Render through the template. The messages are converted for the wrapper
+/// only here, so a raw prompt or a request with nothing to render never pays
+/// for that copy.
+fn render_template(
+    formatter: &dyn OAIPromptFormatter,
+    request: &dyn OAIChatLikeRequest,
+    options: ChatPromptOptions,
+) -> Result<RenderedPrompt, PromptRenderError> {
+    if !options.normalize_tool_call_args && !options.continue_final_message {
+        return formatter
+            .render_prompt(request)
+            .map_err(map_prompt_render_error);
+    }
+    let request = NormalizedArgsRequest::new(
+        request,
+        options.normalize_tool_call_args,
+        options.continue_final_message,
+    )
+    .map_err(map_prompt_render_error)?;
+    formatter
+        .render_prompt(&request)
+        .map_err(map_prompt_render_error)
 }
 
 /// A misconfigured template can also fail here, for instance a `chat_template`
@@ -148,6 +158,12 @@ pub(super) fn map_prompt_render_error(error: anyhow::Error) -> PromptRenderError
 /// whether it reads the override or `messages()`. `typed_messages` stays
 /// `None`, because the typed slice cannot carry the transforms. Every other
 /// method forwards to the inner request.
+///
+/// # Errors
+///
+/// [`NormalizedArgsRequest::new`] fails when the messages cannot be converted
+/// to JSON, with the same error the formatter would return without the
+/// wrapper.
 pub(super) struct NormalizedArgsRequest<'a> {
     inner: &'a dyn OAIChatLikeRequest,
     messages: serde_json::Value,
@@ -158,8 +174,8 @@ impl<'a> NormalizedArgsRequest<'a> {
         inner: &'a dyn OAIChatLikeRequest,
         normalize_tool_call_args: bool,
         continue_final_message: bool,
-    ) -> Self {
-        let mut messages = crate::messages_to_json(inner).unwrap_or_default();
+    ) -> Result<Self> {
+        let mut messages = crate::messages_to_json(inner)?;
         if normalize_tool_call_args && let Err(e) = normalize_tool_call_arguments(&mut messages) {
             tracing::error!(
                 error = %e,
@@ -173,7 +189,7 @@ impl<'a> NormalizedArgsRequest<'a> {
                 "continue_final_message marker not appended; truncation will reject the request"
             );
         }
-        Self { inner, messages }
+        Ok(Self { inner, messages })
     }
 }
 

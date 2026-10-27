@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+//! A request whose messages cannot be converted to JSON must fail the same
+//! way with the request rules as without them, not render an empty prompt.
+
 use dynamo_renderer::request_rules::{ChatPromptOptions, render_chat_prompt};
 use dynamo_renderer::{
     ChatTemplate, ContextMixins, OAIChatLikeRequest, PromptFormatter, PromptRenderError, TextInput,
@@ -44,7 +47,6 @@ impl OAIChatLikeRequest for Request {
 }
 
 #[test]
-#[ignore = "F2: normalization replaces failed message conversion with a successful empty prompt"]
 fn normalization_preserves_message_serialization_error() {
     let config: ChatTemplate = serde_json::from_value(serde_json::json!({
         "chat_template": "{% for m in messages %}{{ m.content }}{% endfor %}"

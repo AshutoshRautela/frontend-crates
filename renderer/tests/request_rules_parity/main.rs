@@ -532,9 +532,10 @@ fn rendering_matches_dynamo() {
     eprintln!("render parity: {cases} cases, {errors} of them client errors");
 }
 
+/// A raw prompt replaces the template, so the messages are never read, as
+/// in Dynamo. Normalization must not copy them first.
 #[test]
-#[ignore = "F1: raw prompts eagerly materialize discarded messages when normalization is enabled"]
-fn review_raw_prompt_skips_message_materialization() {
+fn raw_prompt_skips_message_materialization() {
     use dynamo_renderer::{OAIChatLikeRequest, TextInput};
     use std::cell::Cell;
 
