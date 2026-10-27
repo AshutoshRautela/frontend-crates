@@ -303,3 +303,35 @@ fn review_f1_unknown_number_keeps_the_oracle_refusal() {
     let decoded = serde_json::from_str::<ChatCompletionRequestMessage>(input).map_err(text);
     assert_eq!(decoded, Err(oracle), "{input}");
 }
+
+#[test]
+#[ignore = "F2: the key decoder rejects unknown integer keys accepted by the oracle"]
+fn review_f2_unknown_numeric_map_keys_keep_the_oracle_value() {
+    use serde::de::value::MapDeserializer;
+    use serde_json::json;
+
+    for entries in [
+        vec![
+            (json!("role"), json!("user")),
+            (json!(42), json!("ignored")),
+            (json!("content"), json!("hi")),
+        ],
+        vec![
+            (json!(42), json!("ignored")),
+            (json!("content"), json!("hi")),
+            (json!("role"), json!("user")),
+        ],
+    ] {
+        let oracle = Oracle::deserialize(MapDeserializer::<_, serde_json::Error>::new(
+            entries.clone().into_iter(),
+        ))
+        .expect("oracle accepts an unknown numeric key")
+        .0;
+        let decoded = ChatCompletionRequestMessage::deserialize(MapDeserializer::<
+            _,
+            serde_json::Error,
+        >::new(entries.into_iter()))
+        .map_err(text);
+        assert_eq!(decoded, Ok(oracle));
+    }
+}
