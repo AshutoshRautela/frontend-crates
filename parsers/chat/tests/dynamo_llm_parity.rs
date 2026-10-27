@@ -136,6 +136,16 @@ fn drift_names(data: &Data) -> HashSet<String> {
         .collect()
 }
 
+/// The names that may count as registry drift for a rule run at `version`. At
+/// [`ParserVersion::V1`] no rule reads the v2 registry, so none may.
+fn registry_names(version: ParserVersion, names: [Option<&str>; 2]) -> [Option<&str>; 2] {
+    if version == ParserVersion::V1 {
+        [None, None]
+    } else {
+        names
+    }
+}
+
 /// Counts cases and keeps the first mismatches, so one run shows every kind that fails.
 struct Tally {
     drift: HashSet<String>,
@@ -226,7 +236,7 @@ fn family_selection_and_special_tokens_match_dynamo() {
             let reasoning = data.names[r].as_deref();
             let what = || format!("{version:?} ({tool:?}, {reasoning:?})");
             tally.check_registry(
-                [tool, reasoning],
+                registry_names(version, [tool, reasoning]),
                 || format!("selected_family {}", what()),
                 data.value(family),
                 &json!(families::selected_family(tool, reasoning, version)),
@@ -237,7 +247,7 @@ fn family_selection_and_special_tokens_match_dynamo() {
                     Err(error) => err_json(&error),
                 };
             tally.check_registry(
-                [tool, reasoning],
+                registry_names(version, [tool, reasoning]),
                 || format!("parser_requires_special_tokens {}", what()),
                 data.value(special),
                 &moved,
@@ -308,7 +318,7 @@ fn pair_rules_match_dynamo() {
                         Err(error) => err_json(&error),
                     };
                     tally.check_registry(
-                        [tool, reasoning],
+                        registry_names(*version, [tool, reasoning]),
                         || {
                             format!(
                                 "validate_tool_request_mode {version:?} {} {requires_v1_jail}",
@@ -325,7 +335,7 @@ fn pair_rules_match_dynamo() {
                     Err(error) => err_json(&error),
                 };
                 tally.check_registry(
-                    [tool, reasoning],
+                    registry_names(*version, [tool, reasoning]),
                     || format!("validate_parser_version {version:?} {}", pair()),
                     data.value(&modes[i * 2]),
                     &moved,
@@ -358,7 +368,7 @@ fn route_matches_dynamo() {
         for (i, (expected, request)) in row[4].as_array().unwrap().iter().zip(&requests).enumerate()
         {
             tally.check_registry(
-                [tool, reasoning],
+                registry_names(version, [tool, reasoning]),
                 || {
                     format!(
                         "tool_processing_route {version:?} ({tool:?}, {reasoning:?}) request {i}"
@@ -664,8 +674,9 @@ fn registry_drift_does_not_hide_native_format_mismatches() {
     );
 }
 
+/// F3 (review pass 2): a v2 registry addition cannot change v1 availability, so V1
+/// rules get no drift exemption.
 #[test]
-#[ignore = "F3: v2 registry drift hides v1 startup validation regressions"]
 fn v2_registry_drift_cannot_exempt_v1_validation() {
     let data = Data::load();
     let mut tally = Tally::new(&data);
@@ -693,7 +704,7 @@ fn v2_registry_drift_cannot_exempt_v1_validation() {
     // Replay the same comparison as pair_rules_match_dynamo, with a regression
     // that accepts this v2-only name as a v1 parser.
     tally.check_registry(
-        [None, Some("muse_spark")],
+        registry_names(ParserVersion::V1, [None, Some("muse_spark")]),
         || "validate_parser_version V1 (None, Some(muse_spark))".to_string(),
         expected,
         &Value::Null,
