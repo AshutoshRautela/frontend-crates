@@ -17,7 +17,7 @@ The rules an OpenAI chat frontend uses to pick and drive Dynamo's parsers. The p
 | `stop_tokens` | A tool-call end token that is a hidden EOS becomes a visible stop. |
 | `tools` | The effective tools (top-level and system-message tools) and the tool-parsing gate. |
 | `unified_stream` | The v2 stream adapter: one unified parser per choice turns raw model text into reasoning, content, and tool-call chunks, then fixes each choice's finish reason. |
-| `stream_item` | The stream item that `unified_stream` reads. Dynamo implements it for its own item, so its per-chunk fields (`nvext`, metrics, completion evidence) stay in place. |
+| `stream_item` | The stream item that `unified_stream` reads. Dynamo implements it for its own item, so its per-chunk fields (`nvext`, metrics, completion evidence) stay in place. A chunk with a `SourceSlot` (from `dynamo-parsers`) also gets, for each choice, the input byte ranges its text came from. |
 | `guided` | `GuidedToolConstraint`: the tool-output grammar a request installed. |
 
 ```rust

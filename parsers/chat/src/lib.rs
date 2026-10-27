@@ -28,6 +28,7 @@ pub mod families;
 pub mod guided;
 pub mod prefill;
 pub mod route;
+mod spans;
 pub mod special_tokens;
 pub mod stop_tokens;
 pub mod stream_item;

@@ -63,6 +63,8 @@ struct ParityChunk {
     tool_call_completion: Vec<ToolCallCompletion>,
 }
 
+impl dynamo_parsers::sources::SourceSlot for ParityChunk {}
+
 impl UnifiedStreamChunk for ParityChunk {
     fn inner(&self) -> &CreateChatCompletionStreamResponse {
         &self.inner

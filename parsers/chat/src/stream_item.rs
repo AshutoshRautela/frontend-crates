@@ -15,7 +15,19 @@
 //! take them from.
 //!
 //! This crate implements the item trait for the jail's [`Annotated`].
+//!
+//! # Sources
+//!
+//! A chunk type may carry a [`SourceSlot`]. When the input chunks have one, the
+//! adapter records where each text byte came from: it turns recording on in
+//! each parser, and fails the stream with an error item when a parser cannot
+//! record. It overwrites the slot of every chunk it emits with one
+//! [`ChoiceSources`](dynamo_parsers::sources::ChoiceSources) per choice in that
+//! chunk; a choice with no text gets empty ranges. `scrub_synthetic` and the
+//! `clear_*` methods do not touch the slot. A chunk type with no slot (the
+//! trait defaults) records nothing and pays nothing.
 
+use dynamo_parsers::sources::SourceSlot;
 use dynamo_parsers::tool_calling::jail::Annotated;
 use dynamo_protocols::types::CreateChatCompletionStreamResponse;
 use serde::{Deserialize, Serialize};
@@ -29,7 +41,7 @@ pub struct ToolCallCompletion {
 }
 
 /// One chat chunk plus the per-chunk fields that travel with it.
-pub trait UnifiedStreamChunk: Clone + Send + Sync + 'static {
+pub trait UnifiedStreamChunk: SourceSlot + Clone + Send + Sync + 'static {
     /// The OpenAI chunk.
     fn inner(&self) -> &CreateChatCompletionStreamResponse;
 
@@ -75,6 +87,11 @@ pub trait UnifiedStreamItem: Sized + Send + 'static {
 
     /// Build an item from a chunk and an annotation.
     fn from_parts(data: Self::Chunk, annotation: Self::Annotation) -> Self;
+
+    /// Build a terminal error item, for which [`is_error`](Self::is_error)
+    /// returns `true`. The adapter ends the stream with one when it cannot
+    /// record the sources that the input chunks ask for.
+    fn from_error(message: String) -> Self;
 }
 
 /// The annotation fields of the jail's [`Annotated`].
@@ -127,6 +144,16 @@ impl<C: UnifiedStreamChunk> UnifiedStreamItem for Annotated<C> {
             event: annotation.event,
             comment: annotation.comment,
             error: annotation.error,
+        }
+    }
+
+    fn from_error(message: String) -> Self {
+        Annotated {
+            data: None,
+            id: None,
+            event: Some("error".to_string()),
+            comment: None,
+            error: Some(message),
         }
     }
 }

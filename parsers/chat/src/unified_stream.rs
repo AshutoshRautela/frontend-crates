@@ -15,8 +15,10 @@
 //! to preserve, so every [`UnifiedParserEvent`] becomes its own chunk.
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::ops::Range;
 
 use async_stream::stream;
+use dynamo_parsers::sources::{ChoiceSources, SourceSlot};
 use dynamo_parsers::tool_calling::ToolDefinition;
 use dynamo_parsers_v2::{
     InvalidGuidedPayloadPolicy, Tool, UnifiedParser, UnifiedParserEvent, UnifiedParserInit,
@@ -35,6 +37,7 @@ use crate::families::{
     QWEN3_UNIFIED_FAMILY,
 };
 use crate::guided::GuidedToolConstraint;
+use crate::spans::{FeedMap, Spans, append_spans, spans_len, split_spans};
 use crate::stream_item::{ToolCallCompletion, UnifiedStreamChunk, UnifiedStreamItem};
 
 #[cfg(test)]
@@ -925,17 +928,33 @@ fn native_family_marker(family: &str) -> Option<&'static str> {
 /// Tool-call deltas never merge: two fragments belonging to different `tool_index`es
 /// would fuse into one call, and even two fragments of the SAME call must keep their
 /// `name`-carrying first delta distinct from later argument-only ones.
+#[cfg(test)]
 fn coalesce(deltas: Vec<UnifiedParserEvent>) -> Vec<UnifiedParserEvent> {
-    let mut out: Vec<UnifiedParserEvent> = Vec::with_capacity(deltas.len());
-    for delta in deltas {
-        match (out.last_mut(), delta) {
-            (Some(UnifiedParserEvent::Text(prev)), UnifiedParserEvent::Text(text)) => {
-                prev.push_str(&text)
+    coalesce_deltas(Deltas {
+        events: deltas,
+        spans: None,
+    })
+    .events
+}
+
+/// Join adjacent text runs and adjacent reasoning runs, with their ranges.
+fn coalesce_deltas(deltas: Deltas) -> Deltas {
+    let mut out = Deltas {
+        events: Vec::with_capacity(deltas.events.len()),
+        spans: deltas.spans.as_ref().map(|_| Vec::new()),
+    };
+    let mut spans = deltas.spans.map(Vec::into_iter);
+    for delta in deltas.events {
+        let delta_spans = spans.as_mut().and_then(Iterator::next).unwrap_or_default();
+        match (out.events.last_mut(), delta) {
+            (Some(UnifiedParserEvent::Text(prev)), UnifiedParserEvent::Text(text))
+            | (Some(UnifiedParserEvent::Reasoning(prev)), UnifiedParserEvent::Reasoning(text)) => {
+                prev.push_str(&text);
+                if let Some(last) = out.spans.as_mut().and_then(|all| all.last_mut()) {
+                    append_spans(last, delta_spans);
+                }
             }
-            (Some(UnifiedParserEvent::Reasoning(prev)), UnifiedParserEvent::Reasoning(text)) => {
-                prev.push_str(&text)
-            }
-            (_, delta) => out.push(delta),
+            (_, delta) => out.push(delta, delta_spans),
         }
     }
     out
@@ -1313,6 +1332,107 @@ impl QuotedControlMarkerProbe {
     }
 }
 
+// A test may swap the family's parser for one that records sources, because
+// the `dynamo-parsers-v2` families do not record yet.
+#[cfg(test)]
+type ParserFactory = Box<dyn Fn(&str, &[Tool]) -> Box<dyn UnifiedParser>>;
+
+#[cfg(test)]
+thread_local! {
+    pub(crate) static TEST_PARSER: std::cell::RefCell<Option<ParserFactory>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+fn test_parser_override(family: &str, tools: &[Tool]) -> Option<Box<dyn UnifiedParser>> {
+    TEST_PARSER.with(|factory| {
+        factory
+            .borrow()
+            .as_ref()
+            .map(|factory| factory(family, tools))
+    })
+}
+
+#[cfg(not(test))]
+fn test_parser_override(_family: &str, _tools: &[Tool]) -> Option<Box<dyn UnifiedParser>> {
+    None
+}
+
+/// Events in output order. While a choice records sources, the caller ranges of
+/// each event's text sit beside it (empty for a tool call).
+#[derive(Default)]
+struct Deltas {
+    events: Vec<UnifiedParserEvent>,
+    spans: Option<Vec<Spans>>,
+}
+
+impl Deltas {
+    fn new(recording: bool) -> Self {
+        Self {
+            events: Vec::new(),
+            spans: recording.then(Vec::new),
+        }
+    }
+
+    fn push(&mut self, event: UnifiedParserEvent, spans: Spans) {
+        if let Some(all) = &mut self.spans {
+            all.push(spans);
+        }
+        self.events.push(event);
+    }
+
+    fn append(&mut self, mut other: Deltas) {
+        debug_assert_eq!(
+            self.spans.is_some(),
+            other.spans.is_some(),
+            "both runs record sources, or neither does"
+        );
+        self.events.append(&mut other.events);
+        if let (Some(all), Some(more)) = (&mut self.spans, other.spans) {
+            all.extend(more);
+        }
+    }
+}
+
+/// Why a choice could not start.
+pub(crate) enum ChoiceStateError {
+    /// The parser could not be built; the adapter passes the choice through.
+    Parser(anyhow::Error),
+    /// The input asked for sources that this choice cannot record; the adapter
+    /// fails the stream.
+    Recording(String),
+}
+
+impl From<anyhow::Error> for ChoiceStateError {
+    fn from(error: anyhow::Error) -> Self {
+        Self::Parser(error)
+    }
+}
+
+/// Source recording for one choice. Present only when the input chunks carry a
+/// source slot, so the stock path keeps one `None` field and no other cost.
+struct Recording {
+    fed: FeedMap,
+    scratch: Vec<Range<usize>>,
+    /// Beside the events that `push` and `finish` returned, until `choices_for`.
+    event_spans: Vec<Spans>,
+    /// Beside `pending_qwen_opener_text`.
+    qwen_opener: Spans,
+    /// Beside each entry of `pending_qwen_opener_reasoning`.
+    qwen_reasoning: Vec<Spans>,
+    /// The current chunk's upstream `reasoning_content`, for `choices_for`.
+    upstream_reasoning: Spans,
+    /// Beside the choices that `choices_for` returned.
+    choice_sources: Vec<ChoiceSources>,
+    error: Option<String>,
+}
+
+impl Recording {
+    fn fail(&mut self, message: String) {
+        self.error.get_or_insert(message);
+    }
+}
+
 /// Per-choice streaming state: one parser instance plus the bookkeeping the OpenAI
 /// streaming tool-call contract needs. One instance parses exactly one choice of one
 /// request, which is what gives per-stream isolation by construction.
@@ -1355,9 +1475,11 @@ pub(crate) struct ChoiceState {
     failed: bool,
     /// The operator explicitly selected V2 parsing (`DYN_PARSER_VERSION=2` in dynamo).
     parsers_v2_selected: bool,
+    recording: Option<Box<Recording>>,
 }
 
 impl ChoiceState {
+    #[cfg(test)]
     pub(crate) fn new(
         family: &str,
         tools: &[Tool],
@@ -1366,8 +1488,43 @@ impl ChoiceState {
         guided_streaming: bool,
         parsers_v2_selected: bool,
     ) -> anyhow::Result<Self> {
+        Self::build(
+            family,
+            tools,
+            prefill,
+            tool_output_mode,
+            guided_streaming,
+            parsers_v2_selected,
+            false,
+        )
+        .map_err(|error| match error {
+            ChoiceStateError::Parser(error) => error,
+            ChoiceStateError::Recording(message) => anyhow::anyhow!(message),
+        })
+    }
+
+    /// Build the choice's parser. With `record`, turn source recording on before
+    /// the prompt prefix replays, and count input offsets from after it.
+    pub(crate) fn build(
+        family: &str,
+        tools: &[Tool],
+        prefill: impl Into<StreamPrefill>,
+        tool_output_mode: UnifiedToolOutputMode,
+        guided_streaming: bool,
+        parsers_v2_selected: bool,
+        record: bool,
+    ) -> Result<Self, ChoiceStateError> {
         let prefill = prefill.into();
-        let mut parser = create_unified_parser_for_family(family, tools)?;
+        // Guided JSON rebuilds call arguments, so it has no byte sources.
+        if record && !matches!(&tool_output_mode, UnifiedToolOutputMode::Native) {
+            return Err(ChoiceStateError::Recording(format!(
+                "the {family} parser cannot record sources in guided mode"
+            )));
+        }
+        let mut parser = test_parser_override(family, tools)
+            .map(Ok)
+            .unwrap_or_else(|| create_unified_parser_for_family(family, tools))
+            .map_err(ChoiceStateError::Parser)?;
         // Harmony needs the consumed assistant header to recognize a generated
         // `to=` recipient. Other families infer their state from the rendered text.
         //
@@ -1379,33 +1536,59 @@ impl ChoiceState {
         // `OpenAIPreprocessor::guided_tool_streaming_release` and threaded down here;
         // it is inert in `UnifiedToolOutputMode::Native`, where the parser builds no
         // guided state at all.
-        parser.initialize_request(UnifiedParserInit {
-            prompt_token_ids: if family == "gpt_oss"
-                && matches!(&tool_output_mode, UnifiedToolOutputMode::Native)
-                && prefill.starting_state == UnifiedParserStartingState::None
-            {
-                dynamo_parsers_v2::unified::harmony::encode_harmony("<|start|>assistant")?
-            } else {
-                Vec::new()
-            },
-            starting_state: if prefill.prefix.is_some() {
-                UnifiedParserStartingState::None
-            } else {
-                prefill.starting_state
-            },
-            tool_output_mode: tool_output_mode.clone(),
-            invalid_guided_payload: invalid_guided_payload_policy(guided_streaming),
-        })?;
+        parser
+            .initialize_request(UnifiedParserInit {
+                prompt_token_ids: if family == "gpt_oss"
+                    && matches!(&tool_output_mode, UnifiedToolOutputMode::Native)
+                    && prefill.starting_state == UnifiedParserStartingState::None
+                {
+                    dynamo_parsers_v2::unified::harmony::encode_harmony("<|start|>assistant")?
+                } else {
+                    Vec::new()
+                },
+                starting_state: if prefill.prefix.is_some() {
+                    UnifiedParserStartingState::None
+                } else {
+                    prefill.starting_state
+                },
+                tool_output_mode: tool_output_mode.clone(),
+                invalid_guided_payload: invalid_guided_payload_policy(guided_streaming),
+            })
+            .map_err(ChoiceStateError::Parser)?;
+        if record && !parser.record_sources() {
+            return Err(ChoiceStateError::Recording(format!(
+                "the {family} parser cannot record sources"
+            )));
+        }
         if let Some(prefix) = prefill.prefix {
             // Replay only consumed structural bytes; the grammar retains ownership
             // of an optional channel label that generation has not completed yet.
             let mut output = UnifiedParserOutput::default();
-            parser.parse_into(prefix, &mut output)?;
-            anyhow::ensure!(
-                output.events.is_empty(),
-                "prompt prefix emitted visible output"
-            );
+            parser
+                .parse_into(prefix, &mut output)
+                .map_err(ChoiceStateError::Parser)?;
+            if !output.events.is_empty() {
+                return Err(ChoiceStateError::Parser(anyhow::anyhow!(
+                    "prompt prefix emitted visible output"
+                )));
+            }
         }
+        let recording = record.then(|| {
+            let mut scratch = Vec::new();
+            // The prefix emitted nothing, so it committed no sources.
+            parser.take_sources(&mut scratch);
+            scratch.clear();
+            Box::new(Recording {
+                fed: FeedMap::new(prefill.prefix.map_or(0, str::len)),
+                scratch,
+                event_spans: Vec::new(),
+                qwen_opener: Vec::new(),
+                qwen_reasoning: Vec::new(),
+                upstream_reasoning: Vec::new(),
+                choice_sources: Vec::new(),
+                error: None,
+            })
+        });
         Ok(Self {
             glm_native_input: (family == GLM47_UNIFIED_FAMILY
                 && matches!(&tool_output_mode, UnifiedToolOutputMode::Native))
@@ -1432,23 +1615,147 @@ impl ChoiceState {
             tool_emitted: false,
             failed: false,
             parsers_v2_selected,
+            recording,
         })
     }
 
+    fn recording(&self) -> bool {
+        self.recording.is_some()
+    }
+
+    /// The first source-recording failure, if any. The adapter fails the stream.
+    pub(crate) fn take_recording_error(&mut self) -> Option<String> {
+        self.recording
+            .as_mut()
+            .and_then(|recording| recording.error.take())
+    }
+
+    /// The sources of the choices that the last `choices_for` returned, in order.
+    pub(crate) fn take_choice_sources(&mut self) -> Option<Vec<ChoiceSources>> {
+        self.recording
+            .as_mut()
+            .map(|recording| std::mem::take(&mut recording.choice_sources))
+    }
+
+    /// Ranges of the upstream `reasoning_content` that the next `choices_for`
+    /// copies from its `original` choice.
+    pub(crate) fn set_upstream_reasoning(&mut self, spans: Spans) {
+        if let Some(recording) = &mut self.recording {
+            recording.upstream_reasoning = spans;
+        }
+    }
+
+    fn take_qwen_opener_spans(&mut self) -> Spans {
+        self.recording
+            .as_mut()
+            .map(|recording| std::mem::take(&mut recording.qwen_opener))
+            .unwrap_or_default()
+    }
+
+    fn set_qwen_opener_spans(&mut self, spans: Spans) {
+        if let Some(recording) = &mut self.recording {
+            recording.qwen_opener = spans;
+        }
+    }
+
+    /// Hand the events back and keep their ranges for `choices_for`.
+    fn stash(&mut self, deltas: Deltas) -> Vec<UnifiedParserEvent> {
+        if let (Some(recording), Some(spans)) = (&mut self.recording, deltas.spans) {
+            recording.event_spans.extend(spans);
+        }
+        deltas.events
+    }
+
+    /// Drop the sources of text the parser committed but this choice discards.
+    fn discard_parser_sources(&mut self) {
+        if let Some(recording) = &mut self.recording {
+            self.parser.take_sources(&mut recording.scratch);
+            recording.scratch.clear();
+        }
+    }
+
+    /// Give each text event the caller ranges of the bytes the parser committed.
+    fn attach_parser_sources(&mut self, events: Vec<UnifiedParserEvent>) -> Deltas {
+        let Some(recording) = self.recording.as_deref_mut() else {
+            return Deltas {
+                events,
+                spans: None,
+            };
+        };
+        self.parser.take_sources(&mut recording.scratch);
+        let mut local = std::mem::take(&mut recording.scratch);
+        let mut cursor = 0;
+        let mut deltas = Deltas::new(true);
+        for event in events {
+            let mut need = match &event {
+                UnifiedParserEvent::Text(text) | UnifiedParserEvent::Reasoning(text) => text.len(),
+                _ => 0,
+            };
+            let mut spans = Vec::new();
+            while need > 0 {
+                let Some(range) = local.get_mut(cursor) else {
+                    recording.fail(format!(
+                        "the {} parser reported fewer source bytes than it emitted",
+                        self.family
+                    ));
+                    break;
+                };
+                let take = need.min(range.len());
+                if let Err(message) = recording
+                    .fed
+                    .map(range.start..range.start + take, &mut spans)
+                {
+                    recording.fail(message);
+                }
+                range.start += take;
+                need -= take;
+                if range.start >= range.end {
+                    cursor += 1;
+                }
+            }
+            deltas.push(event, spans);
+        }
+        if local[cursor.min(local.len())..]
+            .iter()
+            .any(|range| range.start < range.end)
+        {
+            recording.fail(format!(
+                "the {} parser reported more source bytes than it emitted",
+                self.family
+            ));
+        }
+        local.clear();
+        recording.scratch = local;
+        deltas
+    }
+
     /// Feed one decoded text delta through the parser.
+    #[cfg(test)]
     pub(crate) fn push(&mut self, text: &str) -> Vec<UnifiedParserEvent> {
+        self.push_sourced(text, Vec::new())
+    }
+
+    /// [`push`](Self::push), with the caller ranges that tile `text`.
+    pub(crate) fn push_sourced(&mut self, text: &str, spans: Spans) -> Vec<UnifiedParserEvent> {
+        let deltas = self.push_deltas(text, spans);
+        self.stash(deltas)
+    }
+
+    fn push_deltas(&mut self, text: &str, spans: Spans) -> Deltas {
         if self.failed {
-            return text_delta(text.to_string());
+            return self.text_delta_sourced(text.to_string(), spans);
         }
         if self.is_qwen_native_outside_block() {
             let held = std::mem::take(&mut self.pending_qwen_opener_text);
+            let mut held_spans = self.take_qwen_opener_spans();
             if !self.pending_qwen_opener_reasoning.is_empty() && !held.is_empty() {
                 if let Some((_resolution_end, opener_completed)) =
                     qwen_opener_resolution(&held, text)
                 {
                     let mut combined = held.clone();
                     combined.push_str(text);
-                    let mut events = self.parse_segment(&combined);
+                    append_spans(&mut held_spans, spans);
+                    let mut events = self.parse_segment(&combined, held_spans);
                     if opener_completed {
                         self.prepend_pending_qwen_reasoning(&mut events);
                     } else {
@@ -1461,25 +1768,30 @@ impl ChoiceState {
                 }
                 self.pending_qwen_opener_text = held;
                 self.pending_qwen_opener_text.push_str(text);
-                return Vec::new();
+                append_spans(&mut held_spans, spans);
+                self.set_qwen_opener_spans(held_spans);
+                return Deltas::new(self.recording());
             }
 
             let mut combined = held;
             combined.push_str(text);
+            append_spans(&mut held_spans, spans);
             if let Some(start) =
                 qwen_partial_opener_suffix_start(&self.qwen_native_lexical_state, &combined)
             {
                 let safe_text = combined[..start].to_string();
                 self.pending_qwen_opener_text = combined[start..].to_string();
+                let tail = split_spans(&mut held_spans, start);
+                self.set_qwen_opener_spans(tail);
                 return if safe_text.is_empty() {
-                    Vec::new()
+                    Deltas::new(self.recording())
                 } else {
-                    self.parse_segment(&safe_text)
+                    self.parse_segment(&safe_text, held_spans)
                 };
             }
-            return self.parse_segment(&combined);
+            return self.parse_segment(&combined, held_spans);
         }
-        self.parse_segment(text)
+        self.parse_segment(text, spans)
     }
 
     fn qwen_resumed_marker_can_start_call(&self) -> bool {
@@ -1492,7 +1804,7 @@ impl ChoiceState {
             && self.qwen_native_lexical_state.mode == QwenNativeLexicalMode::OutsideBlock
     }
 
-    fn parse_segment(&mut self, text: &str) -> Vec<UnifiedParserEvent> {
+    fn parse_segment(&mut self, text: &str, spans: Spans) -> Deltas {
         if let Some(input) = &mut self.glm_native_input {
             // EOF recovery needs source context; scan once there, not on every push.
             input.push_str(text);
@@ -1502,88 +1814,126 @@ impl ChoiceState {
         {
             self.qwen_native_lexical_state.observe(text);
         }
+        if let Some(recording) = &mut self.recording {
+            if spans_len(&spans) != text.len() {
+                recording.fail(format!(
+                    "input sources cover {} bytes of {} bytes of text",
+                    spans_len(&spans),
+                    text.len()
+                ));
+            }
+            recording.fed.feed(&spans);
+        }
         let mut output = UnifiedParserOutput::default();
         match self.parser.parse_into(text, &mut output) {
-            Ok(()) => output.events,
+            Ok(()) => self.attach_parser_sources(output.events),
             Err(error) => {
                 tracing::warn!(
                     error = %error,
                     family = self.family,
                     "unified parser push failed; falling back to plain text for this choice"
                 );
-                output.events.extend(self.give_up(text));
-                output.events
+                let mut events = self.attach_parser_sources(output.events);
+                events.append(self.give_up_sourced(text, spans));
+                events
             }
         }
     }
 
-    fn queue_qwen_opener_reasoning(&mut self, reasoning: String) {
+    fn queue_qwen_opener_reasoning_sourced(&mut self, reasoning: String, spans: Spans) {
         self.pending_qwen_opener_reasoning.push(reasoning);
+        if let Some(recording) = &mut self.recording {
+            recording.qwen_reasoning.push(spans);
+        }
     }
 
-    fn prepend_pending_qwen_reasoning(&mut self, events: &mut Vec<UnifiedParserEvent>) {
-        let mut reasoning = std::mem::take(&mut self.pending_qwen_opener_reasoning)
-            .into_iter()
-            .map(UnifiedParserEvent::Reasoning)
-            .collect::<Vec<_>>();
+    /// The queued reasoning as events, with their ranges.
+    fn take_pending_qwen_reasoning(&mut self) -> Deltas {
+        let reasoning = std::mem::take(&mut self.pending_qwen_opener_reasoning);
+        let mut spans = self
+            .recording
+            .as_mut()
+            .map(|recording| std::mem::take(&mut recording.qwen_reasoning).into_iter());
+        let mut deltas = Deltas::new(self.recording());
+        for text in reasoning {
+            let text_spans = spans.as_mut().and_then(Iterator::next).unwrap_or_default();
+            deltas.push(UnifiedParserEvent::Reasoning(text), text_spans);
+        }
+        deltas
+    }
+
+    fn prepend_pending_qwen_reasoning(&mut self, events: &mut Deltas) {
+        let mut reasoning = self.take_pending_qwen_reasoning();
         self.qwen_reasoning_event_positions
-            .extend(0..reasoning.len());
-        reasoning.append(events);
+            .extend(0..reasoning.events.len());
+        reasoning.append(std::mem::take(events));
         *events = reasoning;
     }
 
-    fn append_pending_qwen_reasoning(&mut self, events: &mut Vec<UnifiedParserEvent>) {
+    fn append_pending_qwen_reasoning(&mut self, events: &mut Deltas) {
+        let reasoning = self.take_pending_qwen_reasoning();
         self.qwen_reasoning_event_positions
-            .extend(events.len()..events.len() + self.pending_qwen_opener_reasoning.len());
-        events.extend(
-            std::mem::take(&mut self.pending_qwen_opener_reasoning)
-                .into_iter()
-                .map(UnifiedParserEvent::Reasoning),
-        );
+            .extend(events.events.len()..events.events.len() + reasoning.events.len());
+        events.append(reasoning);
     }
 
     fn insert_pending_qwen_reasoning_after_recovered_opener(
         &mut self,
         held: &str,
-        events: &mut Vec<UnifiedParserEvent>,
+        events: &mut Deltas,
     ) {
-        let pending = std::mem::take(&mut self.pending_qwen_opener_reasoning);
-        let mut ordered = Vec::new();
+        let pending = self.take_pending_qwen_reasoning();
+        let recording = events.spans.is_some();
+        let mut ordered = Deltas::new(recording);
         let mut inserted = false;
-        for event in std::mem::take(events) {
+        let taken = std::mem::take(events);
+        let mut spans = taken.spans.map(Vec::into_iter);
+        let mut pending = Some(pending);
+        for event in taken.events {
+            let mut event_spans = spans.as_mut().and_then(Iterator::next).unwrap_or_default();
             if !inserted
                 && let UnifiedParserEvent::Text(text) = &event
                 && let Some(remainder) = text.strip_prefix(held)
             {
+                let remainder_spans = split_spans(&mut event_spans, held.len());
                 if !held.is_empty() {
-                    ordered.push(UnifiedParserEvent::Text(held.to_string()));
+                    ordered.push(UnifiedParserEvent::Text(held.to_string()), event_spans);
                 }
+                let pending = pending.take().unwrap_or_default();
                 self.qwen_reasoning_event_positions
-                    .extend(ordered.len()..ordered.len() + pending.len());
-                ordered.extend(pending.iter().cloned().map(UnifiedParserEvent::Reasoning));
+                    .extend(ordered.events.len()..ordered.events.len() + pending.events.len());
+                ordered.append(pending);
                 if !remainder.is_empty() {
-                    ordered.push(UnifiedParserEvent::Text(remainder.to_string()));
+                    ordered.push(
+                        UnifiedParserEvent::Text(remainder.to_string()),
+                        remainder_spans,
+                    );
                 }
                 inserted = true;
                 continue;
             }
-            ordered.push(event);
+            ordered.push(event, event_spans);
         }
-        if !inserted {
+        if let Some(pending) = pending {
             // TODO(frontend-crates): parser 0.7.17 malformed-call recovery still needs
             // a source-order barrier. Recovered text can span this thought at EOF;
             // matching a repeated opener cannot recover its original position.
             self.qwen_reasoning_event_positions
-                .extend(ordered.len()..ordered.len() + pending.len());
-            ordered.extend(pending.into_iter().map(UnifiedParserEvent::Reasoning));
+                .extend(ordered.events.len()..ordered.events.len() + pending.events.len());
+            ordered.append(pending);
         }
         *events = ordered;
     }
 
     /// Flush buffered partial state at end of stream.
     pub(crate) fn finish(&mut self) -> Vec<UnifiedParserEvent> {
+        let deltas = self.finish_deltas();
+        self.stash(deltas)
+    }
+
+    fn finish_deltas(&mut self) -> Deltas {
         if self.failed {
-            return Vec::new();
+            return Deltas::new(self.recording());
         }
         if let Some(input) = &self.glm_native_input {
             match glm_unfinished_call(input) {
@@ -1596,7 +1946,8 @@ impl ChoiceState {
                         "suppressing unfinished native tool call"
                     );
                     self.parser.reset();
-                    return Vec::new();
+                    self.discard_parser_sources();
+                    return Deltas::new(self.recording());
                 }
                 Ok(None) => {}
                 Err(error) => {
@@ -1605,24 +1956,27 @@ impl ChoiceState {
             }
         }
         let pending_qwen_opener = std::mem::take(&mut self.pending_qwen_opener_text);
+        let pending_spans = self.take_qwen_opener_spans();
         let mut events = if pending_qwen_opener.is_empty() {
-            Vec::new()
+            Deltas::new(self.recording())
         } else {
-            self.parse_segment(&pending_qwen_opener)
+            self.parse_segment(&pending_qwen_opener, pending_spans)
         };
-        events.extend(match self.parser.finish() {
+        match self.parser.finish() {
             // `finish` now hands back the whole `UnifiedParserOutput`; this path only ever
             // wants the ordered events out of it.
-            Ok(output) => output.events,
+            Ok(output) => events.append(self.attach_parser_sources(output.events)),
             Err(error) => {
                 tracing::warn!(
                     error = %error,
                     family = self.family,
                     "unified parser finish failed; recovering buffered text"
                 );
-                self.give_up("")
+                // Output from the failed finish is dropped, so are its sources.
+                self.discard_parser_sources();
+                events.append(self.give_up_sourced("", Vec::new()));
             }
-        });
+        }
         self.append_pending_qwen_reasoning(&mut events);
         events
     }
@@ -1634,15 +1988,53 @@ impl ChoiceState {
     /// truncated answer with no indication anything was lost — so they go out as
     /// visible text. When the parser had nothing buffered, the chunk that broke it
     /// does instead, so that chunk is not lost either.
+    #[cfg(test)]
     fn give_up(&mut self, fallback: &str) -> Vec<UnifiedParserEvent> {
+        self.give_up_sourced(fallback, Vec::new()).events
+    }
+
+    /// [`give_up`](Self::give_up), with the ranges of `fallback`.
+    ///
+    /// When the parser hands nothing back, `fallback` is the chunk that broke it.
+    /// If the parser had committed part of that chunk before the error, those
+    /// bytes go out twice, and so do their ranges (see the TODO below).
+    fn give_up_sourced(&mut self, fallback: &str, fallback_spans: Spans) -> Deltas {
         self.failed = true;
         let mut recovered = self.parser.reset();
+        let mut spans = Vec::new();
+        if let Some(recording) = self.recording.as_deref_mut() {
+            self.parser.take_sources(&mut recording.scratch);
+            for range in recording.scratch.drain(..) {
+                if let Err(message) = recording.fed.map(range, &mut spans) {
+                    recording.error.get_or_insert(message);
+                }
+            }
+        }
         if recovered.is_empty() {
             // TODO: Preserve the parser's consumed offset so a partial-commit error cannot replay input.
             recovered.push_str(fallback);
+            spans = fallback_spans;
         }
         recovered.push_str(&std::mem::take(&mut self.pending_qwen_opener_text));
-        text_delta(recovered)
+        append_spans(&mut spans, self.take_qwen_opener_spans());
+        if let Some(recording) = &mut self.recording
+            && spans_len(&spans) != recovered.len()
+        {
+            recording.fail(format!(
+                "recovered text of {} bytes has sources for {} bytes",
+                recovered.len(),
+                spans_len(&spans)
+            ));
+        }
+        self.text_delta_sourced(recovered, spans)
+    }
+
+    fn text_delta_sourced(&self, text: String, spans: Spans) -> Deltas {
+        let mut deltas = Deltas::new(self.recording());
+        if !text.is_empty() {
+            deltas.push(UnifiedParserEvent::Text(text), spans);
+        }
+        deltas
     }
 
     /// Convert one ordered delta into a streaming choice for `index`.
@@ -1721,26 +2113,58 @@ impl ChoiceState {
         finish_reason: Option<FinishReason>,
     ) -> Vec<ChatChoiceStream> {
         let terminal_tool_call_delta = finish_reason_closes_tool_calls(finish_reason.as_ref());
+        let recording = self.recording();
+        let (mut delta_spans, upstream_reasoning) = match self.recording.as_deref_mut() {
+            Some(recording) => {
+                let spans = std::mem::take(&mut recording.event_spans);
+                if spans.len() != deltas.len() {
+                    recording.fail(format!(
+                        "{} events have sources for {}",
+                        deltas.len(),
+                        spans.len()
+                    ));
+                }
+                (
+                    Some(spans.into_iter()),
+                    std::mem::take(&mut recording.upstream_reasoning),
+                )
+            }
+            None => (None, Vec::new()),
+        };
         // Queued reasoning belongs to its earlier source response. Coalescing it
         // with parser reasoning would erase the source envelope's event boundary.
         let source_positions = std::mem::take(&mut self.qwen_reasoning_event_positions);
         self.qwen_reasoning_choice_positions.clear();
-        let mut run = Vec::new();
-        let mut projected = Vec::new();
+        let mut run = Deltas::new(recording);
+        let mut projected = Deltas::new(recording);
         for (position, delta) in deltas.into_iter().enumerate() {
+            let spans = delta_spans
+                .as_mut()
+                .and_then(Iterator::next)
+                .unwrap_or_default();
             if !emit_tool_calls && matches!(delta, UnifiedParserEvent::ToolCall(_)) {
                 continue;
             }
             if source_positions.contains(&position) {
-                projected.extend(coalesce(std::mem::take(&mut run)));
-                self.qwen_reasoning_choice_positions.insert(projected.len());
-                projected.push(delta);
+                projected.append(coalesce_deltas(std::mem::replace(
+                    &mut run,
+                    Deltas::new(recording),
+                )));
+                self.qwen_reasoning_choice_positions
+                    .insert(projected.events.len());
+                projected.push(delta, spans);
             } else {
-                run.push(delta);
+                run.push(delta, spans);
             }
         }
-        projected.extend(coalesce(run));
-        let deltas = projected;
+        projected.append(coalesce_deltas(run));
+        let Deltas {
+            events: deltas,
+            spans: projected_spans,
+        } = projected;
+        let mut projected_spans = projected_spans.map(Vec::into_iter);
+        let mut sources: Option<Vec<ChoiceSources>> = recording.then(Vec::new);
+        let mut upstream_reasoning = Some(upstream_reasoning);
         let envelope_position = (0..deltas.len())
             .find(|position| !self.qwen_reasoning_choice_positions.contains(position));
         let mut original = original.clone();
@@ -1775,6 +2199,19 @@ impl ChoiceState {
         let mut choices = Vec::with_capacity(count.max(1));
 
         for (position, delta) in deltas.into_iter().enumerate() {
+            let delta_spans = projected_spans
+                .as_mut()
+                .and_then(Iterator::next)
+                .unwrap_or_default();
+            let mut choice_sources = ChoiceSources {
+                index,
+                ..ChoiceSources::default()
+            };
+            match &delta {
+                UnifiedParserEvent::Text(_) => choice_sources.content = delta_spans,
+                UnifiedParserEvent::Reasoning(_) => choice_sources.reasoning = delta_spans,
+                _ => {}
+            }
             let mut choice = self.delta_to_choice(index, delta);
             if Some(position) == envelope_position {
                 choice.delta.role = original.delta.role;
@@ -1786,6 +2223,9 @@ impl ChoiceState {
                         .reasoning_content
                         .get_or_insert_default()
                         .insert_str(0, reasoning);
+                    let mut spans = upstream_reasoning.take().unwrap_or_default();
+                    append_spans(&mut spans, std::mem::take(&mut choice_sources.reasoning));
+                    choice_sources.reasoning = spans;
                 }
                 if let Some(mut original_calls) = original.delta.tool_calls.clone() {
                     if let Some(parsed_calls) = choice.delta.tool_calls.take() {
@@ -1797,6 +2237,9 @@ impl ChoiceState {
             if position + 1 == count && !self.qwen_reasoning_choice_positions.contains(&position) {
                 choice.finish_reason = self.normalize_finish_reason(finish_reason);
             }
+            if let Some(sources) = &mut sources {
+                sources.push(choice_sources);
+            }
             choices.push(choice);
         }
 
@@ -1806,14 +2249,24 @@ impl ChoiceState {
                     && self.qwen_reasoning_choice_positions.contains(&(count - 1))))
         {
             let mut choice = empty_choice(index);
+            let mut choice_sources = ChoiceSources {
+                index,
+                ..ChoiceSources::default()
+            };
             if envelope_position.is_none() {
                 choice.delta.role = original.delta.role;
                 choice.delta.refusal = original.delta.refusal.clone();
                 choice.delta.reasoning_content = original.delta.reasoning_content.clone();
                 choice.delta.tool_calls = original.delta.tool_calls.clone();
                 choice.delta.function_call = original.delta.function_call.clone();
+                if choice.delta.reasoning_content.is_some() {
+                    choice_sources.reasoning = upstream_reasoning.take().unwrap_or_default();
+                }
             }
             choice.finish_reason = self.normalize_finish_reason(finish_reason);
+            if let Some(sources) = &mut sources {
+                sources.push(choice_sources);
+            }
             choices.push(choice);
         }
 
@@ -1843,9 +2296,26 @@ impl ChoiceState {
                 self.tool_emitted = true;
             }
             choice.finish_reason = self.normalize_finish_reason(finish_reason);
+            if let Some(sources) = &mut sources {
+                sources.push(ChoiceSources {
+                    index,
+                    content: Vec::new(),
+                    reasoning: if choice.delta.reasoning_content.is_some() {
+                        upstream_reasoning.take().unwrap_or_default()
+                    } else {
+                        Vec::new()
+                    },
+                });
+            }
             choices.push(choice);
         }
 
+        if let Some(recording) = self.recording.as_deref_mut() {
+            if upstream_reasoning.is_some_and(|spans| !spans.is_empty()) {
+                recording.fail("upstream reasoning sources were not placed".to_string());
+            }
+            recording.choice_sources = sources.unwrap_or_default();
+        }
         choices
     }
 
@@ -1983,16 +2453,6 @@ fn normalize_passthrough_tool_call(
     tool_index
 }
 
-/// One text delta, or nothing at all when the text is empty — an empty content chunk
-/// carries no information and clients render it as a stray empty string.
-fn text_delta(text: String) -> Vec<UnifiedParserEvent> {
-    if text.is_empty() {
-        Vec::new()
-    } else {
-        vec![UnifiedParserEvent::Text(text)]
-    }
-}
-
 /// Per-choice bookkeeping that outlives any single `ChoiceState` instance for that
 /// index: whether it has emitted a tool call, which indices remain provisional, and whether its terminal chunk has
 /// already been sent. See the field comment at its use site in
@@ -2053,6 +2513,8 @@ impl<I: UnifiedStreamItem> Default for ChoiceRecord<I> {
 
 struct PendingQwenReasoningResponse<I: UnifiedStreamItem> {
     text: String,
+    /// Ranges of `text` when recording; empty otherwise.
+    spans: Spans,
     choice: ChatChoiceStream,
     data: I::Chunk,
     annotation: I::Annotation,
@@ -2062,7 +2524,60 @@ struct PendingQwenReasoningResponse<I: UnifiedStreamItem> {
 #[allow(clippy::large_enum_variant)]
 enum FinishedStreamChunk<I: UnifiedStreamItem> {
     Choice(ChatChoiceStream),
+    /// A choice and its sources, only while recording.
+    SourcedChoice(Box<(ChatChoiceStream, ChoiceSources)>),
     Source(Box<(I::Chunk, I::Annotation)>),
+}
+
+impl<I: UnifiedStreamItem> FinishedStreamChunk<I> {
+    fn choice(choice: ChatChoiceStream, sources: Option<ChoiceSources>) -> Self {
+        match sources {
+            Some(sources) => Self::SourcedChoice(Box::new((choice, sources))),
+            None => Self::Choice(choice),
+        }
+    }
+}
+
+/// Overwrite a chunk's slot, when it has one, with these choices' sources.
+fn write_slot<C: UnifiedStreamChunk>(chunk: &mut C, sources: Vec<ChoiceSources>) {
+    if let Some(slot) = chunk.sources_mut() {
+        *slot = sources;
+    }
+}
+
+/// Add a choice to the chunk being built, with its sources while recording.
+fn push_emitted(
+    emitted: &mut Vec<ChatChoiceStream>,
+    emitted_sources: &mut Option<Vec<ChoiceSources>>,
+    choice: ChatChoiceStream,
+    sources: ChoiceSources,
+) {
+    if let Some(all) = emitted_sources {
+        all.push(sources);
+    }
+    emitted.push(choice);
+}
+
+/// The sources of a probe's held text, in whichever field it was released into.
+fn probe_choice_sources(choice: &ChatChoiceStream, spans: Spans) -> ChoiceSources {
+    let mut sources = ChoiceSources {
+        index: choice.index,
+        ..ChoiceSources::default()
+    };
+    if choice.delta.content.is_some() {
+        sources.content = spans;
+    } else {
+        sources.reasoning = spans;
+    }
+    sources
+}
+
+/// The text of a raw content delta and of its upstream reasoning.
+fn text_len(content: Option<&ChatCompletionMessageContent>) -> usize {
+    match content {
+        Some(ChatCompletionMessageContent::Text(text)) => text.len(),
+        _ => 0,
+    }
 }
 
 fn take_qwen_reasoning_response<I: UnifiedStreamItem>(
@@ -2076,6 +2591,14 @@ fn take_qwen_reasoning_response<I: UnifiedStreamItem>(
     let mut source_reasoning = pending.choice;
     source_reasoning.delta.reasoning_content = Some(pending.text);
     source_reasoning.finish_reason = None;
+    write_slot(
+        &mut data,
+        vec![ChoiceSources {
+            index: source_reasoning.index,
+            content: Vec::new(),
+            reasoning: pending.spans,
+        }],
+    );
     data.inner_mut().choices = vec![source_reasoning];
     Box::new((data, pending.annotation))
 }
@@ -2084,15 +2607,18 @@ fn qwen_chunks_for_choices<I: UnifiedStreamItem>(
     state: &ChoiceState,
     record: &mut ChoiceRecord<I>,
     choices: Vec<ChatChoiceStream>,
+    sources: Option<Vec<ChoiceSources>>,
 ) -> Vec<FinishedStreamChunk<I>> {
+    let mut sources = sources.map(Vec::into_iter);
     choices
         .into_iter()
         .enumerate()
         .map(|(position, choice)| {
+            let choice_sources = sources.as_mut().map(|all| all.next().unwrap_or_default());
             if state.qwen_reasoning_choice_positions.contains(&position) {
                 FinishedStreamChunk::Source(take_qwen_reasoning_response(record))
             } else {
-                FinishedStreamChunk::Choice(choice)
+                FinishedStreamChunk::choice(choice, choice_sources)
             }
         })
         .collect()
@@ -2151,6 +2677,7 @@ fn finish_unterminated_choices<I: UnifiedStreamItem>(
     records: &mut HashMap<u32, ChoiceRecord<I>>,
     family: &str,
     parsers_v2_selected: bool,
+    recording: bool,
 ) -> Vec<FinishedStreamChunk<I>> {
     let mut indices: Vec<u32> = states
         .keys()
@@ -2174,6 +2701,7 @@ fn finish_unterminated_choices<I: UnifiedStreamItem>(
                 // Native completion evidence remains authoritative; backend-only calls
                 // use the family policy so default-on parsers retain their EOF contract.
                 let mut flushed = state.choices_for(&base, deltas, true, None);
+                let mut flushed_sources = state.take_choice_sources();
                 state.resolve_complete_parsed_tool_calls_at_eof();
                 if let Some(reason) = state.unterminated_finish_reason() {
                     if let Some(last_position) = flushed.len().checked_sub(1) {
@@ -2184,14 +2712,30 @@ fn finish_unterminated_choices<I: UnifiedStreamItem>(
                             let mut terminal = empty_choice(index);
                             terminal.finish_reason = Some(reason);
                             flushed.push(terminal);
+                            if let Some(sources) = &mut flushed_sources {
+                                sources.push(ChoiceSources {
+                                    index,
+                                    ..ChoiceSources::default()
+                                });
+                            }
                         } else {
                             flushed[last_position].finish_reason = Some(reason);
                         }
                     } else {
                         flushed.extend(state.choices_for(&base, Vec::new(), true, Some(reason)));
+                        if let (Some(sources), Some(more)) =
+                            (&mut flushed_sources, state.take_choice_sources())
+                        {
+                            sources.extend(more);
+                        }
                     }
                 }
-                chunks.extend(qwen_chunks_for_choices(state, record, flushed));
+                chunks.extend(qwen_chunks_for_choices(
+                    state,
+                    record,
+                    flushed,
+                    flushed_sources,
+                ));
             }
             None => {
                 let pending_whitespace =
@@ -2216,7 +2760,11 @@ fn finish_unterminated_choices<I: UnifiedStreamItem>(
                 {
                     let mut choice = base;
                     choice.finish_reason = Some(reason);
-                    chunks.push(FinishedStreamChunk::Choice(choice));
+                    let sources = recording.then(|| ChoiceSources {
+                        index,
+                        ..ChoiceSources::default()
+                    });
+                    chunks.push(FinishedStreamChunk::choice(choice, sources));
                 }
             }
         }
@@ -2354,11 +2902,13 @@ fn attach_call_completion<I: UnifiedStreamItem>(
 fn response_with_choice<I: UnifiedStreamItem>(
     template: &I::Chunk,
     choice: ChatChoiceStream,
+    sources: Option<ChoiceSources>,
     states: &HashMap<u32, ChoiceState>,
     records: &HashMap<u32, ChoiceRecord<I>>,
 ) -> I {
     let mut data = template.clone();
     data.scrub_synthetic();
+    write_slot(&mut data, sources.into_iter().collect());
     attach_call_completion(&mut data, &choice, states, records);
     data.inner_mut().choices = vec![choice];
     I::from_parts(data, I::Annotation::default())
@@ -2459,12 +3009,19 @@ fn resolve_guided_prefix(
 
 fn flush_undecided_guided_prefixes(
     prefixes: &mut HashMap<u32, JsonPrefillProbe>,
+    prefix_spans: &mut HashMap<u32, Spans>,
     policy: UnifiedRequestPolicy,
     prefill: UnifiedParserStartingState,
-) -> Vec<ChatChoiceStream> {
+) -> Vec<(ChatChoiceStream, ChoiceSources)> {
     prefixes
         .drain()
-        .filter_map(|(index, probe)| resolve_guided_prefix(index, probe, policy, prefill))
+        .filter_map(|(index, probe)| {
+            let spans = prefix_spans.remove(&index).unwrap_or_default();
+            resolve_guided_prefix(index, probe, policy, prefill).map(|choice| {
+                let sources = probe_choice_sources(&choice, spans);
+                (choice, sources)
+            })
+        })
         .collect()
 }
 
@@ -2513,6 +3070,10 @@ where
     let tools = to_v2_tools(tool_definitions.as_deref());
     stream! {
         let mut undecided_guided_prefix: HashMap<u32, JsonPrefillProbe> = HashMap::new();
+        // Ranges beside each probe's held text, while recording.
+        let mut undecided_spans: HashMap<u32, Spans> = HashMap::new();
+        // Whether the input chunks carry a source slot, so the adapter records.
+        let mut recording = false;
         let mut states: HashMap<u32, ChoiceState> = HashMap::new();
         // Per-choice bookkeeping that must outlive a single `ChoiceState`: a
         // `ChoiceState` is dropped whenever an already-parsed chunk interrupts a
@@ -2543,6 +3104,22 @@ where
                 }
             };
 
+            // The input slot dates the input text. Take it out, so no chunk built
+            // from this one repeats it.
+            let has_slot = match chat.sources_mut() {
+                Some(slot) => {
+                    let sources = std::mem::take(slot);
+                    recording = true;
+                    Some(sources)
+                }
+                None => None,
+            };
+            if recording && has_slot.is_none() {
+                yield I::from_error("a chunk without a source slot followed one with a slot".to_string());
+                return;
+            }
+            let mut input_sources = has_slot.unwrap_or_default();
+
             {
                 let mut next = chat.clone();
                 next.scrub_synthetic();
@@ -2569,33 +3146,63 @@ where
                 // terminal finish_reason to precede it, so flush first.
                 if chat.inner().usage.is_some()
                     && let Some(template) = &template {
-                    for choice in flush_undecided_guided_prefixes(&mut undecided_guided_prefix, policy, prefill) {
-                        yield response_with_choice(template, choice, &states, &records);
+                    for (choice, sources) in flush_undecided_guided_prefixes(&mut undecided_guided_prefix, &mut undecided_spans, policy, prefill) {
+                        yield response_with_choice(template, choice, recording.then_some(sources), &states, &records);
                     }
-                    for output in finish_unterminated_choices(&mut states, &mut records, family, policy.parsers_v2_selected) {
+                    for output in finish_unterminated_choices(&mut states, &mut records, family, policy.parsers_v2_selected, recording) {
                         match output {
                             FinishedStreamChunk::Choice(choice) => {
-                                yield response_with_choice(template, choice, &states, &records);
+                                yield response_with_choice(template, choice, None, &states, &records);
+                            }
+                            FinishedStreamChunk::SourcedChoice(sourced) => {
+                                let (choice, sources) = *sourced;
+                                yield response_with_choice(template, choice, Some(sources), &states, &records);
                             }
                             FinishedStreamChunk::Source(response) => yield normalized_source_response(*response, &states, &records),
                         }
+                    }
+                    if let Some(error) = states.values_mut().find_map(ChoiceState::take_recording_error) {
+                        yield I::from_error(error);
+                        return;
                     }
                 }
                 for evidence in chat.tool_call_completion_mut() {
                     normalize_completion_evidence(evidence, &states, &records);
                 }
+                write_slot(&mut chat, Vec::new());
                 yield I::from_parts(chat, annotation);
                 continue;
             }
 
             let originals = std::mem::take(&mut chat.inner_mut().choices);
             let mut emitted: Vec<ChatChoiceStream> = Vec::new();
+            let mut emitted_sources: Option<Vec<ChoiceSources>> = recording.then(Vec::new);
             let mut deferred_qwen_responses = Vec::new();
             let mut qwen_source_metadata_deferred = false;
             for mut original in originals {
+                // This choice's input sources, checked against its text.
+                let mut input = match input_sources.iter().position(|sources| sources.index == original.index) {
+                    Some(position) => input_sources.swap_remove(position),
+                    None => ChoiceSources { index: original.index, ..ChoiceSources::default() },
+                };
+                if recording
+                    && (spans_len(&input.content) != text_len(original.delta.content.as_ref())
+                        || spans_len(&input.reasoning)
+                            != original.delta.reasoning_content.as_ref().map_or(0, String::len))
+                {
+                    yield I::from_error(format!(
+                        "the sources of choice {} do not cover its text",
+                        original.index
+                    ));
+                    return;
+                }
                 if already_parsed(&original) {
                     if let Some(prefix) = undecided_guided_prefix.remove(&original.index)
-                        && let Some(choice) = resolve_guided_prefix(original.index, prefix, policy, prefill) { emitted.push(choice); }
+                        && let Some(choice) = resolve_guided_prefix(original.index, prefix, policy, prefill) {
+                        let spans = undecided_spans.remove(&original.index).unwrap_or_default();
+                        let sources = probe_choice_sources(&choice, spans);
+                        push_emitted(&mut emitted, &mut emitted_sources, choice, sources);
+                    }
                     // Record this index exists even if no `ChoiceState` is ever
                     // built for it (e.g. its first-ever chunk is already-parsed),
                     // so it is not invisible to `finish_unterminated_choices`.
@@ -2609,7 +3216,8 @@ where
                             let mut deferred_reasoning = empty_choice(original.index);
                             deferred_reasoning.delta.reasoning_content =
                                 Some(pending_whitespace);
-                            emitted.push(deferred_reasoning);
+                            let sources = ChoiceSources { index: original.index, ..ChoiceSources::default() };
+                            push_emitted(&mut emitted, &mut emitted_sources, deferred_reasoning, sources);
                         }
                     }
                     // Any raw run resuming this choice after this point must rebuild
@@ -2710,10 +3318,11 @@ where
                                 .reasoning_content
                                 .take()
                                 .expect("reasoning-only chunk has reasoning content");
+                            let reasoning_spans = std::mem::take(&mut input.reasoning);
                             states
                                 .get_mut(&original.index)
                                 .expect("preserved parser state must still exist")
-                                .queue_qwen_opener_reasoning(reasoning.clone());
+                                .queue_qwen_opener_reasoning_sourced(reasoning.clone(), reasoning_spans.clone());
                             let mut source_data = chat.clone();
                             source_data.inner_mut().choices.clear();
                             let keep_source_metadata = !qwen_source_metadata_deferred;
@@ -2727,6 +3336,7 @@ where
                             record.pending_qwen_opener_responses.push_back(
                                 PendingQwenReasoningResponse {
                                     text: reasoning,
+                                    spans: reasoning_spans,
                                     choice: original.clone(),
                                     data: source_data,
                                     annotation: if keep_source_metadata {
@@ -2794,12 +3404,21 @@ where
                             true,
                             None,
                         );
-                        for output in qwen_chunks_for_choices(&state, record, flushed) {
+                        let flushed_sources = state.take_choice_sources();
+                        if let Some(error) = state.take_recording_error() {
+                            yield I::from_error(error);
+                            return;
+                        }
+                        for output in qwen_chunks_for_choices(&state, record, flushed, flushed_sources) {
                             match output {
                                 FinishedStreamChunk::Source(response) => {
                                     deferred_qwen_responses.push((emitted.len(), response));
                                 }
                                 FinishedStreamChunk::Choice(choice) => emitted.push(choice),
+                                FinishedStreamChunk::SourcedChoice(sourced) => {
+                                    let (choice, sources) = *sourced;
+                                    push_emitted(&mut emitted, &mut emitted_sources, choice, sources);
+                                }
                             }
                         }
                         record.remember_state(&state);
@@ -2809,7 +3428,12 @@ where
                         record.finished = true;
                     }
                     if !queue_qwen_opener_reasoning {
-                        emitted.push(original);
+                        let sources = ChoiceSources {
+                            index: original.index,
+                            content: Vec::new(),
+                            reasoning: input.reasoning,
+                        };
+                        push_emitted(&mut emitted, &mut emitted_sources, original, sources);
                     }
                     continue;
                 }
@@ -2849,13 +3473,22 @@ where
                         let flushed = state.choices_for(
                             &empty_choice(original.index), deltas, true, None,
                         );
+                        let flushed_sources = state.take_choice_sources();
+                        if let Some(error) = state.take_recording_error() {
+                            yield I::from_error(error);
+                            return;
+                        }
                         let record = records.entry(original.index).or_default();
-                        for output in qwen_chunks_for_choices(&state, record, flushed) {
+                        for output in qwen_chunks_for_choices(&state, record, flushed, flushed_sources) {
                             match output {
                                 FinishedStreamChunk::Source(response) => {
                                     deferred_qwen_responses.push((emitted.len(), response));
                                 }
                                 FinishedStreamChunk::Choice(choice) => emitted.push(choice),
+                                FinishedStreamChunk::SourcedChoice(sourced) => {
+                                    let (choice, sources) = *sourced;
+                                    push_emitted(&mut emitted, &mut emitted_sources, choice, sources);
+                                }
                             }
                         }
                         record.remember_state(&state);
@@ -2874,6 +3507,8 @@ where
                     };
                     let mut probe = undecided_guided_prefix.remove(&original.index).unwrap_or_default();
                     probe.push(text);
+                    let mut probe_spans = undecided_spans.remove(&original.index).unwrap_or_default();
+                    append_spans(&mut probe_spans, std::mem::take(&mut input.content));
                     let probe_decision = if prefill == UnifiedParserStartingState::None {
                         // Without a prompt-opened channel, non-JSON may contain an explicit
                         // reasoning opener. Let the native parser recognize it.
@@ -2906,8 +3541,16 @@ where
                             && (probe_decision.is_none() || awaiting_reasoning_boundary)
                     {
                         undecided_guided_prefix.insert(original.index, probe);
+                        if recording {
+                            undecided_spans.insert(original.index, probe_spans);
+                        }
                         original.delta.content = None;
-                        emitted.push(original);
+                        let sources = ChoiceSources {
+                            index: original.index,
+                            content: Vec::new(),
+                            reasoning: input.reasoning,
+                        };
+                        push_emitted(&mut emitted, &mut emitted_sources, original, sources);
                         continue;
                     }
                     if prefill == UnifiedParserStartingState::None
@@ -2916,6 +3559,7 @@ where
                         detected_prefill = UnifiedParserStartingState::Response;
                     }
                     original.delta.content = Some(ChatCompletionMessageContent::Text(probe.text));
+                    input.content = probe_spans;
                 }
 
                 let state = match states.entry(original.index) {
@@ -2991,7 +3635,7 @@ where
                             starting_state: choice_prefill,
                             prefix: (choice_prefill == UnifiedParserStartingState::Reasoning).then_some(prefill_prefix).flatten(),
                         };
-                        match ChoiceState::new(family, &tools, choice_prefill, mode, guided_streaming, policy.parsers_v2_selected) {
+                        match ChoiceState::build(family, &tools, choice_prefill, mode, guided_streaming, policy.parsers_v2_selected, recording) {
                             Ok(mut state) => {
                                 // A raw run resuming after an already-parsed detour
                                 // gets a brand-new parser instance; seed it with any
@@ -3033,14 +3677,20 @@ where
                                 }
                                 entry.insert(state)
                             }
-                            Err(error) => {
+                            Err(ChoiceStateError::Recording(message)) => {
+                                // A choice that cannot record must not pass through
+                                // with undated text.
+                                yield I::from_error(message);
+                                return;
+                            }
+                            Err(ChoiceStateError::Parser(error)) => {
                                 tracing::warn!(
                                     error = %error,
                                     family,
                                     choice = original.index,
                                     "unified parser construction failed; passing choice through"
                                 );
-                                emitted.push(original);
+                                push_emitted(&mut emitted, &mut emitted_sources, original, input);
                                 continue;
                             }
                         }
@@ -3051,7 +3701,7 @@ where
                 if let Some(ChatCompletionMessageContent::Text(text)) =
                     original.delta.content.as_ref()
                 {
-                    deltas.extend(state.push(text));
+                    deltas.extend(state.push_sourced(text, std::mem::take(&mut input.content)));
                 }
                 let terminal = original.finish_reason;
                 let already_finished = records
@@ -3064,7 +3714,13 @@ where
                     records.entry(original.index).or_default().finished = true;
                 }
 
+                state.set_upstream_reasoning(std::mem::take(&mut input.reasoning));
                 let mut choices = state.choices_for(&original, deltas, true, terminal);
+                let choice_sources = state.take_choice_sources();
+                if let Some(error) = state.take_recording_error() {
+                    yield I::from_error(error);
+                    return;
+                }
                 merge_passthrough_completion(
                     &mut state.parser_call_completion,
                     &state.passthrough_tool_indices,
@@ -3077,22 +3733,31 @@ where
                     choice.finish_reason = state.normalize_finish_reason(choice.finish_reason);
                 }
                 let mut parsed = Vec::new();
+                let mut parsed_sources: Option<Vec<ChoiceSources>> = recording.then(Vec::new);
                 let record = records.entry(original.index).or_default();
-                for output in qwen_chunks_for_choices(state, record, choices) {
+                for output in qwen_chunks_for_choices(state, record, choices, choice_sources) {
                     match output {
                         FinishedStreamChunk::Source(response) => {
                             deferred_qwen_responses.push((emitted.len() + parsed.len(), response));
                         }
                         FinishedStreamChunk::Choice(choice) => parsed.push(choice),
+                        FinishedStreamChunk::SourcedChoice(sourced) => {
+                            let (choice, sources) = *sourced;
+                            push_emitted(&mut parsed, &mut parsed_sources, choice, sources);
+                        }
                     }
                 }
                 if parsed.is_empty() {
                     // A marker-only chunk produced no deltas. Keep it as an empty
                     // choice so the typed llm_metrics and annotation metadata it
                     // carries still reach the client.
-                    parsed.push(empty_choice(original.index));
+                    let sources = ChoiceSources { index: original.index, ..ChoiceSources::default() };
+                    push_emitted(&mut parsed, &mut parsed_sources, empty_choice(original.index), sources);
                 }
                 emitted.extend(parsed);
+                if let (Some(all), Some(more)) = (&mut emitted_sources, parsed_sources) {
+                    all.extend(more);
+                }
             }
 
             if qwen_source_metadata_deferred {
@@ -3111,6 +3776,10 @@ where
             // fields stay on the last child. Token metrics stay on one reasoning child
             // when present so the downstream reasoning-usage estimator preserves the
             // source chunk's classification without counting it twice.
+            if let Some(sources) = &emitted_sources {
+                debug_assert_eq!(sources.len(), emitted.len(), "each emitted choice has sources");
+            }
+            let mut emitted_sources = emitted_sources.map(Vec::into_iter);
             let last = emitted.len().checked_sub(1);
             let llm_metrics_position = fanout_llm_metrics_position(&emitted);
             let mut deferred_qwen_responses = deferred_qwen_responses.into_iter().peekable();
@@ -3127,6 +3796,7 @@ where
                 let Some(choice) = emitted.get(position).cloned() else {
                     continue;
                 };
+                let choice_sources = emitted_sources.as_mut().and_then(Iterator::next);
                 let is_last = Some(position) == last;
                 let mut data = chat.clone();
                 if !is_last {
@@ -3134,6 +3804,7 @@ where
                 }
                 attach_call_completion(&mut data, &choice, &states, &records);
                 data.inner_mut().choices = vec![choice];
+                write_slot(&mut data, choice_sources.into_iter().collect());
                 if !is_last {
                     data.inner_mut().usage = None;
                     data.clear_nvext();
@@ -3154,13 +3825,22 @@ where
 
         // Backstop: the stream ended without a terminating chunk for some choice.
         if let Some(template) = &template {
-            for choice in flush_undecided_guided_prefixes(&mut undecided_guided_prefix, policy, prefill) {
-                        yield response_with_choice(template, choice, &states, &records);
-                    }
-                    for output in finish_unterminated_choices(&mut states, &mut records, family, policy.parsers_v2_selected) {
+            for (choice, sources) in flush_undecided_guided_prefixes(&mut undecided_guided_prefix, &mut undecided_spans, policy, prefill) {
+                yield response_with_choice(template, choice, recording.then_some(sources), &states, &records);
+            }
+            let finished = finish_unterminated_choices(&mut states, &mut records, family, policy.parsers_v2_selected, recording);
+            if let Some(error) = states.values_mut().find_map(ChoiceState::take_recording_error) {
+                yield I::from_error(error);
+                return;
+            }
+            for output in finished {
                 match output {
                     FinishedStreamChunk::Choice(choice) => {
-                        yield response_with_choice(template, choice, &states, &records);
+                        yield response_with_choice(template, choice, None, &states, &records);
+                    }
+                    FinishedStreamChunk::SourcedChoice(sourced) => {
+                        let (choice, sources) = *sourced;
+                        yield response_with_choice(template, choice, Some(sources), &states, &records);
                     }
                     FinishedStreamChunk::Source(response) => yield normalized_source_response(*response, &states, &records),
                 }

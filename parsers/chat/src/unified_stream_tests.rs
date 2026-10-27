@@ -75,6 +75,10 @@ impl<C: UnifiedStreamChunk> UnifiedStreamItem for Annotated<C> {
             error,
         }
     }
+
+    fn from_error(message: String) -> Self {
+        Annotated::from_error(message)
+    }
 }
 
 /// The fields of dynamo-llm's `LLMMetricAnnotation` that these tests set.
@@ -95,6 +99,9 @@ struct NvCreateChatCompletionStreamResponse {
     llm_metrics: Option<LLMMetricAnnotation>,
     tool_call_completion: Vec<ToolCallCompletion>,
 }
+
+// dynamo's chunk type records nothing: it keeps the trait defaults.
+impl dynamo_parsers::sources::SourceSlot for NvCreateChatCompletionStreamResponse {}
 
 impl UnifiedStreamChunk for NvCreateChatCompletionStreamResponse {
     fn inner(&self) -> &CreateChatCompletionStreamResponse {
@@ -164,7 +171,7 @@ fn ordinary_fanout_keeps_the_source_adapter_allocation_size() {
     .unwrap();
     let mut record = ChoiceRecord::<Annotated<NvCreateChatCompletionStreamResponse>>::default();
     let choices = vec![empty_choice(0)];
-    let chunks = qwen_chunks_for_choices(&state, &mut record, choices);
+    let chunks = qwen_chunks_for_choices(&state, &mut record, choices, None);
     assert!(matches!(
         chunks.as_slice(),
         [FinishedStreamChunk::Choice(_)]
@@ -4764,6 +4771,7 @@ fn a_failed_push_keeps_committed_events_before_recovered_bytes() {
         incomplete_native_call: false,
         family: "test".to_string(),
         parsers_v2_selected: false,
+        recording: None,
         parser: Box::new(PartialCommitParser {
             recovered: "<broken>".to_string(),
         }),
@@ -5028,6 +5036,7 @@ async fn qwen_queued_reasoning_preserves_choice_envelope_on_resolution_and_eof()
                             Annotated<NvCreateChatCompletionStreamResponse>,
                         > {
                             text: "detour".into(),
+                            spans: Vec::new(),
                             choice: expected.clone(),
                             data: source.data.clone().unwrap(),
                             annotation: (
@@ -5045,6 +5054,7 @@ async fn qwen_queued_reasoning_preserves_choice_envelope_on_resolution_and_eof()
                 &mut HashMap::new(),
                 &mut records,
                 QWEN3_UNIFIED_FAMILY,
+                false,
                 false,
             );
             assert_eq!(fallback.len(), 1);
@@ -6100,6 +6110,7 @@ fn review_provisional_sibling_exposes_truncation_in_live_and_history_states() {
             &mut records,
             QWEN3_UNIFIED_FAMILY,
             false,
+            false,
         );
         assert!(
             matches!(&chunks[..], [FinishedStreamChunk::Choice(choice)] if choice.finish_reason == Some(FinishReason::Length))
@@ -6242,3 +6253,7 @@ fn public_marker_helpers_skip_quoted_markers() {
         None
     );
 }
+
+#[path = "unified_stream_sources_tests.rs"]
+#[allow(clippy::single_range_in_vec_init)]
+mod sources;
