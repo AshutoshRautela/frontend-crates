@@ -2460,17 +2460,14 @@ mod enum_const_type_hint {
             ),
             serde_json::json!(4)
         );
-        // string enums stay verbatim strings, including JSON-looking text
         assert_eq!(
             run(serde_json::json!({"enum":["1","2"]}), "1"),
             serde_json::json!("1")
         );
-        // mixed enums keep the existing string preference
         assert_eq!(
             run(serde_json::json!({"enum":[1,"a"]}), "1"),
             serde_json::json!("1")
         );
-        // an enum that contradicts the declared type does not override it
         assert_eq!(
             run(serde_json::json!({"type":"string","enum":[1,2]}), "1"),
             serde_json::json!("1")
