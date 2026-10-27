@@ -154,27 +154,35 @@ impl Tally {
         }
     }
 
-    fn check(
+    /// Compare a rule that does not read the v2 family registry. Any difference fails.
+    fn check(&mut self, what: impl FnOnce() -> String, expected: &Value, actual: &Value) {
+        self.cases += 1;
+        if expected != actual {
+            self.mismatches
+                .push(format!("{}: dynamo {expected} != moved {actual}", what()));
+        }
+    }
+
+    /// Compare a rule that reads the v2 family registry. A difference for a parser
+    /// name the newer registry added counts as drift, not as a mismatch.
+    fn check_registry(
         &mut self,
         names: [Option<&str>; 2],
         what: impl FnOnce() -> String,
         expected: &Value,
         actual: &Value,
     ) {
-        self.cases += 1;
-        if expected == actual {
-            return;
-        }
-        if names
-            .iter()
-            .flatten()
-            .any(|name| self.drift.contains(*name))
+        if expected != actual
+            && names
+                .iter()
+                .flatten()
+                .any(|name| self.drift.contains(*name))
         {
+            self.cases += 1;
             self.drifted += 1;
             return;
         }
-        self.mismatches
-            .push(format!("{}: dynamo {expected} != moved {actual}", what()));
+        self.check(what, expected, actual);
     }
 
     fn finish(self, label: &str) -> usize {
@@ -217,7 +225,7 @@ fn family_selection_and_special_tokens_match_dynamo() {
         {
             let reasoning = data.names[r].as_deref();
             let what = || format!("{version:?} ({tool:?}, {reasoning:?})");
-            tally.check(
+            tally.check_registry(
                 [tool, reasoning],
                 || format!("selected_family {}", what()),
                 data.value(family),
@@ -228,7 +236,7 @@ fn family_selection_and_special_tokens_match_dynamo() {
                     Ok(value) => json!(value),
                     Err(error) => err_json(&error),
                 };
-            tally.check(
+            tally.check_registry(
                 [tool, reasoning],
                 || format!("parser_requires_special_tokens {}", what()),
                 data.value(special),
@@ -248,14 +256,14 @@ fn pair_rules_match_dynamo() {
         for (r, reasoning) in data.names.iter().enumerate() {
             let reasoning = reasoning.as_deref();
             let pair = || format!("({tool:?}, {reasoning:?})");
-            tally.check(
+            tally.check_registry(
                 [tool, reasoning],
                 || format!("configured_family {}", pair()),
                 data.value(&row[2][r]),
                 &json!(families::configured_family(tool, reasoning)),
             );
             let is_v2 = bit(row[3].as_str().unwrap().chars().nth(r).unwrap());
-            tally.check(
+            tally.check_registry(
                 [tool, reasoning],
                 || format!("is_v2_configured_family {}", pair()),
                 &json!(is_v2),
@@ -265,7 +273,7 @@ fn pair_rules_match_dynamo() {
             let prefills = row[5][r].as_str().unwrap();
             for (p, prompt) in data.prompts.iter().enumerate() {
                 let prompt = prompt.as_deref();
-                tally.check(
+                tally.check_registry(
                     [tool, reasoning],
                     || {
                         format!(
@@ -280,7 +288,7 @@ fn pair_rules_match_dynamo() {
                 );
                 let code = prefills.chars().nth(p).unwrap().to_digit(36).unwrap() as usize;
                 let moved = prefill::prompt_reasoning_prefill_for_parsers(tool, reasoning, prompt);
-                tally.check(
+                tally.check_registry(
                     [tool, reasoning],
                     || format!("prompt_reasoning_prefill_for_parsers {} {prompt:?}", pair()),
                     &data.prefills[code],
@@ -299,7 +307,7 @@ fn pair_rules_match_dynamo() {
                         Ok(()) => Value::Null,
                         Err(error) => err_json(&error),
                     };
-                    tally.check(
+                    tally.check_registry(
                         [tool, reasoning],
                         || {
                             format!(
@@ -316,7 +324,7 @@ fn pair_rules_match_dynamo() {
                     Ok(()) => Value::Null,
                     Err(error) => err_json(&error),
                 };
-                tally.check(
+                tally.check_registry(
                     [tool, reasoning],
                     || format!("validate_parser_version {version:?} {}", pair()),
                     data.value(&modes[i * 2]),
@@ -349,7 +357,7 @@ fn route_matches_dynamo() {
         let (tool, reasoning) = (data.name(&row[2]), data.name(&row[3]));
         for (i, (expected, request)) in row[4].as_array().unwrap().iter().zip(&requests).enumerate()
         {
-            tally.check(
+            tally.check_registry(
                 [tool, reasoning],
                 || {
                     format!(
@@ -375,7 +383,6 @@ fn prompt_opener_matches_dynamo() {
         for (p, expected) in row[2].as_str().unwrap().chars().enumerate() {
             let prompt = data.prompts[p].as_deref();
             tally.check(
-                [reasoning, None],
                 || format!("prompt_injected_reasoning_start {reasoning:?} {prompt:?}"),
                 &json!(bit(expected)),
                 &json!(prefill::prompt_injected_reasoning_start(reasoning, prompt)),
@@ -410,7 +417,6 @@ fn tool_parser_rules_match_dynamo() {
         let tool = data.name(&row[1]);
         for (choice, expected) in choices.iter().zip(row[2].as_str().unwrap().chars()) {
             tally.check(
-                [tool, None],
                 || format!("requires_native_tool_call_format {tool:?} {choice:?}"),
                 &json!(bit(expected)),
                 &json!(tools::requires_native_tool_call_format(tool, choice)),
@@ -421,7 +427,6 @@ fn tool_parser_rules_match_dynamo() {
         for (i, option) in options.iter().enumerate() {
             for (j, has_tools) in [false, true].into_iter().enumerate() {
                 tally.check(
-                    [tool, None],
                     || format!("should_apply_tool_jail {tool:?} {option:?} {has_tools}"),
                     data.value(&jail[i * 2 + j]),
                     &json!(route::should_apply_tool_jail(
@@ -452,7 +457,6 @@ fn tool_parser_rules_match_dynamo() {
                     Err(error) => err_json(&error),
                 };
                 tally.check(
-                    [tool, None],
                     || format!("remove_tool_parser_end_tokens_from_hidden_stops {tool:?} {input:?} request {i}"),
                     data.value(expected),
                     &moved,
@@ -472,13 +476,11 @@ fn effective_tools_match_dynamo() {
             serde_json::from_value(row["request"].clone()).unwrap();
         let what = || row["request"].to_string();
         tally.check(
-            [None, None],
             || format!("tool_call_parsing_enabled {}", what()),
             &row["parsing_enabled"],
             &json!(tools::tool_call_parsing_enabled(&request)),
         );
         tally.check(
-            [None, None],
             || format!("request_has_effective_tools {}", what()),
             &row["request_has_effective_tools"],
             &json!(stop_tokens::request_has_effective_tools(&request)),
@@ -506,7 +508,6 @@ fn effective_tools_match_dynamo() {
             Err(error) => json!({"err": error.to_string()}),
         };
         tally.check(
-            [None, None],
             || format!("effective_tools {}", what()),
             &row["effective"],
             &moved,
@@ -518,7 +519,6 @@ fn effective_tools_match_dynamo() {
             Err(error) => json!({"err": error.to_string()}),
         };
         tally.check(
-            [None, None],
             || format!("convert_tools(effective_tools) {}", what()),
             &row["definitions"],
             &definitions,
@@ -537,7 +537,7 @@ fn small_tables_match_dynamo() {
         serde_json::from_value(data.object("family_names")[0]["names"].clone()).unwrap();
     expected.extend(tally.drift.iter().cloned());
     expected.sort_unstable();
-    tally.check(
+    tally.check_registry(
         [None, None],
         || "unified_family_names".to_string(),
         &json!(expected),
@@ -550,7 +550,6 @@ fn small_tables_match_dynamo() {
             Err(error) => err_json(&error),
         };
         tally.check(
-            [None, None],
             || format!("ParserVersion::try_from({value:?})"),
             &row["out"],
             &moved,
@@ -558,7 +557,7 @@ fn small_tables_match_dynamo() {
     }
     for row in data.rows("name") {
         let name = row[1].as_str().unwrap();
-        tally.check(
+        tally.check_registry(
             [Some(name), None],
             || format!("canonical_family({name:?})"),
             &row[2],
@@ -569,7 +568,6 @@ fn small_tables_match_dynamo() {
         let skip: Option<bool> = serde_json::from_value(row["skip"].clone()).unwrap();
         let requires = row["requires"].as_bool().unwrap();
         tally.check(
-            [None, None],
             || format!("special_tokens_will_be_stripped({skip:?}, {requires})"),
             &row["out"],
             &json!(special_tokens::special_tokens_will_be_stripped(
@@ -627,7 +625,6 @@ fn registry_drift_is_only_new_families() {
 fn tally_records_native_format_mismatches_for_existing_families() {
     let mut tally = Tally::new(&Data::load());
     tally.check(
-        [Some("kimi_k3"), None],
         || "requires_native_tool_call_format kimi_k3 Required".to_string(),
         &json!(true),
         &json!(false),
@@ -636,12 +633,14 @@ fn tally_records_native_format_mismatches_for_existing_families() {
     assert_eq!(tally.drifted, 0);
 }
 
+/// F2 (review pass 1): a name the newer registry added must not hide a difference in
+/// a rule that never reads the registry.
 #[test]
-#[ignore = "F2: registry drift hides unrelated native-format mismatches"]
 fn registry_drift_does_not_hide_native_format_mismatches() {
     let data = Data::load();
     let mut tally = Tally::new(&data);
-    assert!(tally.drift.contains("muse_spark"));
+    // Treat it as drift even where the registry does not know it yet.
+    tally.drift.insert("muse_spark".to_string());
     let recorded = data
         .rows("tool_parser")
         .find(|row| data.name(&row[1]) == Some("muse_spark"))
@@ -654,7 +653,6 @@ fn registry_drift_does_not_hide_native_format_mismatches() {
 
     // Registration cannot change the Kimi-only native-format rule.
     tally.check(
-        [Some("muse_spark"), None],
         || "requires_native_tool_call_format muse_spark Required".to_string(),
         &json!(false),
         &json!(true),
