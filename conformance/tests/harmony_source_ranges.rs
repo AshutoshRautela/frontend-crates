@@ -6,15 +6,8 @@
 //!
 //! The parser is fed decoded text, as dynamo-llm feeds it. Harmony encodes that
 //! text again with its own tokenizer and reads content back one token at a time,
-//! so the ranges it records are checked against the input, not trusted:
-//!
-//! * Same output: recording on and off give identical events, errors, and
-//!   `reset` text, at every split.
-//! * Verbatim and tiling: the ranges taken after each call, read from the input,
-//!   equal that call's Text and Reasoning bytes in output order, with no gap.
-//! * Causality: no range reaches past the bytes fed so far.
-//! * Order: ranges from parse and finish calls never go back in the input.
-//!   Byte equality alone accepts a range one repeat off ("ha ha ha"); this does not.
+//! so the ranges it records are checked against the input, not trusted, by the
+//! shared checker in `common/source_ranges.rs`.
 //!
 //! The corpus is every GPT-OSS conformance case, the beam fixtures (Harmony
 //! syntax), dynamo's GPT-OSS streams and test literals, and targeted cases for
@@ -23,14 +16,18 @@
 //! boundary. It runs under the fixture's init and under the init dynamo-llm
 //! uses, which replays `<|start|>assistant` as prompt tokens.
 
+mod common;
+
 use std::collections::BTreeMap;
 use std::ops::Range;
-use std::sync::Mutex;
 
+use common::source_ranges::{
+    End, Run, Tally, all_splits, check_all, check_runs, check_splits, committed_text, joined_ranges,
+};
 use dynamo_parsers_v2::unified::harmony::encode_harmony;
 use dynamo_parsers_v2::{
-    UnifiedParserEvent, UnifiedParserInit, UnifiedParserOutput, UnifiedParserStartingState,
-    UnifiedToolOutputMode, create_unified_parser_for_family,
+    UnifiedParser, UnifiedParserEvent, UnifiedParserInit, UnifiedParserOutput,
+    UnifiedParserStartingState, UnifiedToolOutputMode, create_unified_parser_for_family,
 };
 
 const GPT_OSS_FIXTURE: &str = "fixtures-unified-v2/families/gpt_oss/inputs_and_golden.yaml";
@@ -99,12 +96,6 @@ struct Stream {
     id: String,
     chunks: Vec<String>,
     starting_state: UnifiedParserStartingState,
-}
-
-impl Stream {
-    fn text(&self) -> String {
-        self.chunks.concat()
-    }
 }
 
 fn conformance_path(rel: &str) -> std::path::PathBuf {
@@ -262,297 +253,31 @@ fn init_for(stream: &Stream, mode: InitMode) -> UnifiedParserInit {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum End {
-    Finish,
-    FinishAtEos,
-    Reset,
-}
-
-/// What one parser call returned, compared between recording on and off.
-#[derive(Debug, PartialEq)]
-enum CallResult {
-    Events(Vec<UnifiedParserEvent>),
-    /// Events committed before the error stay committed.
-    Error(String, Vec<UnifiedParserEvent>),
-    Reset(String),
-}
-
-struct Run {
-    calls: Vec<CallResult>,
-    /// Input bytes fed before each call returned.
-    fed: Vec<usize>,
-    /// Ranges taken after each call. Empty when not recording.
-    ranges: Vec<Vec<Range<usize>>>,
-}
-
-fn events_or_error(result: anyhow::Result<()>, output: UnifiedParserOutput) -> CallResult {
-    match result {
-        Ok(()) => CallResult::Events(output.events),
-        Err(error) => CallResult::Error(error.to_string(), output.events),
-    }
+fn gpt_oss(init: &UnifiedParserInit) -> Box<dyn UnifiedParser> {
+    let mut parser = create_unified_parser_for_family("gpt_oss", &[]).unwrap();
+    parser.initialize_request(init.clone()).unwrap();
+    parser
 }
 
 fn run(chunks: &[&str], init: &UnifiedParserInit, end: End, record: bool) -> Run {
-    let mut parser = create_unified_parser_for_family("gpt_oss", &[]).unwrap();
-    parser.initialize_request(init.clone()).unwrap();
-    if record {
-        assert!(parser.record_sources(), "GPT-OSS native refused to record");
-    }
-    let mut out = Run {
-        calls: Vec::new(),
-        fed: Vec::new(),
-        ranges: Vec::new(),
-    };
-    let mut fed = 0;
-    let mut failed = false;
-    for chunk in chunks {
-        let mut output = UnifiedParserOutput::default();
-        let result = parser.parse_into(chunk, &mut output);
-        failed = result.is_err();
-        fed += chunk.len();
-        out.calls.push(events_or_error(result, output));
-        out.fed.push(fed);
-        let mut ranges = Vec::new();
-        parser.take_sources(&mut ranges);
-        out.ranges.push(ranges);
-        if failed {
-            break;
-        }
-    }
-    // After a parse error the caller recovers held text with `reset`.
-    let last = match (end, failed) {
-        (End::Reset, _) | (_, true) => CallResult::Reset(parser.reset()),
-        (End::Finish, false) => match parser.finish() {
-            Ok(output) => CallResult::Events(output.events),
-            Err(error) => CallResult::Error(error.to_string(), Vec::new()),
-        },
-        (End::FinishAtEos, false) => match parser.finish_at_eos() {
-            Ok(output) => CallResult::Events(output.events),
-            Err(error) => CallResult::Error(error.to_string(), Vec::new()),
-        },
-    };
-    out.calls.push(last);
-    out.fed.push(fed);
-    let mut ranges = Vec::new();
-    parser.take_sources(&mut ranges);
-    out.ranges.push(ranges);
-    out
-}
-
-/// The Text and Reasoning bytes one call committed, in output order.
-fn committed_text(call: &CallResult) -> String {
-    match call {
-        CallResult::Events(events) | CallResult::Error(_, events) => events
-            .iter()
-            .filter_map(|event| match event {
-                UnifiedParserEvent::Text(text) | UnifiedParserEvent::Reasoning(text) => {
-                    Some(text.as_str())
-                }
-                _ => None,
-            })
-            .collect(),
-        CallResult::Reset(text) => text.clone(),
-    }
-}
-
-#[derive(Default)]
-struct Tally {
-    runs: usize,
-    text_bytes: usize,
-    finish_text_runs: usize,
-    reset_text_runs: usize,
-    failures: Vec<String>,
-}
-
-impl Tally {
-    fn fail(&mut self, failure: String) {
-        if self.failures.len() < 40 {
-            self.failures.push(failure);
-        }
-    }
-}
-
-/// Run one split with recording on and off, and check every rule.
-fn check(
-    stream: &Stream,
-    mode: InitMode,
-    label: &str,
-    chunks: &[&str],
-    end: End,
-    tally: &mut Tally,
-) {
-    let init = init_for(stream, mode);
-    let input = chunks.concat();
-    let off = run(chunks, &init, end, false);
-    let on = run(chunks, &init, end, true);
-    tally.runs += 1;
-    let at = format!("{} {mode:?} {label} {end:?}", stream.id);
-    check_runs(&at, &input, chunks, &off, &on, tally);
-}
-
-fn check_runs(at: &str, input: &str, chunks: &[&str], off: &Run, on: &Run, tally: &mut Tally) {
-    if on.calls != off.calls {
-        tally.fail(format!(
-            "{at}: recording changed the output\n  off: {:?}\n  on:  {:?}",
-            off.calls, on.calls
-        ));
-        return;
-    }
-    let mut floor = 0;
-    for (index, call) in on.calls.iter().enumerate() {
-        let text = committed_text(call);
-        let ranges = &on.ranges[index];
-        tally.text_bytes += text.len();
-        let is_last = index + 1 == on.calls.len();
-        if is_last && !text.is_empty() {
-            match call {
-                CallResult::Reset(_) => tally.reset_text_runs += 1,
-                _ => tally.finish_text_runs += 1,
-            }
-        }
-        let fed = on.fed[index];
-        let mut rebuilt = Vec::new();
-        for range in ranges {
-            if range.end > fed || range.start > range.end {
-                tally.fail(format!(
-                    "{at}: call {index} range {range:?} is past the {fed} bytes fed\n  input: {input:?}"
-                ));
-                return;
-            }
-            if !matches!(call, CallResult::Reset(_)) {
-                if range.start < floor {
-                    tally.fail(format!(
-                        "{at}: call {index} range {range:?} goes back before {floor}\n  ranges: {ranges:?}\n  input: {input:?}"
-                    ));
-                    return;
-                }
-                floor = range.end;
-            }
-            rebuilt.extend_from_slice(&input.as_bytes()[range.clone()]);
-        }
-        if rebuilt != text.as_bytes() {
-            tally.fail(format!(
-                "{at}: call {index} ranges do not rebuild the committed text\n  text:    {text:?}\n  rebuilt: {:?}\n  ranges: {ranges:?}\n  input: {input:?}\n  chunks: {chunks:?}",
-                String::from_utf8_lossy(&rebuilt)
-            ));
-            return;
-        }
-    }
-}
-
-fn char_boundaries(text: &str) -> Vec<usize> {
-    let mut at: Vec<usize> = text.char_indices().map(|(at, _)| at).collect();
-    at.push(text.len());
-    at
+    common::source_ranges::run(&|| gpt_oss(init), chunks, end, record)
 }
 
 fn check_stream(stream: &Stream, tally: &mut Tally) {
-    let text = stream.text();
-    let boundaries = char_boundaries(&text);
+    let recorded: Vec<&str> = stream.chunks.iter().map(String::as_str).collect();
     for mode in [InitMode::Fixture, InitMode::DynamoLlm] {
-        let recorded: Vec<&str> = stream.chunks.iter().map(String::as_str).collect();
-        for end in [End::Finish, End::FinishAtEos, End::Reset] {
-            check(stream, mode, "recorded", &recorded, end, tally);
-        }
-        let chars: Vec<&str> = boundaries
-            .windows(2)
-            .map(|pair| &text[pair[0]..pair[1]])
-            .collect();
-        check(stream, mode, "one_char", &chars, End::Finish, tally);
-        check(stream, mode, "one_char", &chars, End::FinishAtEos, tally);
-        for &split in &boundaries {
-            let (head, tail) = text.split_at(split);
-            let label = format!("split@{split}");
-            check(stream, mode, &label, &[head, tail], End::Finish, tally);
-            // Reset after the head recovers held text, which must map back too.
-            check(stream, mode, &label, &[head], End::Reset, tally);
-        }
+        let init = init_for(stream, mode);
+        check_splits(
+            &|| gpt_oss(&init),
+            &format!("{} {mode:?}", stream.id),
+            &recorded,
+            tally,
+        );
     }
-}
-
-/// Counts tracing `why` codes, to show which recovery paths the corpus reached.
-struct WhyCounter {
-    counts: Mutex<BTreeMap<String, usize>>,
-}
-
-struct WhyVisitor<'a>(&'a mut Option<String>);
-
-impl tracing::field::Visit for WhyVisitor<'_> {
-    fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
-        if field.name() == "why" {
-            *self.0 = Some(value.to_string());
-        }
-    }
-    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
-        if field.name() == "why" {
-            *self.0 = Some(format!("{value:?}").trim_matches('"').to_string());
-        }
-    }
-}
-
-impl tracing::Subscriber for WhyCounter {
-    fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
-        true
-    }
-    fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
-        tracing::span::Id::from_u64(1)
-    }
-    fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
-    fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
-    fn event(&self, event: &tracing::Event<'_>) {
-        let mut why = None;
-        event.record(&mut WhyVisitor(&mut why));
-        if let Some(why) = why {
-            *self.counts.lock().unwrap().entry(why).or_default() += 1;
-        }
-    }
-    fn enter(&self, _: &tracing::span::Id) {}
-    fn exit(&self, _: &tracing::span::Id) {}
 }
 
 fn check_corpus(name: &str, streams: Vec<Stream>) -> (Tally, BTreeMap<String, usize>) {
-    let workers = std::thread::available_parallelism()
-        .map_or(4, |n| n.get())
-        .min(16);
-    let streams = Mutex::new(streams.into_iter());
-    let tally = Mutex::new(Tally::default());
-    let counter = std::sync::Arc::new(WhyCounter {
-        counts: Mutex::new(BTreeMap::new()),
-    });
-    std::thread::scope(|scope| {
-        for _ in 0..workers {
-            let counter = counter.clone();
-            let (streams, tally) = (&streams, &tally);
-            scope.spawn(move || {
-                tracing::subscriber::with_default(counter, || {
-                    loop {
-                        let Some(stream) = streams.lock().unwrap().next() else {
-                            return;
-                        };
-                        let mut mine = Tally::default();
-                        check_stream(&stream, &mut mine);
-                        let mut all = tally.lock().unwrap();
-                        all.runs += mine.runs;
-                        all.text_bytes += mine.text_bytes;
-                        all.finish_text_runs += mine.finish_text_runs;
-                        all.reset_text_runs += mine.reset_text_runs;
-                        for failure in mine.failures {
-                            all.fail(failure);
-                        }
-                    }
-                })
-            });
-        }
-    });
-    let tally = tally.into_inner().unwrap();
-    let counts = std::mem::take(&mut *counter.counts.lock().unwrap());
-    eprintln!(
-        "{name}: {} runs per recording mode, {} committed text bytes, {} runs with finish text, {} with reset text",
-        tally.runs, tally.text_bytes, tally.finish_text_runs, tally.reset_text_runs
-    );
-    eprintln!("{name}: why codes reached (both recording modes): {counts:?}");
-    (tally, counts)
+    check_all(name, streams, check_stream)
 }
 
 fn assert_clean(name: &str, tally: &Tally, counts: &BTreeMap<String, usize>) {
@@ -714,34 +439,6 @@ fn recording_is_refused_after_parsing_starts() {
         )
         .unwrap();
     assert!(!parser.record_sources());
-}
-
-/// All splits of `input` the sweep uses: whole, one character per chunk, and
-/// every two-way split.
-fn all_splits(input: &str) -> Vec<Vec<&str>> {
-    let mut splits = vec![vec![input]];
-    splits.push(
-        char_boundaries(input)
-            .windows(2)
-            .map(|pair| &input[pair[0]..pair[1]])
-            .collect(),
-    );
-    for split in char_boundaries(input) {
-        splits.push(vec![&input[..split], &input[split..]]);
-    }
-    splits
-}
-
-/// The ranges of a run, in output order, with adjacent ones joined.
-fn joined_ranges(run: &Run) -> Vec<Range<usize>> {
-    let mut joined: Vec<Range<usize>> = Vec::new();
-    for range in run.ranges.iter().flatten().cloned() {
-        match joined.last_mut() {
-            Some(last) if last.end == range.start => last.end = range.end,
-            _ => joined.push(range),
-        }
-    }
-    joined
 }
 
 /// The range of the `len` bytes that start right after the `nth` (from 0)
