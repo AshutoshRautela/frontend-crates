@@ -716,13 +716,9 @@ fn recording_is_refused_after_parsing_starts() {
     assert!(!parser.record_sources());
 }
 
-#[test]
-fn range_checker_rejects_text_sourced_from_the_channel_header() {
-    let input = "<|channel|>final<|message|>final";
-    let metadata = input.find("final").unwrap();
-    let body = input.rfind("final").unwrap();
-    assert_ne!(metadata, body);
-    let init = UnifiedParserInit::default();
+/// All splits of `input` the sweep uses: whole, one character per chunk, and
+/// every two-way split.
+fn all_splits(input: &str) -> Vec<Vec<&str>> {
     let mut splits = vec![vec![input]];
     splits.push(
         char_boundaries(input)
@@ -733,6 +729,96 @@ fn range_checker_rejects_text_sourced_from_the_channel_header() {
     for split in char_boundaries(input) {
         splits.push(vec![&input[..split], &input[split..]]);
     }
+    splits
+}
+
+/// The ranges of a run, in output order, with adjacent ones joined.
+fn joined_ranges(run: &Run) -> Vec<Range<usize>> {
+    let mut joined: Vec<Range<usize>> = Vec::new();
+    for range in run.ranges.iter().flatten().cloned() {
+        match joined.last_mut() {
+            Some(last) if last.end == range.start => last.end = range.end,
+            _ => joined.push(range),
+        }
+    }
+    joined
+}
+
+/// The range of the `len` bytes that start right after the `nth` (from 0)
+/// occurrence of `marker` in `input`.
+fn after(input: &str, marker: &str, nth: usize, len: usize) -> Range<usize> {
+    let start = input.match_indices(marker).nth(nth).unwrap().0 + marker.len();
+    start..start + len
+}
+
+/// Text that also appears in a header, or repeats. Byte equality cannot tell
+/// these occurrences apart, so each case names its exact ranges under the
+/// fixture init. The case that opens with a bare word differs under
+/// dynamo-llm's init, where that word joins the prompt's open header and is
+/// never emitted.
+fn exact_cases() -> Vec<(&'static str, Vec<Range<usize>>)> {
+    let header_word = "<|channel|>final<|message|>final";
+    let both_words = "<|channel|>analysis<|message|>analysis<|end|><|start|>assistant<|channel|>final<|message|>final analysis<|return|>";
+    let repeated = "<|channel|>analysis<|message|>ha ha ha ha<|end|><|start|>assistant<|channel|>final<|message|>ha ha ha<|return|>";
+    let outside = "final <|channel|>final<|message|>final";
+    vec![
+        (header_word, vec![after(header_word, "<|message|>", 0, 5)]),
+        (
+            both_words,
+            vec![
+                after(both_words, "<|message|>", 0, 8),
+                after(both_words, "<|message|>", 1, 14),
+            ],
+        ),
+        (
+            repeated,
+            vec![
+                after(repeated, "<|message|>", 0, 11),
+                after(repeated, "<|message|>", 1, 8),
+            ],
+        ),
+        (outside, vec![0..6, after(outside, "<|message|>", 0, 5)]),
+    ]
+}
+
+#[test]
+fn repeated_text_maps_to_its_own_occurrence() {
+    for (input, fixture_expected) in exact_cases() {
+        for mode in [InitMode::Fixture, InitMode::DynamoLlm] {
+            let expected = match mode {
+                InitMode::DynamoLlm if input.starts_with("final ") => {
+                    fixture_expected[1..].to_vec()
+                }
+                _ => fixture_expected.clone(),
+            };
+            let stream = Stream {
+                id: input.to_string(),
+                chunks: vec![input.to_string()],
+                starting_state: UnifiedParserStartingState::None,
+            };
+            let init = init_for(&stream, mode);
+            for chunks in all_splits(input) {
+                let on = run(&chunks, &init, End::Finish, true);
+                assert_eq!(joined_ranges(&on), expected, "{mode:?} {chunks:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn range_checker_rejects_text_sourced_from_the_channel_header() {
+    // The sweep's checker cannot tell a header word from the same body word:
+    // both rebuild the same bytes. The exact cases can.
+    let input = "<|channel|>final<|message|>final";
+    let metadata = input.find("final").unwrap();
+    let body = input.rfind("final").unwrap();
+    assert_ne!(metadata, body);
+    let (_, expected) = exact_cases()
+        .into_iter()
+        .find(|(case, _)| *case == input)
+        .unwrap();
+    let init = UnifiedParserInit::default();
+    let splits = all_splits(input);
     let mut accepted = 0;
     for chunks in &splits {
         let off = run(chunks, &init, End::Finish, false);
@@ -740,6 +826,7 @@ fn range_checker_rejects_text_sourced_from_the_channel_header() {
         let mut control = Tally::default();
         check_runs("correct sources", input, chunks, &off, &on, &mut control);
         assert!(control.failures.is_empty());
+        assert_eq!(joined_ranges(&on), expected);
         assert_eq!(
             on.calls.iter().map(committed_text).collect::<String>(),
             "final"
@@ -749,9 +836,7 @@ fn range_checker_rejects_text_sourced_from_the_channel_header() {
             range.start -= body - metadata;
             range.end -= body - metadata;
         }
-        let mut tally = Tally::default();
-        check_runs("header sources", input, chunks, &off, &on, &mut tally);
-        accepted += usize::from(tally.failures.is_empty());
+        accepted += usize::from(joined_ranges(&on) == expected);
     }
     assert_eq!(
         accepted,

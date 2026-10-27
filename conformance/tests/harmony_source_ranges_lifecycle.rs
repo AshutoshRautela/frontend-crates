@@ -6,6 +6,8 @@ use dynamo_parsers_v2::{
 };
 
 #[test]
+// A one-range list is the expected value, not a mistaken `Vec` of a range.
+#[allow(clippy::single_range_in_vec_init)]
 fn request_initialization_after_reset_preserves_input_offsets() {
     for reinitialize in [false, true] {
         let mut parser = create_unified_parser_for_family("gpt_oss", &[]).unwrap();

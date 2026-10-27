@@ -37,6 +37,9 @@ const CONTROL_MARKERS: &[&str] = &[
     HANDOFF,
 ];
 const GUIDED_LITERAL_ESCAPE: char = '\u{e000}';
+/// The header an unterminated final message must start with for
+/// `recover_final_header` to surface the rest as text.
+const FINAL_HEADER: &str = "assistant<|channel|>final";
 
 // Distinct suffixes keep adjacent '<' and literal escape characters reversible.
 fn shield_guided_literals(text: &str) -> String {
@@ -324,6 +327,20 @@ impl HarmonyRuntime {
         Some(TokenSource { len, start })
     }
 
+    /// Whether bytes that the prompt left held can surface later as text. Those
+    /// bytes have no input range, so recording must refuse the request.
+    fn prompt_bytes_can_surface(&self) -> bool {
+        let Some(recorder) = &self.recorder else {
+            return false;
+        };
+        let header_bytes: usize = recorder.header.iter().map(|source| source.len).sum();
+        let open_header = self.inside_message && !self.in_body;
+        !self.outside_pending.is_empty()
+            || self.quoted_control_tail.is_some()
+            || !recorder.content.is_empty()
+            || (open_header && header_bytes > FINAL_HEADER.len())
+    }
+
     /// Encode `text`, which starts at input offset `start`, and process its tokens.
     fn feed_encoded(
         &mut self,
@@ -543,10 +560,10 @@ impl HarmonyRuntime {
                     || (has_recipient && matches!(marker, Some(MESSAGE | FORMAT))))
             {
                 let pending = std::mem::take(&mut self.outside_pending);
-                let pending_sources: Vec<_> = match &mut self.recorder {
-                    Some(recorder) => recorder.outside.drain(..).map(Some).collect(),
-                    None => vec![None; pending.len()],
-                };
+                let pending_sources: Option<Vec<_>> = self
+                    .recorder
+                    .as_mut()
+                    .map(|recorder| recorder.outside.drain(..).collect());
                 let prefix = self
                     .encoding
                     .tokenizer()
@@ -555,7 +572,10 @@ impl HarmonyRuntime {
                     let prefix_source = self.source(prefix_id, None);
                     self.process_token(prefix_id, prefix_source, output)?;
                 }
-                for (pending_id, pending_source) in pending.into_iter().zip(pending_sources) {
+                for (at, pending_id) in pending.into_iter().enumerate() {
+                    let pending_source = pending_sources
+                        .as_ref()
+                        .and_then(|sources| sources.get(at).copied());
                     self.process_token(pending_id, pending_source, output)?;
                 }
                 self.process_token(id, source, output)?;
@@ -693,6 +713,9 @@ impl HarmonyRuntime {
         }
 
         if id == self.message_id && self.inside_message && !self.in_body {
+            if let Some(recorder) = &mut self.recorder {
+                recorder.header.clear();
+            }
             self.in_body = true;
             self.route = Some(self.route_current_message());
             self.call_cursor = None;
@@ -781,7 +804,10 @@ impl HarmonyRuntime {
             .as_mut()
             .expect("quoted tail exists");
         tail.tokens.push(id);
-        tail.sources.push(source);
+        // Empty when not recording, so the stock path keeps its memory use.
+        if source.is_some() {
+            tail.sources.push(source);
+        }
         let bytes = self.encoding.tokenizer().decode_bytes([id])?;
         let (text, invalid) = take_utf8_prefix(&mut tail.utf8, &bytes);
         if let Some(replaced_bytes) = invalid {
@@ -800,7 +826,8 @@ impl HarmonyRuntime {
             let candidate = format!("{}{}", self.call_content, tail.content);
             if raw_json_literal(&candidate).is_some() {
                 let tail = self.quoted_control_tail.take().expect("quoted tail exists");
-                for (token, token_source) in tail.tokens.into_iter().zip(tail.sources) {
+                for (at, token) in tail.tokens.into_iter().enumerate() {
+                    let token_source = tail.sources.get(at).copied().flatten();
                     if let Some(marker) = self.marker_ids.get(&token) {
                         for ordinary in self.encoding.tokenizer().encode_ordinary(marker) {
                             let ordinary_source = self.source(ordinary, None);
@@ -856,11 +883,8 @@ impl HarmonyRuntime {
             recorder.clear_message();
         }
         if let Some(start) = start {
-            for (id, source) in tail.tokens[start..]
-                .iter()
-                .copied()
-                .zip(tail.sources[start..].iter().copied())
-            {
+            for (at, id) in tail.tokens.iter().copied().enumerate().skip(start) {
+                let source = tail.sources.get(at).copied().flatten();
                 self.process_token(id, source, output)?;
             }
         }
@@ -964,7 +988,7 @@ impl HarmonyRuntime {
         let mut header_bytes = self.encoding.tokenizer().decode_bytes(&header_tokens)?;
         let (header, _) = take_utf8_prefix(&mut header_bytes, &[]);
         // Only an undirected assistant final is safe to surface as visible text.
-        let Some(mut text) = header.strip_prefix("assistant<|channel|>final") else {
+        let Some(mut text) = header.strip_prefix(FINAL_HEADER) else {
             return Ok(());
         };
         if text.starts_with(|ch: char| ch.is_alphanumeric() || ch == '_')
@@ -1068,10 +1092,29 @@ impl HarmonyNative {
             }
             runtime.next_call_index = 0;
         }
+        if runtime.prompt_bytes_can_surface() {
+            anyhow::bail!("source recording cannot date text that the prompt left held");
+        }
         if let Some(recorder) = &mut runtime.recorder {
             recorder.ranges.clear();
         }
         Ok(runtime)
+    }
+
+    /// Replace the runtime. Offsets keep counting over everything this parser
+    /// received, and ranges not taken yet stay pending, across a rebuild for
+    /// `reset`, a new request, or turning recording on.
+    fn install_runtime(&mut self, mut runtime: HarmonyRuntime) {
+        if let (Some(next), Some(prior)) = (
+            runtime.recorder.as_mut(),
+            self.runtime
+                .as_mut()
+                .and_then(|prior| prior.recorder.take()),
+        ) {
+            next.fed = prior.fed;
+            next.ranges = prior.ranges;
+        }
+        self.runtime = Some(runtime);
     }
 
     fn guided_prompt_prefill(&self, init: &UnifiedParserInit) -> Result<Option<String>> {
@@ -1166,8 +1209,11 @@ impl NativeUnified for HarmonyNative {
             // Rebuild so the prompt replay is recorded too. Only valid before the
             // first parse, which the caller checks.
             match self.make_runtime(&self.init) {
-                Ok(runtime) => self.runtime = Some(runtime),
-                Err(_) => return false,
+                Ok(runtime) => self.install_runtime(runtime),
+                Err(_) => {
+                    self.record_sources = false;
+                    return false;
+                }
             }
         }
         true
@@ -1246,7 +1292,7 @@ impl NativeUnified for HarmonyNative {
 
     fn apply_native_init(&mut self, init: &UnifiedParserInit) -> Result<()> {
         let runtime = self.make_runtime(init)?;
-        self.runtime = Some(runtime);
+        self.install_runtime(runtime);
         self.init = init.clone();
         self.pending_token_bytes.clear();
         Ok(())
@@ -1319,24 +1365,14 @@ impl NativeUnified for HarmonyNative {
     fn reset_native(&mut self) -> String {
         self.pending_token_bytes.clear();
         match self.make_runtime(&self.init) {
-            Ok(mut runtime) => {
+            Ok(runtime) => {
                 let recovered = self
                     .runtime
                     .as_mut()
                     .map(HarmonyRuntime::take_pending_text)
                     .unwrap_or_default();
-                // Offsets keep counting across reset, and the recovered text's
-                // ranges wait for the next `take_sources`.
-                if let (Some(next), Some(prior)) = (
-                    runtime.recorder.as_mut(),
-                    self.runtime
-                        .as_mut()
-                        .and_then(|prior| prior.recorder.take()),
-                ) {
-                    next.fed = prior.fed;
-                    next.ranges = prior.ranges;
-                }
-                self.runtime = Some(runtime);
+                // The recovered text's ranges wait for the next `take_sources`.
+                self.install_runtime(runtime);
                 recovered
             }
             Err(error) => {
