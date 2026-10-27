@@ -92,28 +92,23 @@ fn harmony_encoding() -> Result<&'static HarmonyEncoding> {
         .map_err(|error| anyhow::anyhow!("Harmony encoding unavailable: {error}"))
 }
 
+/// Collected once: `CoreBPE::encode_with_special_tokens` rebuilds this set (~1,090 strings) per call.
 static GLOBAL_HARMONY_SPECIAL_TOKENS: std::sync::OnceLock<HashSet<&'static str>> =
     std::sync::OnceLock::new();
 
-/// Encodes `text` with every special token allowed, like `encode_with_special_tokens`. That
-/// method collects all ~1,090 special-token strings into a new set on each call, which made the
-/// set the dominant cost of every streamed chunk, so the set is built once here instead.
-fn encode_with_special_tokens(encoding: &HarmonyEncoding, text: &str) -> Result<Vec<u32>> {
-    let global = harmony_encoding()?;
-    let special = GLOBAL_HARMONY_SPECIAL_TOKENS.get_or_init(|| global.tokenizer().special_tokens());
-    Ok(encoding.tokenizer().encode(text, special).0)
-}
-
 pub fn encode_harmony(text: &str) -> anyhow::Result<Vec<u32>> {
-    encode_with_special_tokens(harmony_encoding()?, text)
+    let encoding = harmony_encoding()?;
+    let special =
+        GLOBAL_HARMONY_SPECIAL_TOKENS.get_or_init(|| encoding.tokenizer().special_tokens());
+    Ok(encoding.tokenizer().encode(text, special).0)
 }
 
 pub fn decode_harmony(token_ids: &[u32]) -> anyhow::Result<String> {
     Ok(harmony_encoding()?.tokenizer().decode_utf8(token_ids)?)
 }
 
-fn token_id(encoding: &HarmonyEncoding, marker: &str) -> Result<u32> {
-    let ids = encode_with_special_tokens(encoding, marker)?;
+fn token_id(marker: &str) -> Result<u32> {
+    let ids = encode_harmony(marker)?;
     match ids.as_slice() {
         [id] => Ok(*id),
         _ => anyhow::bail!("Harmony marker {marker:?} encoded as {} tokens", ids.len()),
@@ -203,15 +198,15 @@ impl HarmonyRuntime {
     ) -> Result<Self> {
         let mut marker_ids = HashMap::new();
         for marker in CONTROL_MARKERS {
-            marker_ids.insert(token_id(&encoding, marker)?, *marker);
+            marker_ids.insert(token_id(marker)?, *marker);
         }
         Ok(Self {
             parser: StreamableParser::new(encoding.clone(), None)?,
             allow_implicit_channel_header,
             legacy_tool_compatibility,
-            start_id: token_id(&encoding, START)?,
-            message_id: token_id(&encoding, MESSAGE)?,
-            handoff_id: token_id(&encoding, HANDOFF)?,
+            start_id: token_id(START)?,
+            message_id: token_id(MESSAGE)?,
+            handoff_id: token_id(HANDOFF)?,
             encoding,
             marker_ids,
             inside_message: false,
@@ -273,7 +268,7 @@ impl HarmonyRuntime {
             UnifiedParserStartingState::Response => "final",
         };
         let prefix = format!("{START}assistant{CHANNEL}{channel}{MESSAGE}");
-        let ids = encode_with_special_tokens(&self.encoding, &prefix)?;
+        let ids = encode_harmony(&prefix)?;
         for id in ids {
             self.process_token(id, &mut UnifiedParserOutput::default())?;
         }
@@ -293,7 +288,7 @@ impl HarmonyRuntime {
         }
         let safe = self.text_pending[..safe_len].to_string();
         self.text_pending.drain(..safe_len);
-        let ids = encode_with_special_tokens(&self.encoding, &safe)?;
+        let ids = encode_harmony(&safe)?;
         for id in ids {
             self.process_token(id, output)?;
         }
@@ -406,8 +401,7 @@ impl HarmonyRuntime {
                     || (has_recipient && matches!(marker, Some(MESSAGE | FORMAT))))
             {
                 let pending = std::mem::take(&mut self.outside_pending);
-                let prefix =
-                    encode_with_special_tokens(&self.encoding, &format!("{START}assistant"))?;
+                let prefix = encode_harmony(&format!("{START}assistant"))?;
                 for prefix_id in prefix {
                     self.process_token(prefix_id, output)?;
                 }
@@ -716,7 +710,7 @@ impl HarmonyRuntime {
         }
         if !self.text_pending.is_empty() {
             let pending = std::mem::take(&mut self.text_pending);
-            let ids = encode_with_special_tokens(&self.encoding, &pending)?;
+            let ids = encode_harmony(&pending)?;
             for id in ids {
                 self.process_token(id, output)?;
             }
@@ -857,7 +851,7 @@ impl HarmonyNative {
         })?;
         let mut marker_ids = HashMap::new();
         for marker in CONTROL_MARKERS {
-            marker_ids.insert(token_id(encoding, marker)?, *marker);
+            marker_ids.insert(token_id(marker)?, *marker);
         }
 
         let mut tail = String::new();
@@ -1384,12 +1378,14 @@ mod tests {
     use crate::unified::{UnifiedEvent, UnifiedParserEvent, UnifiedParserExt};
 
     #[test]
-    fn cached_special_tokens_encode_like_encode_with_special_tokens() {
+    fn encode_harmony_matches_encode_with_special_tokens() {
         let text = "<|start|>assistant<|channel|>analysis<|message|>plan<|reserved_200500|><|end|>";
-        let encoding = harmony_encoding().unwrap();
         assert_eq!(
             encode_harmony(text).unwrap(),
-            encoding.tokenizer().encode_with_special_tokens(text)
+            harmony_encoding()
+                .unwrap()
+                .tokenizer()
+                .encode_with_special_tokens(text)
         );
     }
 
