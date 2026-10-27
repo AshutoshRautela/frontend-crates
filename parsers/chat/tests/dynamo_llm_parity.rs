@@ -643,7 +643,7 @@ fn tally_records_native_format_mismatches_for_existing_families() {
     assert_eq!(tally.drifted, 0);
 }
 
-/// F2 (review pass 1): a name the newer registry added must not hide a difference in
+/// A name the newer registry added must not hide a difference in
 /// a rule that never reads the registry.
 #[test]
 fn registry_drift_does_not_hide_native_format_mismatches() {
@@ -674,7 +674,7 @@ fn registry_drift_does_not_hide_native_format_mismatches() {
     );
 }
 
-/// F3 (review pass 2): a v2 registry addition cannot change v1 availability, so V1
+/// A v2 registry addition cannot change v1 availability, so V1
 /// rules get no drift exemption.
 #[test]
 fn v2_registry_drift_cannot_exempt_v1_validation() {
