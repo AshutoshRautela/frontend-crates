@@ -813,7 +813,20 @@ fn schema_type_match(
         schema.get("enum").and_then(Value::as_array),
         schema.get("const"),
     ) {
-        (Some(values), _) if !values.is_empty() => Some(values.iter().any(value_matches)),
+        (Some(values), _) if !values.is_empty() => {
+            // Mixed enums keep their string fallback. A string hint must match
+            // raw text so it cannot shadow another union branch.
+            if expected == "string" {
+                values
+                    .iter()
+                    .any(|value| value.as_str() == Some(raw))
+                    .then_some(true)
+            } else {
+                values.iter().try_fold(false, |matched, value| {
+                    (!value.is_string()).then(|| matched || value_matches(value))
+                })
+            }
+        }
         (_, Some(value)) => Some(value_matches(value)),
         _ => None,
     };
@@ -2480,8 +2493,8 @@ mod enum_const_type_hint {
             serde_json::json!(4)
         );
         assert_eq!(
-            run(serde_json::json!({"enum":["1","2"]}), "1"),
-            serde_json::json!("1")
+            run(serde_json::json!({"enum":["{\"x\":1}"]}), "{\"x\":1}"),
+            serde_json::json!("{\"x\":1}")
         );
         assert_eq!(
             run(serde_json::json!({"enum":[1,"a"]}), "1"),
@@ -2490,6 +2503,17 @@ mod enum_const_type_hint {
         assert_eq!(
             run(serde_json::json!({"type":"string","enum":[1,2]}), "1"),
             serde_json::json!("1")
+        );
+    }
+
+    #[test]
+    fn string_enums_do_not_override_other_union_branches() {
+        assert_eq!(
+            run(
+                serde_json::json!({"anyOf":[{"enum":["auto"]},{"type":"integer"}]}),
+                "42"
+            ),
+            serde_json::json!(42)
         );
     }
 }
