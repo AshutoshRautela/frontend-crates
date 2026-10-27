@@ -622,3 +622,46 @@ fn registry_drift_is_only_new_families() {
     };
     assert_eq!(drift, expected);
 }
+
+#[test]
+fn tally_records_native_format_mismatches_for_existing_families() {
+    let mut tally = Tally::new(&Data::load());
+    tally.check(
+        [Some("kimi_k3"), None],
+        || "requires_native_tool_call_format kimi_k3 Required".to_string(),
+        &json!(true),
+        &json!(false),
+    );
+    assert_eq!(tally.mismatches.len(), 1);
+    assert_eq!(tally.drifted, 0);
+}
+
+#[test]
+#[ignore = "F2: registry drift hides unrelated native-format mismatches"]
+fn registry_drift_does_not_hide_native_format_mismatches() {
+    let data = Data::load();
+    let mut tally = Tally::new(&data);
+    assert!(tally.drift.contains("muse_spark"));
+    let recorded = data
+        .rows("tool_parser")
+        .find(|row| data.name(&row[1]) == Some("muse_spark"))
+        .unwrap();
+    assert_eq!(recorded[2], "0000");
+    assert!(!tools::requires_native_tool_call_format(
+        Some("muse_spark"),
+        &ToolChoice::Required,
+    ));
+
+    // Registration cannot change the Kimi-only native-format rule.
+    tally.check(
+        [Some("muse_spark"), None],
+        || "requires_native_tool_call_format muse_spark Required".to_string(),
+        &json!(false),
+        &json!(true),
+    );
+    assert_eq!(
+        tally.mismatches.len(),
+        1,
+        "an unrelated native-format regression must fail the parity replay"
+    );
+}
