@@ -572,25 +572,35 @@ impl Serialize for ChatCompletionTool {
             defer_loading: Option<bool>,
         }
         #[derive(Serialize)]
-        struct Wire<'a> {
+        struct Wire<'a, F> {
             r#type: &'a ChatCompletionToolType,
-            function: FunctionWithDeferral<'a>,
+            function: F,
             #[serde(skip_serializing_if = "Option::is_none")]
             defer_loading: Option<bool>,
         }
         // Apply the alias at serialization too, without cloning schemas or
         // mutating the registry. A present function flag must not be emitted twice.
-        Wire {
-            r#type: &self.r#type,
-            function: FunctionWithDeferral {
+        // Flatten only when the alias applies: a flattened struct has no
+        // length, so a format such as MessagePack buffers it.
+        let r#type = &self.r#type;
+        let defer_loading = self.defer_loading;
+        match defer_loading.filter(|_| self.function.defer_loading.is_none()) {
+            None => Wire {
+                r#type,
                 function: &self.function,
-                defer_loading: self
-                    .defer_loading
-                    .filter(|_| self.function.defer_loading.is_none()),
-            },
-            defer_loading: self.defer_loading,
+                defer_loading,
+            }
+            .serialize(serializer),
+            alias => Wire {
+                r#type,
+                function: FunctionWithDeferral {
+                    function: &self.function,
+                    defer_loading: alias,
+                },
+                defer_loading,
+            }
+            .serialize(serializer),
         }
-        .serialize(serializer)
     }
 }
 
