@@ -438,3 +438,69 @@ fn moved_adapter_matches_dynamo_llm() {
             .join("\n")
     );
 }
+
+/// A queued Qwen reasoning source carries completion evidence for a call that the
+/// adapter renumbered. The recorded corpus does not reach this path.
+#[test]
+fn qwen_queued_source_remaps_completion_evidence() {
+    let case = json!({
+        "family": "qwen3",
+        "tools": true,
+        "constraint": "none",
+        "prefill": "none",
+        "prefix": null,
+        "guided_streaming": false,
+        "reasoning_disabled": false,
+        "structured_response": false,
+        "input": [
+            {"data": {"choices": [{"index": 0, "delta": {"content": "<tool_call><function=get_weather><parameter=city>Paris</parameter></function></tool_call>"}}]}},
+            {"data": {"choices": [{"index": 0, "delta": {"tool_calls": [{
+                "index": 0,
+                "id": "backend-call",
+                "type": "function",
+                "function": {"name": "get_weather", "arguments": "{\"city\":\"Paris\"}"}
+            }]}}]}},
+            {"data": {"choices": [{"index": 0, "delta": {"content": "<tool_c"}}]}},
+            {
+                "id": "queued-source",
+                "data": {
+                    "choices": [{"index": 0, "delta": {"reasoning_content": "detour"}}],
+                    "tool_call_completion": [{"choice_index": 0, "tool_index": 0, "complete": true}]
+                }
+            },
+            {"data": {"choices": [{
+                "index": 0,
+                "delta": {"content": "all><function=get_weather><parameter=city>Rome</parameter></function></tool_call>"},
+                "finish_reason": "stop"
+            }]}}
+        ]
+    });
+    for selected in [false, true] {
+        let output = run(&case, selected);
+        let calls: Vec<_> = output
+            .iter()
+            .filter_map(|item| item.pointer("/data/choices/0/delta/tool_calls/0"))
+            .collect();
+        assert_eq!(calls[0]["index"], json!(0));
+        let backend = calls
+            .iter()
+            .find(|call| call["id"] == json!("backend-call"))
+            .unwrap();
+        assert_eq!(backend["index"], json!(1));
+        assert!(calls.iter().any(|call| call["index"] == json!(2)));
+        let source: Vec<_> = output
+            .iter()
+            .filter(|item| item["id"] == json!("queued-source"))
+            .collect();
+        assert_eq!(source.len(), 1);
+        assert_eq!(
+            source[0].pointer("/data/choices/0/delta/reasoning_content"),
+            Some(&json!("detour"))
+        );
+        assert_eq!(
+            source[0]["data"]["tool_call_completion"],
+            json!([{"choice_index": 0, "tool_index": 1, "complete": true}]),
+            "queued source evidence must use the emitted call index"
+        );
+    }
+}
