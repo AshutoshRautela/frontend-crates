@@ -219,6 +219,10 @@ fn corpus() -> Vec<String> {
     corpus
 }
 
+/// The old decoder's private type names, which its errors for a message
+/// that is not an object gave.
+const PRIVATE_NAMES: [&str; 2] = ["struct Forbid", "enum Wire"];
+
 /// The error text without serde_json's position, which depends on how far
 /// each decoder reads before it fails.
 fn text(error: serde_json::Error) -> String {
@@ -241,7 +245,12 @@ fn decoder_matches_the_flatten_oracle() {
                 accepted += 1;
             }
             (Err(oracle), Err(decoded)) => {
-                assert_eq!(text(decoded), text(oracle), "{input}");
+                let (oracle, decoded) = (text(oracle), text(decoded));
+                // A message that is not an object named the old decoder's
+                // private types in its error; any refusal will do there.
+                if !PRIVATE_NAMES.iter().any(|name| oracle.contains(name)) {
+                    assert_eq!(decoded, oracle, "{input}");
+                }
             }
             (oracle, decoded) => {
                 panic!("{input}: the oracle gave {oracle:?}, the decoder gave {decoded:?}")
@@ -249,4 +258,29 @@ fn decoder_matches_the_flatten_oracle() {
         }
     }
     assert!(accepted > 50, "only {accepted} inputs decoded");
+}
+
+/// The same comparison from a `serde_json::Value`, whose keys arrive as
+/// owned strings rather than borrowed from the input.
+#[test]
+fn decoder_matches_the_flatten_oracle_from_a_value() {
+    for input in corpus() {
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(&input) else {
+            continue;
+        };
+        let oracle = serde_json::from_value::<Oracle>(value.clone()).map(|oracle| oracle.0);
+        let decoded = serde_json::from_value::<ChatCompletionRequestMessage>(value);
+        match (oracle, decoded) {
+            (Ok(oracle), Ok(decoded)) => assert_eq!(decoded, oracle, "{input}"),
+            (Err(oracle), Err(decoded)) => {
+                let (oracle, decoded) = (oracle.to_string(), decoded.to_string());
+                if !PRIVATE_NAMES.iter().any(|name| oracle.contains(name)) {
+                    assert_eq!(decoded, oracle, "{input}");
+                }
+            }
+            (oracle, decoded) => {
+                panic!("{input}: the oracle gave {oracle:?}, the decoder gave {decoded:?}")
+            }
+        }
+    }
 }
