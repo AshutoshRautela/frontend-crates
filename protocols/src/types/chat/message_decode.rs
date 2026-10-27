@@ -17,9 +17,12 @@ use std::fmt;
 use std::marker::PhantomData;
 
 use serde::de::value::{
-    BorrowedStrDeserializer, MapAccessDeserializer, SeqAccessDeserializer, StringDeserializer,
+    BorrowedStrDeserializer, BytesDeserializer, MapAccessDeserializer, SeqAccessDeserializer,
+    StringDeserializer,
 };
-use serde::de::{self, DeserializeSeed, IgnoredAny, MapAccess, SeqAccess, Visitor};
+use serde::de::{
+    self, DeserializeSeed, IgnoredAny, IntoDeserializer, MapAccess, SeqAccess, Visitor,
+};
 use serde::{Deserialize, Deserializer};
 
 use super::{
@@ -130,7 +133,7 @@ impl<'de> Visitor<'de> for MessageVisitor {
         A: MapAccess<'de>,
     {
         let first = map.next_key::<Key<'de>>()?;
-        if first.as_ref().is_some_and(|key| key.as_str() == "role") {
+        if first.as_ref().and_then(Key::as_str) == Some("role") {
             use ChatCompletionRequestMessage as M;
             return match map.next_value::<RoleTag>()? {
                 RoleTag::Developer => decode_role(map).map(M::Developer),
@@ -254,10 +257,16 @@ where
     {
         while let Some(key) = self.map.next_key::<Key<'de>>()? {
             let guarded = match key.as_str() {
-                "role" => return Err(de::Error::duplicate_field("role")),
-                "tools" => self.tools.as_mut().map(|seen| (seen, "tools")),
-                "partial" => self.partial.as_mut().map(|seen| (seen, "partial")),
-                _ => None,
+                // A struct's fields have string names, so a flattened struct
+                // skipped any other key. Skip it too.
+                None => {
+                    self.map.next_value::<IgnoredAny>()?;
+                    continue;
+                }
+                Some("role") => return Err(de::Error::duplicate_field("role")),
+                Some("tools") => self.tools.as_mut().map(|seen| (seen, "tools")),
+                Some("partial") => self.partial.as_mut().map(|seen| (seen, "partial")),
+                Some(_) => None,
             };
             let Some((seen, field)) = guarded else {
                 return key.feed(seed).map(Some);
@@ -311,21 +320,28 @@ where
     }
 }
 
-/// A map key, borrowed from the input when the input allows it.
+/// A map key, borrowed from the input when the input allows it. A format
+/// such as MessagePack can also send a number, a bool, or bytes as a key.
 enum Key<'de> {
     Borrowed(&'de str),
     Owned(String),
+    U64(u64),
+    I64(i64),
+    F64(f64),
+    Bool(bool),
+    Bytes(Vec<u8>),
 }
 
 impl<'de> Key<'de> {
-    fn as_str(&self) -> &str {
+    fn as_str(&self) -> Option<&str> {
         match self {
-            Key::Borrowed(key) => key,
-            Key::Owned(key) => key,
+            Key::Borrowed(key) => Some(key),
+            Key::Owned(key) => Some(key),
+            _ => None,
         }
     }
 
-    /// Hands the key to `seed` as the string it was read as.
+    /// Hands the key to `seed` as the value it was read as.
     fn feed<K, E>(self, seed: K) -> Result<K::Value, E>
     where
         K: DeserializeSeed<'de>,
@@ -334,6 +350,11 @@ impl<'de> Key<'de> {
         match self {
             Key::Borrowed(key) => seed.deserialize(BorrowedStrDeserializer::new(key)),
             Key::Owned(key) => seed.deserialize(StringDeserializer::new(key)),
+            Key::U64(key) => seed.deserialize(key.into_deserializer()),
+            Key::I64(key) => seed.deserialize(key.into_deserializer()),
+            Key::F64(key) => seed.deserialize(key.into_deserializer()),
+            Key::Bool(key) => seed.deserialize(key.into_deserializer()),
+            Key::Bytes(key) => seed.deserialize(BytesDeserializer::new(&key)),
         }
     }
 }
@@ -349,7 +370,27 @@ impl<'de> Deserialize<'de> for Key<'de> {
             type Value = Key<'de>;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a field name")
+                formatter.write_str("a map key")
+            }
+
+            fn visit_u64<E>(self, key: u64) -> Result<Self::Value, E> {
+                Ok(Key::U64(key))
+            }
+
+            fn visit_i64<E>(self, key: i64) -> Result<Self::Value, E> {
+                Ok(Key::I64(key))
+            }
+
+            fn visit_f64<E>(self, key: f64) -> Result<Self::Value, E> {
+                Ok(Key::F64(key))
+            }
+
+            fn visit_bool<E>(self, key: bool) -> Result<Self::Value, E> {
+                Ok(Key::Bool(key))
+            }
+
+            fn visit_char<E>(self, key: char) -> Result<Self::Value, E> {
+                Ok(Key::Owned(key.to_string()))
             }
 
             fn visit_borrowed_str<E>(self, key: &'de str) -> Result<Self::Value, E> {
@@ -364,20 +405,21 @@ impl<'de> Deserialize<'de> for Key<'de> {
                 Ok(Key::Owned(key))
             }
 
-            fn visit_borrowed_bytes<E: de::Error>(self, key: &'de [u8]) -> Result<Self::Value, E> {
-                std::str::from_utf8(key)
-                    .map(Key::Borrowed)
-                    .map_err(|_| E::invalid_value(de::Unexpected::Bytes(key), &self))
+            fn visit_borrowed_bytes<E>(self, key: &'de [u8]) -> Result<Self::Value, E> {
+                Ok(std::str::from_utf8(key)
+                    .map_or_else(|_| Key::Bytes(key.to_vec()), Key::Borrowed))
             }
 
-            fn visit_bytes<E: de::Error>(self, key: &[u8]) -> Result<Self::Value, E> {
-                std::str::from_utf8(key)
-                    .map(|key| Key::Owned(key.to_owned()))
-                    .map_err(|_| E::invalid_value(de::Unexpected::Bytes(key), &self))
+            fn visit_bytes<E>(self, key: &[u8]) -> Result<Self::Value, E> {
+                Ok(std::str::from_utf8(key).map_or_else(
+                    |_| Key::Bytes(key.to_vec()),
+                    |key| Key::Owned(key.to_owned()),
+                ))
             }
         }
 
-        // Identifier, as a derived struct asks for its field names.
-        deserializer.deserialize_identifier(KeyVisitor)
+        // `deserialize_any`, as serde's tagged enum reads each key, so a key
+        // that is not a string reaches the decoder as what it is.
+        deserializer.deserialize_any(KeyVisitor)
     }
 }
