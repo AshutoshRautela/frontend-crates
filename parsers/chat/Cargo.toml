@@ -24,3 +24,6 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 
+[dev-dependencies]
+flate2 = "1"
+futures = { workspace = true }
