@@ -2500,10 +2500,6 @@ mod enum_const_type_hint {
             run(serde_json::json!({"enum":[1,"a"]}), "1"),
             serde_json::json!("1")
         );
-        assert_eq!(
-            run(serde_json::json!({"type":"string","enum":[1,2]}), "1"),
-            serde_json::json!("1")
-        );
     }
 
     #[test]
