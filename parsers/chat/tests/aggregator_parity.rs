@@ -415,3 +415,25 @@ fn main_drift_rejects_changed_integer_values() {
         json!("{\"count\":9007199254740993}");
     assert_eq!(main_drift(&expected, &actual), None);
 }
+
+#[test]
+#[ignore = "F2: no replay input exercises a nonempty fingerprint or service tier"]
+fn replay_covers_optional_envelope_metadata() {
+    let fixture = fixture();
+    let missing: Vec<_> = ["system_fingerprint", "service_tier"]
+        .into_iter()
+        .filter(|field| {
+            !fixture.inputs.iter().any(|input| {
+                input.as_array().unwrap().iter().any(|item| {
+                    item.get("data")
+                        .and_then(|data| data.get(field))
+                        .is_some_and(|value| !value.is_null())
+                })
+            })
+        })
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "no nonempty replay inputs for {missing:?}"
+    );
+}
