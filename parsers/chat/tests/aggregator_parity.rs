@@ -340,3 +340,78 @@ async fn moved_aggregator_matches_dynamo_llm() {
     };
     assert_eq!(drift, pinned, "runs that differ on frontend-crates main");
 }
+
+#[tokio::test]
+#[ignore = "F1: huge-number drift accepts unrelated response changes"]
+async fn main_drift_rejects_unrelated_huge_number_changes() {
+    let fixture = fixture();
+    let name = "structured/Some(\"glm47\")/Some(\"glm45\")/big_number_args/stop/base";
+    let case = fixture.cases.iter().find(|case| case[0] == name).unwrap();
+    let expected = &fixture.outputs[case[5].as_u64().unwrap() as usize];
+    let actual = run(
+        &fixture.inputs[case[2].as_u64().unwrap() as usize],
+        &options(
+            &fixture.options[case[1].as_u64().unwrap() as usize],
+            ParserVersion::V2,
+        ),
+    )
+    .await;
+    assert_eq!(
+        main_drift(expected, &actual),
+        Some(MainDrift::HugeNumberKept)
+    );
+
+    let mut admitted = Vec::new();
+    for (label, pointer, replacement) in [
+        ("role", "/ok/choices/0/message/role", json!("user")),
+        (
+            "content",
+            "/ok/choices/0/message/content",
+            json!("unexpected content"),
+        ),
+        (
+            "tool name",
+            "/ok/choices/0/message/tool_calls/0/function/name",
+            json!("different_tool"),
+        ),
+        (
+            "tool id",
+            "/ok/choices/0/message/tool_calls/0/id",
+            json!("different_id"),
+        ),
+        (
+            "finish reason",
+            "/ok/choices/0/finish_reason",
+            json!("length"),
+        ),
+    ] {
+        let mut changed = actual.clone();
+        *changed.pointer_mut(pointer).unwrap() = replacement;
+        if main_drift(expected, &changed).is_some() {
+            admitted.push(label);
+        }
+    }
+    let mut changed_model = actual;
+    changed_model["ok"]["model"] = json!("different-model");
+    if main_drift(expected, &changed_model).is_some() {
+        admitted.push("model");
+    }
+    assert!(
+        admitted.is_empty(),
+        "accepted unrelated drift: {admitted:?}"
+    );
+}
+
+#[test]
+#[ignore = "F1: f64 comparison accepts changed integer argument values"]
+fn main_drift_rejects_changed_integer_values() {
+    let expected = json!({"ok": {"choices": [{"message": {"tool_calls": [{
+        "id": "call_a", "type": "function", "function": {
+            "name": "write_file", "arguments": "{\"count\":9007199254740992}"
+        }
+    }]}}]}});
+    let mut actual = expected.clone();
+    actual["ok"]["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"] =
+        json!("{\"count\":9007199254740993}");
+    assert_eq!(main_drift(&expected, &actual), None);
+}
