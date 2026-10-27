@@ -504,3 +504,55 @@ fn qwen_queued_source_remaps_completion_evidence() {
         );
     }
 }
+
+#[test]
+fn non_data_annotations_survive_between_native_fragments() {
+    let note = json!({
+        "id": "source-note",
+        "event": "update",
+        "comment": ["backend progress", "second line"]
+    });
+    let heartbeat = json!({"comment": ["keepalive"]});
+    let case = json!({
+        "family": "qwen3",
+        "tools": true,
+        "constraint": "none",
+        "prefill": "none",
+        "prefix": null,
+        "guided_streaming": false,
+        "reasoning_disabled": false,
+        "structured_response": false,
+        "input": [
+            {"data": {"choices": [{"index": 0, "delta": {"content": "before <tool_c"}}]}},
+            note.clone(),
+            heartbeat.clone(),
+            {"data": {"choices": [{
+                "index": 0,
+                "delta": {"content": "all><function=get_weather><parameter=city>Paris</parameter></function></tool_call>"},
+                "finish_reason": "stop"
+            }]}}
+        ]
+    });
+    for selected in [false, true] {
+        let output = run(&case, selected);
+        let annotations: Vec<_> = output
+            .iter()
+            .filter(|item| item.get("data").is_none())
+            .cloned()
+            .collect();
+        assert_eq!(
+            annotations,
+            vec![note.clone(), heartbeat.clone()],
+            "non-data annotations must pass through unchanged and in order"
+        );
+        let position = output.iter().position(|item| item == &note).unwrap();
+        assert_eq!(output[position + 1], heartbeat);
+        assert!(output[..position].iter().any(|item| {
+            item.pointer("/data/choices/0/delta/content") == Some(&json!("before "))
+        }));
+        assert!(output[position + 2..].iter().any(|item| {
+            item.pointer("/data/choices/0/delta/tool_calls/0/function/name")
+                == Some(&json!("get_weather"))
+        }));
+    }
+}
