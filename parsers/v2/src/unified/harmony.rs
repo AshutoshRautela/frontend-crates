@@ -3,7 +3,7 @@
 
 //! Unified GPT-OSS parser over the incremental Harmony message reader.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::panic::{RefUnwindSafe, UnwindSafe};
 
 use openai_harmony::chat::Role;
@@ -92,10 +92,20 @@ fn harmony_encoding() -> Result<&'static HarmonyEncoding> {
         .map_err(|error| anyhow::anyhow!("Harmony encoding unavailable: {error}"))
 }
 
+static GLOBAL_HARMONY_SPECIAL_TOKENS: std::sync::OnceLock<HashSet<&'static str>> =
+    std::sync::OnceLock::new();
+
+/// Encodes `text` with every special token allowed, like `encode_with_special_tokens`. That
+/// method collects all ~1,090 special-token strings into a new set on each call, which made the
+/// set the dominant cost of every streamed chunk, so the set is built once here instead.
+fn encode_with_special_tokens(encoding: &HarmonyEncoding, text: &str) -> Result<Vec<u32>> {
+    let global = harmony_encoding()?;
+    let special = GLOBAL_HARMONY_SPECIAL_TOKENS.get_or_init(|| global.tokenizer().special_tokens());
+    Ok(encoding.tokenizer().encode(text, special).0)
+}
+
 pub fn encode_harmony(text: &str) -> anyhow::Result<Vec<u32>> {
-    Ok(harmony_encoding()?
-        .tokenizer()
-        .encode_with_special_tokens(text))
+    encode_with_special_tokens(harmony_encoding()?, text)
 }
 
 pub fn decode_harmony(token_ids: &[u32]) -> anyhow::Result<String> {
@@ -103,7 +113,7 @@ pub fn decode_harmony(token_ids: &[u32]) -> anyhow::Result<String> {
 }
 
 fn token_id(encoding: &HarmonyEncoding, marker: &str) -> Result<u32> {
-    let ids = encoding.tokenizer().encode_with_special_tokens(marker);
+    let ids = encode_with_special_tokens(encoding, marker)?;
     match ids.as_slice() {
         [id] => Ok(*id),
         _ => anyhow::bail!("Harmony marker {marker:?} encoded as {} tokens", ids.len()),
@@ -263,10 +273,7 @@ impl HarmonyRuntime {
             UnifiedParserStartingState::Response => "final",
         };
         let prefix = format!("{START}assistant{CHANNEL}{channel}{MESSAGE}");
-        let ids = self
-            .encoding
-            .tokenizer()
-            .encode_with_special_tokens(&prefix);
+        let ids = encode_with_special_tokens(&self.encoding, &prefix)?;
         for id in ids {
             self.process_token(id, &mut UnifiedParserOutput::default())?;
         }
@@ -286,7 +293,7 @@ impl HarmonyRuntime {
         }
         let safe = self.text_pending[..safe_len].to_string();
         self.text_pending.drain(..safe_len);
-        let ids = self.encoding.tokenizer().encode_with_special_tokens(&safe);
+        let ids = encode_with_special_tokens(&self.encoding, &safe)?;
         for id in ids {
             self.process_token(id, output)?;
         }
@@ -399,10 +406,8 @@ impl HarmonyRuntime {
                     || (has_recipient && matches!(marker, Some(MESSAGE | FORMAT))))
             {
                 let pending = std::mem::take(&mut self.outside_pending);
-                let prefix = self
-                    .encoding
-                    .tokenizer()
-                    .encode_with_special_tokens(&format!("{START}assistant"));
+                let prefix =
+                    encode_with_special_tokens(&self.encoding, &format!("{START}assistant"))?;
                 for prefix_id in prefix {
                     self.process_token(prefix_id, output)?;
                 }
@@ -711,10 +716,7 @@ impl HarmonyRuntime {
         }
         if !self.text_pending.is_empty() {
             let pending = std::mem::take(&mut self.text_pending);
-            let ids = self
-                .encoding
-                .tokenizer()
-                .encode_with_special_tokens(&pending);
+            let ids = encode_with_special_tokens(&self.encoding, &pending)?;
             for id in ids {
                 self.process_token(id, output)?;
             }
@@ -1380,6 +1382,16 @@ fn guided_strip_text(text: &str) -> String {
 mod tests {
     use super::*;
     use crate::unified::{UnifiedEvent, UnifiedParserEvent, UnifiedParserExt};
+
+    #[test]
+    fn cached_special_tokens_encode_like_encode_with_special_tokens() {
+        let text = "<|start|>assistant<|channel|>analysis<|message|>plan<|reserved_200500|><|end|>";
+        let encoding = harmony_encoding().unwrap();
+        assert_eq!(
+            encode_harmony(text).unwrap(),
+            encoding.tokenizer().encode_with_special_tokens(text)
+        );
+    }
 
     #[test]
     fn legacy_adapter_matches_routed_native_lifecycle() {
