@@ -142,6 +142,41 @@ use dynamo_protocols::types::{
 use futures::FutureExt;
 use futures::stream;
 
+/// `qwen_chunks_for_choices` builds one `FinishedStreamChunk` per parsed choice,
+/// for every family. dynamo boxed the rare queued-source payload, so an ordinary
+/// choice cost no more than a `ChatChoiceStream`; the move must not grow it.
+#[test]
+fn ordinary_fanout_keeps_the_source_adapter_allocation_size() {
+    #[allow(dead_code)]
+    enum SourceAdapterChunk {
+        Choice(ChatChoiceStream),
+        Source(Annotated<Box<NvCreateChatCompletionStreamResponse>>),
+    }
+
+    let state = ChoiceState::new(
+        QWEN3_UNIFIED_FAMILY,
+        &[],
+        UnifiedParserStartingState::None,
+        UnifiedToolOutputMode::Native,
+        false,
+        false,
+    )
+    .unwrap();
+    let mut record = ChoiceRecord::<Annotated<NvCreateChatCompletionStreamResponse>>::default();
+    let choices = vec![empty_choice(0)];
+    let chunks = qwen_chunks_for_choices(&state, &mut record, choices);
+    assert!(matches!(
+        chunks.as_slice(),
+        [FinishedStreamChunk::Choice(_)]
+    ));
+    let allocated = std::mem::size_of_val(chunks.as_slice());
+    let source_allocated = std::mem::size_of::<SourceAdapterChunk>();
+    assert!(
+        allocated <= source_allocated,
+        "one ordinary choice now needs {allocated} bytes; the source adapter needs {source_allocated} bytes"
+    );
+}
+
 struct PartialCommitParser {
     recovered: String,
 }

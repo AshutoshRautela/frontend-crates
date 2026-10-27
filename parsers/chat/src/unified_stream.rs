@@ -2058,16 +2058,16 @@ struct PendingQwenReasoningResponse<I: UnifiedStreamItem> {
     annotation: I::Annotation,
 }
 
-// The source variant holds a generic chunk, which clippy sizes as empty.
+// The source chunk is boxed so an ordinary choice, the common case, stays small.
 #[allow(clippy::large_enum_variant)]
 enum FinishedStreamChunk<I: UnifiedStreamItem> {
     Choice(ChatChoiceStream),
-    Source((I::Chunk, I::Annotation)),
+    Source(Box<(I::Chunk, I::Annotation)>),
 }
 
 fn take_qwen_reasoning_response<I: UnifiedStreamItem>(
     record: &mut ChoiceRecord<I>,
-) -> (I::Chunk, I::Annotation) {
+) -> Box<(I::Chunk, I::Annotation)> {
     let pending = record
         .pending_qwen_opener_responses
         .pop_front()
@@ -2077,7 +2077,7 @@ fn take_qwen_reasoning_response<I: UnifiedStreamItem>(
     source_reasoning.delta.reasoning_content = Some(pending.text);
     source_reasoning.finish_reason = None;
     data.inner_mut().choices = vec![source_reasoning];
-    (data, pending.annotation)
+    Box::new((data, pending.annotation))
 }
 
 fn qwen_chunks_for_choices<I: UnifiedStreamItem>(
@@ -2577,7 +2577,7 @@ where
                             FinishedStreamChunk::Choice(choice) => {
                                 yield response_with_choice(template, choice, &states, &records);
                             }
-                            FinishedStreamChunk::Source(response) => yield normalized_source_response(response, &states, &records),
+                            FinishedStreamChunk::Source(response) => yield normalized_source_response(*response, &states, &records),
                         }
                     }
                 }
@@ -3122,7 +3122,7 @@ where
                     let (_, response) = deferred_qwen_responses
                         .next()
                         .expect("peeked Qwen response should be present");
-                    yield normalized_source_response(response, &states, &records);
+                    yield normalized_source_response(*response, &states, &records);
                 }
                 let Some(choice) = emitted.get(position).cloned() else {
                     continue;
@@ -3162,7 +3162,7 @@ where
                     FinishedStreamChunk::Choice(choice) => {
                         yield response_with_choice(template, choice, &states, &records);
                     }
-                    FinishedStreamChunk::Source(response) => yield normalized_source_response(response, &states, &records),
+                    FinishedStreamChunk::Source(response) => yield normalized_source_response(*response, &states, &records),
                 }
             }
         }
