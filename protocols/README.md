@@ -12,6 +12,17 @@ Request/response types for OpenAI- and Anthropic-compatible inference servers. B
 - **Anthropic Messages** — fully owned (no upstream equivalent).
 - **Embeddings**, **Images** — re-exported.
 
+## JSON key order
+
+The `preserve_order` feature is on by default. It turns on serde_json's
+`preserve_order` for the whole build, so every `serde_json::Map` keeps the
+order of its keys. Each key lookup in a map then hashes the key.
+
+Build with `default-features = false` when nothing in the build needs key
+order. Then `serde_json::Map` sorts its keys. A tool call's `arguments` sent
+as an object is then written back as a string with sorted keys. Another
+crate in the build can still turn serde_json's feature on.
+
 ## Optional protocol schemas
 
 The `protocol-schema` feature is disabled by default. When enabled, it supplies utoipa 5 `ToSchema`
