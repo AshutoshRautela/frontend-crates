@@ -23,7 +23,9 @@ import re
 
 from impls import UNIFIED_DISPLAY, UNIFIED_MARKER_FAMILIES
 from null_cases import NULL_VARIANTS
-from schema_cases import ARGUMENT_SECTIONS, CONFORMANCE_CASES, SCHEMA_GROUPS, argument_section, schema_fold, schema_group
+from schema_cases import ARGUMENT_SECTIONS, CONFORMANCE_CASES, SCHEMA_GROUPS, XML_COMPATIBILITY_CASES, argument_section, schema_fold, schema_group
+from schema_cases import ARGUMENT_SECTIONS, CONFORMANCE_CASES, SCHEMA_GROUPS, argument_section, schema_fold, schema_group, schema_case_label
+from numeric_cases import NUMERIC_VARIANTS
 
 UNIFIED_TAX = {
     "default_reasoning_without_opener": (10, "6"),
@@ -40,10 +42,16 @@ UNIFIED_TAX = {
 
     # Group 1 — Single call
     "tool_only": (1, "1"),
+    "dotted_name_minimal": (1, "3"),
+    "dotted_name_mixed_punctuation": (1, "4"),
+    "dotted_name_multiple_segments": (1, "5"),
     # TODO: restore 1-2 in the follow-up to PR #232 (deferred-cases). Completed below; the family-scoped alias retains its historical ID.
     "kimi_k2_optional_prefix_name_overlap": ("kimi_k2", "1"),
     # Group 2 — Multiple calls (streamv1.2)
     "two_calls": (2, "1"), "two_calls_same_name": (2, "2"),
+    "adjacent_calls_partial_header": (2, "3"),
+    "three_calls_partial_header": (2, "4"),
+    "dotted_name_shared_prefix": (2, "5"),
     # Group 3 — No call (streamv1.3)
     "text_only": (3, "1"),
     # Group 4 — Malformed envelope. Labelled but EMPTY until now.
@@ -58,8 +66,11 @@ UNIFIED_TAX = {
     "empty_args": (6, "1"),
     # Group 7 — Argument fidelity (streamv1.7)
     "arg_unicode": (7, "1"), "arg_marker_in_string": (7, "2"),
+    "arg_object_quoted_parameter_close": (7, "27"),
+    "arg_array_quoted_parameter_close": (7, "28"),
     "deepseek_v41_mixed_control_text_in_string": (7, "3"),
-    **{scenario: (7, label.split("-", 1)[1]) for scenario, label, *_ in NULL_VARIANTS},
+    **{scenario: (7, label.split("-", 1)[1]) for scenario, label, *_ in (*NULL_VARIANTS, *NUMERIC_VARIANTS)},
+    "arg_numeric_nested_exact": (7, "20.nested_exact"),
     "arg_json_null_ref": (7, "4.ref"),
     "arg_string_null_ref": (7, "5.ref"),
     "arg_null_mixed_labels": (7, "4.mixed_labels"),
@@ -70,6 +81,7 @@ UNIFIED_TAX = {
     "unused_reference_graph_parameter_types": (7, "14"),
     "nullable_reference_alias_literals": (7, "15"),
     "local_schema_id_preserves_type": (7, "16"),
+    **{case["name"]: (7, f"26.{index}") for index, case in enumerate(XML_COMPATIBILITY_CASES, 1)},
     "deepseek_v41_json_invocation_body": ("deepseek", "1"),
     "glm47_reference_type_intersection": ("glm5", "2"),
     **{f"schema_{case['name']}": (7, f"{SCHEMA_GROUPS[schema_group(case['name'])][1]}.{case['name']}")
@@ -78,6 +90,11 @@ UNIFIED_TAX = {
     "text_before_tool": (8, "1"), "trailing_text_after_tool": (8, "2"),
     "text_sandwich": (8, "3"), "text_between_calls": (8, "4"),
     "narrated_calls": (8, "5"),
+    "commentary_then_tool": ("muse_spark", "1"),
+    "spark_phase_tool_final": ("muse_spark", "2"),
+    "spark_phase_repeated": ("muse_spark", "3"),
+    "spark_phase_empty": ("muse_spark", "4"),
+    "spark_phase_eof": ("muse_spark", "5"),
     "native_quoted_control_in_response": (8, "6"),
     "native_single_quoted_word_control": (8, "7"),
     "native_quoted_control_then_call": (8, "8"),
@@ -91,6 +108,13 @@ UNIFIED_TAX = {
     "guided_response_quoted_control_braces_named": (35, "3"),
     "guided_response_quoted_control_braces_required": (35, "4"),
     "guided_response_rejected_header_quote_ownership": (35, "5"),
+    "muse_unterminated_reasoning_native": ("muse", "unterminated_reasoning_native"),
+    "muse_unterminated_reasoning_guided": ("muse", "unterminated_reasoning_guided"),
+    "muse_opaque_undeclared_invoke": ("muse", "opaque_undeclared_invoke"),
+    "muse_opaque_declared_invoke": ("muse", "opaque_declared_invoke"),
+    "muse_recovery_second_parameter": ("muse", "recovery_second_parameter"),
+    # Beam-specific: only Beam's grammar admits a bare tool header at EOS as a call.
+    "empty_args_no_close": ("beam", "1"), "optional_args_no_close": ("beam", "2"),
     "muse_quoted_reserved_eom_argument": ("muse", "2"),
     "muse_quoted_reserved_eot_argument": ("muse", "3"),
     "muse_quoted_reserved_start_argument": ("muse", "4"),

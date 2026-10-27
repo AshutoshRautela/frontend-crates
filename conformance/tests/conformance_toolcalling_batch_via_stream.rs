@@ -8,7 +8,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 mod common;
-use common::{collect_yaml, fixture_name};
+use common::{EngineResult, collect_yaml, fixture_name};
 
 use dynamo_parsers_v2::{
     HarmonyToolStreamParser, Tool, ToolCallDelta, ToolParseResult, assemble_tool_calls,
@@ -195,7 +195,7 @@ fn reconcile(known: &BTreeMap<String, Exception>, observed: &BTreeSet<String>) -
 }
 
 fn capture_matches_version(capture: &StreamCapture, family: &str) -> Result<(), String> {
-    let version = common::STREAM_DYNAMO_V2_CURRENT_CAPTURE
+    let version = common::BATCH_ON_STREAM_DYNAMO_V2_CAPTURE
         .strip_prefix("dynamo_v2-")
         .unwrap();
     if capture.family != family
@@ -327,12 +327,6 @@ fn toolcalling_batch_via_stream_parity() {
         failures.len(),
         failures.join("\n")
     );
-}
-
-#[derive(Debug, PartialEq, Eq)]
-struct EngineResult {
-    calls: Vec<(String, Value)>,
-    normal_text: String,
 }
 
 fn parse_stream_result(

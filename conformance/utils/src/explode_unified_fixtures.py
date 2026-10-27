@@ -29,9 +29,11 @@ from functools import lru_cache
 from pathlib import Path
 
 import yaml
+import yaml_fast
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from dynamo_version import validate_capture_provenance  # noqa: E402
+from dynamo_version import compact_capture_origin, validate_capture_provenance  # noqa: E402
+from gen_unified_golden import build_cases  # noqa: E402
 from capture_stimulus import _without_synthetic_finish_step, capture_input  # noqa: E402
 from unified_taxonomy import numbered_id  # noqa: E402
 import unified_history  # noqa: E402
@@ -221,8 +223,10 @@ def _split_only_cases(family, document):
             # The request schema stores an empty offered-tool set as [], matching
             # the legacy batch API's required slice without inventing a schema.
             "tools": case.get("tools") or [],
-            "chunks": [{"delta_text": raw_input}],
+            "chunks": [{"delta_text": text} for text in case.get("input_chunks", [raw_input])],
         }
+        if case.get("finish_step"):
+            request["chunks"].append({"delta_text": "‹finish›"})
         rows[key] = {
             "scenario": scenario,
             "description": case.get("description", ""),
@@ -287,6 +291,7 @@ def main():
     # A version dir is written once; accumulate cases into per-(dir, family) docs.
     docs = {}  # (dirname, family) -> {family, mode, [model_label|captured_with], cases:{}}
     active_cases = {}
+    golden_cases = {}
 
     def slot(dirname, family, captured_with=None, model_label=None):
         k = (dirname, family)
@@ -297,10 +302,7 @@ def main():
             if captured_with is not None:
                 d["captured_with"] = captured_with
                 if "dynamo_v2" in captured_with:
-                    d["capture_origin"] = {
-                        key: provenance[key]
-                        for key in ("crate_version", "source_sha256", "git_commit")
-                    }
+                    d["capture_origin"] = compact_capture_origin(provenance)
             d["cases"] = {}
             docs[k] = d
         return docs[k]["cases"]
@@ -308,6 +310,8 @@ def main():
     for c in feed["cases"]:
         cid = c["id"]
         key, fam, scenario = _case_key(cid)
+        if fam not in golden_cases:
+            golden_cases[fam] = build_cases(fam)
         chunks = c.get("chunks") or []
         request = _request_stimulus(
             c, keep_finish_chunk=_historical_finish_chunk(fam, scenario)
@@ -321,7 +325,7 @@ def main():
 
         # golden/<family>/<key>.yaml — the authored oracle (assembled events)
         slot("golden", fam, captured_with={"golden": "v1"})[key] = {
-            "assembled": c.get("golden") or [],
+            "assembled": golden_cases[fam][cid]["golden"],
         }
 
         # dynamo_v2-<ver>/<family>/<key>.yaml — LIVE dynamo (assembled + per-chunk)

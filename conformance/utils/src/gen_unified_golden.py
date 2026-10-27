@@ -27,8 +27,22 @@ import yaml
 
 import markers
 from impls import unified_grammar_family
-from schema_cases import CONFORMANCE_CASES, unified_schema_cases
+from schema_cases import (
+    CONFORMANCE_CASES, XML_COMPATIBILITY_CASES, schema_description, schema_tools,
+    unified_schema_cases,
+)
 from unified_taxonomy import GPT_OSS_PR424_REQUEST_VARIANTS, RETIRED_SCENARIOS, numbered_id
+from numeric_cases import (
+    NUMERIC_DESCRIPTIONS,
+    NUMERIC_VARIANTS,
+    SCHEMA_DIRECTED_FAMILIES,
+    NumericLiteral,
+    applicable,
+    arguments_json,
+    numeric_description,
+    unified_numeric_expected,
+    numeric_schema,
+)
 from null_cases import MIXED_CASE_FAMILIES, NULL_VARIANTS, MIXED_LABELS_SCHEMA, MIXED_LABELS_ARGS, null_description
 
 # Families and their golden-spec filenames come from the ONE declaration in
@@ -40,6 +54,26 @@ TEMPLATE_FAMILIES = [f for f in FAMILIES if not _MANIFEST[f].get("grammar")]
 SHARED_FAMILIES = [f for f in FAMILIES if f != "deepseek_v41"]
 FAM_FILE = {f: r["golden_spec"] for f, r in _MANIFEST.items()}
 UNIFIED_FAMILIES = {f for f, r in _MANIFEST.items() if r.get("native")}
+DOTTED_NAME_SCENARIOS = frozenset({
+    "dotted_name_minimal",
+    "dotted_name_mixed_punctuation",
+    "dotted_name_multiple_segments",
+    "dotted_name_shared_prefix",
+})
+DOTTED_NAME_FAMILIES = frozenset({
+    "beam",
+    "deepseek_v4",
+    "deepseek_v41",
+    "gemma4",
+    "glm47",
+    "gpt_oss",
+    "kimi_k2",
+    "kimi_k3",
+    "muse_glimmer",
+    "muse_spark",
+    "nemotron_v3",
+    "qwen3",
+})
 # Families whose unified parser accepts GUIDED tool output, declared in the manifest.
 # Every family with a native unified parser does today. The gate is kept rather than
 # deleted because "can this family honour a guided request mode" is a real per-family
@@ -48,8 +82,10 @@ UNIFIED_FAMILIES = {f for f, r in _MANIFEST.items() if r.get("native")}
 # perfectly good reasoning channel routed by recipient. Prefilled channels are a
 # separate axis and are supported everywhere, so they are not gated.
 GUIDED_FAMILIES = {f for f, r in _MANIFEST.items() if r.get("guided_tool_output", True)}
+MUSE_FAMILIES = {"muse_glimmer", "muse_spark"}
 
 GRAMMAR_NOTE = {
+    "beam": "Beam channel grammar (NOT Harmony): reasoning `<|start|>assistant<|channel|>analysis<|message|>...<|end|>`, visible `<|start|>assistant<|channel|>final<|message|>...<|return|>`, tool `<|start|>assistant to=NAME<|channel|>analysis <|constrain|>xml<|message|><rfl:parameter name=\"KEY\">\\nVALUE\\n</rfl:parameter><|call|>` (a call dispatches only once `<|call|>`/`<|end|>` arrives; analysis closes only on `<|end|>`; one LF is stripped at each value edge).",
     "deepseek_v41": "prompt-prefilled reasoning ends at `</think>`; `<｜DSML｜ calls>` contains V4.1 invoke and parameter tags and ends the turn.",
     "deepseek_v4": "reasoning `<think>...</think>`, tool `<｜DSML｜tool_calls><｜DSML｜invoke name=\"NAME\"><｜DSML｜parameter name=\"KEY\" string=\"true\">VALUE</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>`.",
     "gemma4": "reasoning `<|channel>thought\\n...<channel|>`, tool `<|tool_call>call:NAME{key:<|\"|>value<|\"|>}<tool_call|>` (string values wrapped in `<|\"|>`; an embedded `<tool_call|>` inside a `<|\"|>` string is data, not the end marker).",
@@ -59,6 +95,7 @@ GRAMMAR_NOTE = {
     "kimi_k3": "reasoning `<|open|>think<|sep|>...<|close|>think<|sep|>`, tool `<|open|>tools<|sep|><|open|>call tool=\"NAME\" index=\"IDX\"<|sep|><|open|>argument key=\"KEY\" type=\"string\"<|sep|>VALUE<|close|>argument<|sep|><|close|>call<|sep|><|close|>tools<|sep|>`.",
     "muse_glimmer": "recipient-routed messages `<|start|>assistant to=RCPT<|message|>...<|eom|>`: `self` is reasoning, `user` is visible content, any other recipient opens a tool channel whose body is ATEM XML `<atem:function_calls><atem:invoke name=\"NAME\"><atem:parameter name=\"KEY\">VALUE</atem:parameter></atem:invoke></atem:function_calls>`. `<|eom|>` closes a message with more to follow, `<|eot|>` ends the turn. Spec: https://huggingface.co/meta-models/Muse-Glimmer-30B.",
     "gpt_oss": "GPT-OSS 20B and 120B templates allow `analysis`, `commentary`, and `final` channels. Reasoning uses `analysis`; visible output uses `final`; tool calls use `assistant to=functions.NAME<|channel|>commentary json<|message|>...<|call|>`. Specs: https://huggingface.co/openai/gpt-oss-20b/blob/main/chat_template.jinja and https://huggingface.co/openai/gpt-oss-120b/blob/main/chat_template.jinja.",
+    "muse_spark": "Muse Glimmer's recipient-routed ATEM grammar plus the reserved `commentary` recipient, which is user-visible intermediate text rather than a tool channel. `self` is reasoning and `user` is final visible content.",
 }
 
 
@@ -67,11 +104,13 @@ GRAMMAR_NOTE = {
 def r_reason(fam, text):
     if fam == "gpt_oss":
         return f"<|start|>assistant<|channel|>analysis<|message|>{text}<|end|>"
+    if fam == "beam":
+        return f"<|start|>assistant<|channel|>analysis<|message|>{text}<|end|>"
     if fam == "kimi_k3":
         return k3_channel("think", text)
     if fam == "gemma4":
         return f"<|channel>thought\n{text}<channel|>"
-    if fam == "muse_glimmer":
+    if fam in MUSE_FAMILIES:
         return f"<|start|>assistant to=self<|message|>{text}<|eom|>"
     return f"<think>{text}</think>"
 
@@ -86,8 +125,10 @@ def r_text(fam, text):
     """
     if fam == "gpt_oss":
         return f"<|start|>assistant<|channel|>final<|message|>{text}<|return|>"
-    if fam == "muse_glimmer":
+    if fam in MUSE_FAMILIES:
         return f"<|start|>assistant to=user<|message|>{text}<|eom|>"
+    if fam == "beam":
+        return f"<|start|>assistant<|channel|>final<|message|>{text}<|return|>"
     if fam == "kimi_k3":
         return k3_channel("response", text)
     return text
@@ -107,6 +148,8 @@ def _atem_value(val):
     the quoted spelling like every other value that parses. Keeping it bare authored a
     golden no correct parser can emit.
     """
+    if isinstance(val, NumericLiteral):
+        return str(val)
     try:
         json.loads(val)
     except ValueError:
@@ -162,6 +205,8 @@ def k3_raw_tool(name, raw, index=1, *, close=True, spaced=False):
 
 
 def _gemma_value(value):
+    if isinstance(value, NumericLiteral):
+        return str(value)
     if isinstance(value, str):
         return f'<|"|>{value}<|"|>'
     if isinstance(value, dict):
@@ -175,29 +220,60 @@ def r_tool(fam, name, key, val, idx):
     return r_tool_arguments(fam, name, {key: val}, idx)
 
 
+def _json_with_numeric_literals(value):
+    if isinstance(value, NumericLiteral):
+        return str(value)
+    if isinstance(value, dict):
+        return "{" + ",".join(
+            json.dumps(key, ensure_ascii=False) + ":" + _json_with_numeric_literals(item)
+            for key, item in value.items()
+        ) + "}"
+    if isinstance(value, list):
+        return "[" + ",".join(_json_with_numeric_literals(item) for item in value) + "]"
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _contains_numeric_literal(value):
+    if isinstance(value, NumericLiteral):
+        return True
+    if isinstance(value, dict):
+        return any(_contains_numeric_literal(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_numeric_literal(item) for item in value)
+    return False
+
+
 def r_tool_arguments(fam, name, arguments, idx, raw_arguments=None):
     fam = unified_grammar_family(fam)
     # Raw spellings preserve published stimuli independently of the typed oracle.
     raw = raw_arguments if raw_arguments is not None else {
-        key: value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+        key: str(value) if isinstance(value, NumericLiteral)
+        else value if isinstance(value, str) else _json_with_numeric_literals(value)
         for key, value in arguments.items()
     }
     if fam == "gpt_oss":
-        args = json.dumps(arguments, ensure_ascii=False)
+        args = (_json_with_numeric_literals(arguments)
+                if _contains_numeric_literal(arguments)
+                else json.dumps(arguments, ensure_ascii=False))
         return (f"<|start|>assistant<|channel|>commentary to=functions.{name} "
                 f"<|constrain|>json<|message|>{args}<|call|>")
     if fam in ("deepseek_v4", "deepseek_v41"):
         gap = " " if fam == "deepseek_v41" else ""
         envelope = "calls" if gap else "tool_calls"
         params = "".join(
-            f'<｜DSML｜{gap}parameter name="{key}" string="{str(isinstance(value, str)).lower()}">{raw[key]}</｜DSML｜{gap}parameter>'
+            f'<｜DSML｜{gap}parameter name="{key}" string="{str(isinstance(value, str) and not isinstance(value, NumericLiteral)).lower()}">{raw[key]}</｜DSML｜{gap}parameter>'
             for key, value in arguments.items()
         )
         return (f'<｜DSML｜{gap}{envelope}><｜DSML｜{gap}invoke name="{name}">'
                 f'{params}</｜DSML｜{gap}invoke></｜DSML｜{gap}{envelope}>')
+    if fam == "beam":
+        params = "".join(
+            f'<rfl:parameter name="{key}">\n{raw[key]}\n</rfl:parameter>' for key in arguments
+        )
+        return (f"<|start|>assistant to={name}<|channel|>analysis <|constrain|>xml<|message|>"
+                f"{params}<|call|>")
     if fam == "gemma4":
-        native_values = {key: raw[key] if isinstance(value, str) else json.loads(raw[key])
-                         for key, value in arguments.items()}
+        native_values = {key: value for key, value in arguments.items()}
         return f"<|tool_call>call:{name}{_gemma_value(native_values)}<tool_call|>"
     if fam == "qwen3":
         params = "\n".join(
@@ -210,9 +286,9 @@ def r_tool_arguments(fam, name, arguments, idx, raw_arguments=None):
             for key, value in raw.items()
         )
         return f"<tool_call>{name}{params}</tool_call>"
-    if fam == "muse_glimmer":
+    if fam in MUSE_FAMILIES:
         params = "".join(
-            f'<atem:parameter name="{key}">{_atem_value(raw[key]) if isinstance(value, str) else raw[key]}</atem:parameter>\n'
+            f'<atem:parameter name="{key}">{_atem_value(raw[key]) if isinstance(value, str) and not isinstance(value, NumericLiteral) else raw[key]}</atem:parameter>\n'
             for key, value in arguments.items()
         )
         return (f"<|start|>assistant to={name}<|message|><atem:function_calls>\n"
@@ -221,14 +297,15 @@ def r_tool_arguments(fam, name, arguments, idx, raw_arguments=None):
     if fam == "kimi_k3":
         types = {str: "string", type(None): "null", bool: "boolean", int: "integer",
                  float: "number", dict: "object", list: "array"}
-        params = "".join(k3_argument(key, types[type(value)], raw[key])
-                         for key, value in arguments.items())
+        params = "".join(k3_argument(
+            key, "number" if isinstance(value, NumericLiteral) else types[type(value)], raw[key]
+        ) for key, value in arguments.items())
         return k3_tools(k3_call(name, idx + 1, params))
     assert fam == "kimi_k2", fam
-    args = json.dumps(arguments, ensure_ascii=False)
+    args = (_json_with_numeric_literals(arguments) if _contains_numeric_literal(arguments)
+            else json.dumps(arguments, ensure_ascii=False))
     return (f"<|tool_calls_section_begin|><|tool_call_begin|>functions.{name}:{idx}"
             f"<|tool_call_argument_begin|>{args}<|tool_call_end|><|tool_calls_section_end|>")
-
 
 def qwen3_input_as_glm47(input_text):
     """Translate a Qwen-shaped edge fixture into GLM XML."""
@@ -300,6 +377,13 @@ def kimi_input_as_dsml(input_text):
             '</｜DSML｜invoke>' + text[close + len(end):].replace(end, "</｜DSML｜invoke>"))
 
 
+def tool_segment(segment):
+    if len(segment) == 3:
+        return segment[1], segment[2]
+    _, name, key, value = segment
+    return name, {key: value}
+
+
 def render_input(fam, segs):
     """Concatenate rendered segments (grammars are self-delimiting)."""
     out = []
@@ -315,14 +399,15 @@ def render_input(fam, segs):
             if fam == "kimi_k3":
                 calls = []
                 while index < len(segs) and segs[index][0] == "tool":
-                    _, name, key, val = segs[index]
-                    calls.append(k3_call(name, tool_idx + 1, k3_argument(key, "string", val)))
+                    name, arguments = tool_segment(segs[index])
+                    calls.append(r_tool_arguments(fam, name, arguments, tool_idx)
+                                 .removeprefix(k3_open("tools")).removesuffix(k3_close("tools")))
                     tool_idx += 1
                     index += 1
                 out.append(k3_tools("".join(calls)))
                 continue
-            _, name, key, val = s
-            out.append(r_tool(fam, name, key, val, tool_idx))
+            name, arguments = tool_segment(s)
+            out.append(r_tool_arguments(fam, name, arguments, tool_idx))
             tool_idx += 1
         index += 1
     return "".join(out)
@@ -336,8 +421,8 @@ def golden_of(segs):
         elif s[0] == "text":
             ev.append({"kind": "text", "text": s[1]})
         elif s[0] == "tool":
-            _, name, key, val = s
-            ev.append({"kind": "tool_call", "name": name, "arguments": {key: val}})
+            name, arguments = tool_segment(s)
+            ev.append({"kind": "tool_call", "name": name, "arguments": arguments})
     return ev
 
 
@@ -411,7 +496,7 @@ def by_family(render, vllm, dynamo, *rest):
 
 # A family whose tool block opener spans more than its first control token, mapped to
 # the marker the opener runs THROUGH. Absent means the first token is the whole opener.
-_TOOL_OPEN_THROUGH = {"muse_glimmer": "<atem:function_calls>"}
+_TOOL_OPEN_THROUGH = {fam: "<atem:function_calls>" for fam in MUSE_FAMILIES} | {"beam": "<|message|>"}
 
 # A family whose OUTER message terminator is shared across channels, mapped to the
 # token that closes its tool STRUCTURE specifically. Absent means the two are the
@@ -429,7 +514,7 @@ _TOOL_OPEN_THROUGH = {"muse_glimmer": "<atem:function_calls>"}
 # natively, and `tool_markup_only_emits_nothing` must keep rendering `<|eom|>`.
 # Under GUIDED decoding the payload is bare JSON by construction, so native markup
 # around it is stray no matter which marker it is — which is what this scenario asks.
-_STRAY_TOOL_CLOSE = {"muse_glimmer": "</atem:function_calls>"}
+_STRAY_TOOL_CLOSE = {fam: "</atem:function_calls>" for fam in MUSE_FAMILIES}
 
 
 def stray_tool_close(fam):
@@ -478,6 +563,9 @@ def invoke_header_prefix(fam):
         return '<|open|>call tool="'
     if fam == "glm47":
         return ""
+    if fam == "beam":
+        # The recipient sits in the routed header, before the channel marker.
+        return "<|start|>assistant to="
     rendered = r_tool(fam, "NAMEX", "KEYX", "VALX", 0)
     outer = control_tokens(fam)[2]
     # Search for the name AFTER the opener. A family whose opener already carries the
@@ -499,6 +587,8 @@ def guided_named_invoke_prefix(fam):
     if fam == "gpt_oss":
         return ""
     return {
+        # Beam routes on the recipient in the message header, before the channel marker.
+        "beam": "<|start|>assistant to=get_weather",
         "deepseek_v4": '<｜DSML｜invoke name="get_weather"',
         "deepseek_v41": '<｜DSML｜ invoke name="get_weather"',
         "gemma4": "call:get_weather",
@@ -506,6 +596,7 @@ def guided_named_invoke_prefix(fam):
         "kimi_k2": "<|tool_call_begin|>functions.get_weather:0",
         "kimi_k3": '<|open|>call tool="get_weather"',
         "muse_glimmer": '<atem:invoke name="get_weather"',
+        "muse_spark": '<atem:invoke name="get_weather"',
         "qwen3": "<function=get_weather",
     }[fam]
 
@@ -518,7 +609,7 @@ def r_bare_tool(fam, name, key, value, index):
     rendered = rendered.removeprefix(opener.replace("NAMEX", name))
     if fam != "gemma4":
         rendered = rendered.removesuffix(closer)
-    if fam == "muse_glimmer":
+    if fam in MUSE_FAMILIES:
         rendered = rendered.removesuffix("</atem:function_calls>")
     return rendered.strip()
 
@@ -571,6 +662,10 @@ V_MUSE = {
     "verdict": "match",
     "note": "vLLM muse_glimmer is unmerged (PR #51655); no released engine can be captured — unverified annotation",
 }
+V_MUSE_SPARK = {
+    "verdict": "match",
+    "note": "vLLM Muse Spark capture coverage is pending — unverified annotation",
+}
 
 # Families `capture_vllm_unified.py` has no entry for. The Unified tab falls back to
 # the AUTHORED `expect.vllm` whenever a capture is missing, so for these families it
@@ -580,6 +675,10 @@ V_MUSE = {
 VLLM_UNCAPTURABLE = {
     "muse_glimmer": V_MUSE,
     "gpt_oss": "No GPT-OSS vLLM Unified capture is configured; Dynamo Unified is captured separately.",
+    "muse_spark": V_MUSE_SPARK,
+    # The model builder's reference is the grammar's source of truth, not a peer engine,
+    # and no released vLLM or SGLang parser reads this channel grammar.
+    "beam": D("UNSUPPORTED", "no released vLLM or SGLang Beam parser; no peer capture exists, so no peer verdict is claimed"),
 }
 
 
@@ -637,9 +736,12 @@ CLEAN = [
      ["P1"], [("tool", "get_weather", "city", "Paris"),
               ("text", "The forecast shows clear skies for the rest of the week.")],
      {"gemma4": M, "qwen3": M, "muse_glimmer": V_MUSE, "gpt_oss": M,
+    "muse_spark": V_MUSE_SPARK,
+      "beam": VLLM_UNCAPTURABLE["beam"],
       "kimi_k3": M,
       "kimi_k2": D("LOSS", "kimi config stays in a tool state and SUPPRESSES trailing text -> arbitrary content dropped; violates best-effort recovery (preserve visible prose, conformance/README.md:142)")},
      {"gemma4": M, "qwen3": M,
+      "beam": {"verdict": "match", "note": "the call ends at its own `<|call|>`; the following `final` message is ordinary content"},
       "muse_glimmer": {"verdict": "match", "note": "the tool channel closes at its own `<|eom|>`, so the following `to=user` message is ordinary content"},
       "kimi_k3": {"verdict": "match", "note": "K3 response framing preserves visible prose after the tools channel"},
       "kimi_k2": {"verdict": "match", "note": "P1 resolved by the v2 recovery contract: preserve trailing prose. Verify v2 kimi_k2 at capture time"},
@@ -725,18 +827,71 @@ _MIXED_CONTROL_STRINGS = {
             "kimi_k2": "<|tool_calls_section_begin|> <|tool_calls_section_end|> <|tool_call_end|>",
             "kimi_k3": k3_open("tools") + " " + k3_close("tools") + " " + k3_close("call"),
             "muse_glimmer": "<atem:function_calls> </atem:function_calls> </atem:invoke>",
+            # Every Beam channel terminator, plus a header opener; only the parameter
+            # closer is structural inside a value, so all of them stay data.
+            "beam": "<|call|> <|end|> <|return|> <|start|>",
         }.items()
     },
 }
 
+_MIXED_CONTROL_STRINGS["muse_spark"] = _MIXED_CONTROL_STRINGS["muse_glimmer"]
+
 EDGE = [
-    # Muse EOF recovery must skip an unterminated parameter without losing later
-    # invokes in the same ATEM channel. Scope is Muse-specific because the failure
-    # depends on its parameter-opaque invoke scanner (PR #316 review).
+    ("commentary_then_tool",
+     "Muse Spark only: the reserved `commentary` recipient is visible intermediate text, then a native ATEM tool channel follows. It must not be interpreted as a tool named commentary or dropped as an unknown recipient.",
+     [],
+     [{"kind": "text", "text": "Checking the weather."},
+      {"kind": "tool_call", "name": "get_weather", "arguments": {"city": "Paris"}}],
+     {"starting_state": "None", "tool_output_mode": "Native", "named_tool": None},
+     OnlyFamilies({
+         "muse_spark": (
+             "<|start|>assistant to=commentary<|message|>Checking the weather.<|eom|>"
+             + r_tool("muse_spark", "get_weather", "city", "Paris", 0),
+             V_MUSE_SPARK,
+             {"verdict": "match", "note": "commentary remains visible and the following ATEM call is parsed"},
+         ),
+     })),
+
+    # Phase-preserving output is opt-in and Spark-specific: other current
+    # families do not reserve a distinct commentary recipient.
+    ("muse_unterminated_reasoning_native",
+     "Native Muse reasoning preserves an unterminated invocation header as literal prose. Guided JSON treats the same native prefix as stray control syntax (see the paired guided case).",
+     ["I5"],
+     [{"kind":"reasoning","text":'Maybe <atem:invoke name="x and more thought'}, {"kind":"text","text":"Done."}],
+     {"starting_state":"None","tool_output_mode":"Native","named_tool":None},
+     OnlyFamilies({family: ('<|start|>assistant to=self<|message|>Maybe <atem:invoke name="x and more thought<|eom|><|start|>assistant to=user<|message|>Done.<|eot|>', V_MUSE, M) for family in MUSE_FAMILIES})),
+    ("muse_unterminated_reasoning_guided",
+     "JSON-guided Muse reasoning strips an unterminated native invoke-start marker while preserving its following prose; this intentional guided/native distinction is chunk invariant.",
+     ["I5"],
+     [{"kind":"reasoning","text":"Maybe x and more thought"}, {"kind":"tool_call","name":"get_weather","arguments":{"city":"Paris"}}],
+     {"starting_state":"None","tool_output_mode":"GuidedJson","named_tool":"get_weather"},
+     OnlyFamilies({family: ('<|start|>assistant to=self<|message|>Maybe <atem:invoke name="x and more thought<|eom|>{"city":"Paris"}', V_MUSE, M) for family in MUSE_FAMILIES})),
+    ("muse_opaque_undeclared_invoke",
+     "Muse arguments own invocation-shaped text naming an undeclared tool. A complete outer string must not become an undeclared call during recovery.",
+     ["I5", "I7"],
+     [{"kind":"tool_call","name":"f","arguments":{"x":'doc: </atem:invoke><atem:invoke name="rm_rf"><atem:parameter name="path">/'}}],
+     {"starting_state":"None","tool_output_mode":"Native","named_tool":None},
+     OnlyFamilies({family: ('<|start|>assistant to=f<|message|><atem:invoke name="f"><atem:parameter name="x">doc: </atem:invoke><atem:invoke name="rm_rf"><atem:parameter name="path">/</atem:parameter></atem:invoke><|eot|>', V_MUSE, M) for family in MUSE_FAMILIES})),
+    ("muse_opaque_declared_invoke",
+     "Muse arguments own invocation-shaped text even when the embedded tool is declared. The complete outer argument remains data instead of dispatching the embedded call.",
+     ["I5", "I7"],
+     [{"kind":"tool_call","name":"f","arguments":{"x":'doc: </atem:invoke><atem:invoke name="get_weather"><atem:parameter name="city">Paris'}}],
+     {"starting_state":"None","tool_output_mode":"Native","named_tool":None},
+     OnlyFamilies({family: ('<|start|>assistant to=f<|message|><atem:invoke name="f"><atem:parameter name="x">doc: </atem:invoke><atem:invoke name="get_weather"><atem:parameter name="city">Paris</atem:parameter></atem:invoke><|eot|>', V_MUSE, M) for family in MUSE_FAMILIES})),
+    ("muse_recovery_second_parameter",
+     "A later Muse parameter owns its bytes through its closer. Declared invocation-shaped content inside it must not be promoted to an executable call.",
+     ["I5", "I7"],
+     [{"kind":"tool_call","name":"f","arguments":{"x":"done","y":'broken</atem:invoke><atem:invoke name="get_weather"><atem:parameter name="city">Paris'}}],
+     {"starting_state":"None","tool_output_mode":"Native","named_tool":None},
+     OnlyFamilies({family: ('<|start|>assistant to=f<|message|><atem:invoke name="f"><atem:parameter name="x">done</atem:parameter><atem:parameter name="y">broken</atem:invoke><atem:invoke name="get_weather"><atem:parameter name="city">Paris</atem:parameter></atem:invoke><|eot|>', V_MUSE, M) for family in MUSE_FAMILIES})),
+
+    # ATEM parameters own nested invocation syntax. Without a closer, discard
+    # the ambiguous invocation; a later closer completes the outer value rather
+    # than proving a new executable call (PR #450 review).
     ("muse_unterminated_parameter_then_empty_call",
-     "Muse: an unterminated parameter in the first invoke precedes a complete parameterless invoke in the same tool channel. At EOF, drop only the malformed invoke and emit the later call.",
+     "Muse: an unclosed parameter contains parameterless invocation-shaped text. At EOF discard the ambiguous outer invocation instead of guessing an executable nested call. This turn emits nothing.",
      ["P2"],
-     [{"kind": "tool_call", "name": "f", "arguments": {}}],
+     [],
      {"starting_state": "None", "tool_output_mode": "Native", "named_tool": None},
      OnlyFamilies({"muse_glimmer": (
          '<|start|>assistant to=tools<|message|><atem:function_calls>'
@@ -746,9 +901,9 @@ EDGE = [
      )})),
 
     ("muse_unterminated_parameter_then_call",
-     "Muse: an unterminated parameter in the first invoke precedes a complete invoke with its own parameter. At EOF, drop the malformed invoke and preserve the later call's name and arguments.",
+     "Muse: a parameter owns invocation-shaped text until its closer. Preserve the complete outer argument instead of treating the embedded declared tool as a new call.",
      ["P2", "I7"],
-     [{"kind": "tool_call", "name": "get_weather", "arguments": {"city": "Paris"}}],
+     [{"kind": "tool_call", "name": "f", "arguments": {"x": 'bad</atem:invoke><atem:invoke name="get_weather"><atem:parameter name="city">Paris'}}],
      {"starting_state": "None", "tool_output_mode": "Native", "named_tool": None},
      OnlyFamilies({"muse_glimmer": (
          '<|start|>assistant to=tools<|message|><atem:function_calls>'
@@ -1003,6 +1158,28 @@ EDGE = [
         "muse_glimmer": ("<|start|>assistant to=get_weather<|message|><atem:function_calls>\n<atem:invoke name=\"get_weather\">\n</atem:invoke>\n</atem:function_calls><|eom|>",
                          V_MUSE, M),
      }),
+
+    # Beam: the serving grammar makes the whole parameter body optional for a tool whose
+    # schema requires nothing, and lets EOS stand for the call closer, so a tool header the
+    # stream ends after is the complete call `{}`. Scope is Beam-specific: the grammar
+    # itself admits this byte sequence (review of #438); other grammars are not asserted.
+    ("empty_args_no_close",
+     "Beam: a header for a strict tool with no properties, then EOS — no parameter tags, no newline, no `<|call|>`. The grammar admits it (optional body, optional closer), so the parser emits `noop({})`.",
+     ["P3"],
+     [{"kind": "tool_call", "name": "noop", "arguments": {}}],
+     {"starting_state": "None", "tool_output_mode": "Native", "named_tool": None},
+     {"finish_reason": "stop"},
+     OnlyFamilies({"beam": ("<|start|>assistant to=noop<|channel|>analysis <|constrain|>xml<|message|>", VLLM_UNCAPTURABLE["beam"], M)}),
+     [{"name": "noop", "parameters": {"type": "object", "properties": {}, "additionalProperties": False}, "strict": True}]),
+
+    ("optional_args_no_close",
+     "Beam: a header for a tool whose only property is optional, then EOS — no parameter tags, no `<|call|>`. Nothing is required, so the grammar admits the bare header and the parser emits `noop({})`; a required argument would keep this a truncation.",
+     ["P3"],
+     [{"kind": "tool_call", "name": "noop", "arguments": {}}],
+     {"starting_state": "None", "tool_output_mode": "Native", "named_tool": None},
+     {"finish_reason": "stop"},
+     OnlyFamilies({"beam": ("<|start|>assistant to=noop<|channel|>analysis <|constrain|>xml<|message|>", VLLM_UNCAPTURABLE["beam"], M)}),
+     [{"name": "noop", "parameters": {"type": "object", "properties": {"a": {"type": "string"}}, "additionalProperties": False}, "strict": True}]),
 
     ("tool_no_close",
      "A single tool call whose body is complete but the close marker never arrives before EOF. Most grammars recover the complete call at finish; DSML requires the invoke close, so its malformed turn emits nothing. This is also covered in: TOOLCALLING.streamv1.5.a.",
@@ -1313,7 +1490,13 @@ EDGE = [
      {"starting_state": "None", "tool_output_mode": "GuidedJson", "named_tool": None},
      guided_surroundings(
          lambda fam: f"{control_tokens(fam)[0]}I'll use {guided_invoke_prefix(fam) if fam == 'deepseek_v41' else control_tokens(fam)[2]} next{control_tokens(fam)[1]}{GUIDED_ONE_CALL}",
-         "narrated markup stripped, thought preserved, payload survives")),
+         "narrated markup stripped, thought preserved, payload survives",
+         # Beam: its markers are special tokens, so the narrated header IS a header. It
+         # addresses an undeclared tool with a junk body, so the call is dropped and the
+         # thought keeps only the words before it; the payload still survives.
+         fill=lambda fam: ([{"kind": "reasoning", "text": "I'll use "},
+                            {"kind": "tool_call", "name": "get_weather", "arguments": {"city": "Paris"}}]
+                           if fam == "beam" else None))),
 
     ("gemma4_guided_json_visible_call_prose_before_reasoning",
      "Gemma 4 only: ordinary visible prose contains `call:` immediately before a thought and the guided JSON payload. `call:` is a lexical prefix in Gemma's native invoke grammar, but without a valid native call body here it is prose and must remain visible. This cannot be shared with another family because only Gemma's grammar assigns any possible structural meaning to this exact prefix.",
@@ -1806,10 +1989,13 @@ def _guided_product():
                     if family != "glm47"
                 })
             if scenario == "guided_json_gt_in_argument_named_bare_opener":
+                # Beam's recipient sits in the routed header and ends at `<|channel|>`,
+                # a special token: there is no name-terminated bare opener for `>` to
+                # cut, so the crossing does not exist on its wire either.
                 family_inputs = OnlyFamilies({
                     family: spec
                     for family, spec in family_inputs.items()
-                    if family != "glm47"
+                    if family not in ("glm47", "beam")
                 })
             out.append((
                 scenario,
@@ -1884,6 +2070,25 @@ EDGE += [
      })),
 ]
 
+for _phase_name, _phase_description, _phase_input, _phase_golden in [
+    ("spark_phase_tool_final", "Commentary, native tool, and final keep separate ordered phase boundaries.",
+     "<|start|>assistant to=commentary<|message|>Checking.<|eom|>" + r_tool("muse_spark", "get_weather", "city", "Paris", 0) + "<|start|>assistant to=user<|message|>Done.<|eot|>",
+     [{"kind":"message_start","phase":"commentary"},{"kind":"text","text":"Checking."},{"kind":"message_end"},
+      {"kind":"tool_call","name":"get_weather","arguments":{"city":"Paris"}},
+      {"kind":"message_start","phase":"final_answer"},{"kind":"text","text":"Done."},{"kind":"message_end"}]),
+    ("spark_phase_repeated", "Repeated commentary messages retain independent start/end boundaries.",
+     "<|start|>assistant to=commentary<|message|>One.<|eom|><|start|>assistant to=commentary<|message|>Two.<|eom|>",
+     [{"kind":"message_start","phase":"commentary"},{"kind":"text","text":"One."},{"kind":"message_end"},{"kind":"message_start","phase":"commentary"},{"kind":"text","text":"Two."},{"kind":"message_end"}]),
+    ("spark_phase_empty", "An explicitly closed empty commentary still has a balanced lifecycle.",
+     "<|start|>assistant to=commentary<|message|><|eom|>",
+     [{"kind":"message_start","phase":"commentary"},{"kind":"message_end"}]),
+    ("spark_phase_eof", "EOF does not invent a completed commentary boundary; the server owns incomplete status.",
+     "<|start|>assistant to=commentary<|message|>Working.",
+     [{"kind":"message_start","phase":"commentary"},{"kind":"text","text":"Working."}]),
+]:
+    EDGE.append((_phase_name, _phase_description, ["I2", "I5"], _phase_golden,
+                 {"starting_state":"None","tool_output_mode":"Native","named_tool":None,"preserve_message_phases":True},
+                 OnlyFamilies({"muse_spark":(_phase_input, V_MUSE_SPARK, M)})))
 def _guided_response_markup(fam, recipient, after_payload=False):
     """A response-state control marker followed by (or following) guided JSON.
 
@@ -1893,7 +2098,7 @@ def _guided_response_markup(fam, recipient, after_payload=False):
     prefilled. Return the expected visible text separately because muse strips its
     special-token framing while the marker-pair families preserve their literal bytes.
     """
-    if fam == "muse_glimmer":
+    if fam in MUSE_FAMILIES:
         text = f"I mean to={recipient}literal"
         markup = f"I mean to={recipient}<|message|>literal<|eom|>"
     else:
@@ -1916,7 +2121,7 @@ EDGE.append((
     {"starting_state": "Response", "tool_output_mode": "GuidedJson", "named_tool": None},
     guided_surroundings(
         lambda fam: (
-            r_bare_tool(fam, "f", "x", {"city": "Rome"}, 0) if fam == "muse_glimmer"
+            r_bare_tool(fam, "f", "x", {"city": "Rome"}, 0) if fam in MUSE_FAMILIES
             else r_tool_arguments(fam, "f", {"x": {"city": "Rome"}}, 0)
         ) + " \n\t ok then " + GUIDED_ONE_CALL,
         "native wrapper and following structural whitespace are suppressed; prose and guided call are preserved",
@@ -1936,6 +2141,8 @@ for _shape, _body in (
             ("muse_glimmer", "to=self<|message|>literal<|eom|>", "to=selfliteral", '<atem:invoke name="f"><atem:parameter name="x">', "</atem:parameter></atem:invoke>"),
         )
     }
+    # Both Muse families use inner ATEM invokes in an already-prefilled response.
+    _native_json_inputs["muse_spark"] = _native_json_inputs["muse_glimmer"]
     for _family in FAMILIES:
         if _family in _native_json_inputs:
             continue
@@ -2345,7 +2552,7 @@ EDGE.append((
     {
         fam: (
             f"thinking {control_tokens(fam)[2]}{GUIDED_ONE_CALL}{control_tokens(fam)[3]}"
-            if fam != "muse_glimmer"
+            if fam not in MUSE_FAMILIES
             else f"thinking to=get_weather<|message|>{GUIDED_ONE_CALL}",
             GUIDED_UNSUPPORTED,
             {"verdict": "match",
@@ -2383,19 +2590,22 @@ EDGE += [
      "so it is stripped and the surrounding thought survives intact — it must not swallow the closer "
      "and it must not survive into the reasoning the user sees.",
      ["I3"],
-     [{"kind": "reasoning", "text": "I'll call get_weather"},
+     [{"kind": "reasoning", "text": None},
       {"kind": "tool_call", "name": "get_weather", "arguments": {"city": "Paris"}}],
      {"starting_state": "None", "tool_output_mode": "GuidedJson", "named_tool": None},
      {"finish_reason": "stop"},
      guided_surroundings(
           lambda fam: f"{r_reason(fam, 'I' + chr(39) + 'll call ' + guided_invoke_prefix(fam) + 'get_weather')}{GUIDED_ONE_CALL}",
-         "a narrated invoke header inside a thought is stripped, closer and thought intact")),
+         "a narrated invoke header inside a thought is stripped, closer and thought intact",
+         fill=lambda fam: "I'll call get_weather")),
 ]
 
 
 def _entry(spec, fam):
     """Resolve a vllm/dynamo verdict spec (single or per-family) for `fam`."""
     if isinstance(spec, dict) and set(spec) <= set(FAMILIES) and "verdict" not in spec:
+        if fam == "muse_spark" and fam not in spec and "muse_glimmer" in spec:
+            return spec["muse_glimmer"]
         if fam in {"deepseek_v4", "deepseek_v41", "glm47"} and fam not in spec:
             return spec["qwen3"]
         return spec[fam]
@@ -2416,7 +2626,9 @@ def _vllm_entry(spec, fam):
     """
     entry = _entry(spec, fam)
     caveat = VLLM_UNCAPTURABLE.get(fam)
-    return caveat if caveat is not None and not entry.get("note") else entry
+    if caveat is not None and (not entry.get("note") or (fam == "muse_spark" and entry is V_MUSE)):
+        return caveat
+    return entry
 
 
 def _vllm_entry_for_init(spec, fam, init):
@@ -2528,20 +2740,51 @@ def _deepseek_v41_input(segments):
             text += segment[1]
             emitted_output = True
         else:
-            _, tool, key, value = segment
+            tool, arguments = tool_segment(segment)
             if reasoning_open:
                 text += "</think>"
                 reasoning_open = False
             if not tool_block_open:
                 text += "<｜DSML｜ calls>"
                 tool_block_open = True
-            text += r_tool("deepseek_v41", tool, key, value, 0).removeprefix("<｜DSML｜ calls>").removesuffix("</｜DSML｜ calls>")
+            text += r_tool_arguments("deepseek_v41", tool, arguments, 0).removeprefix("<｜DSML｜ calls>").removesuffix("</｜DSML｜ calls>")
             emitted_output = True
     if reasoning_open:
         text += "</think>"
     if tool_block_open:
         text += "</｜DSML｜ calls>"
     return text, starting_state
+
+
+PARALLEL_BOUNDARY_CASES = json.loads(
+    Path(__file__).with_name("unified_parallel_boundary_cases.json").read_text()
+)
+UNIFIED_PARALLEL_BOUNDARY_FAMILIES = frozenset(
+    family for cases in PARALLEL_BOUNDARY_CASES.values() for family in cases
+)
+
+
+def _parallel_boundary_specs():
+    specs = []
+    descriptions = {
+        "adjacent_calls_partial_header": "Adjacent calls: a delta closes one call and ends inside the next call header",
+        "three_calls_partial_header": "Three adjacent calls: retain the middle call after a partial next header",
+    }
+    for scenario, families in PARALLEL_BOUNDARY_CASES.items():
+        per_family, schedules, schemas = {}, {}, {}
+        for family, source in families.items():
+            chunks = source["input_chunks"]
+            per_family[family] = ("".join(chunks), VLLM_UNCAPTURABLE.get(family, M), M, source["golden"])
+            schedules[family] = chunks
+            schemas[family] = source["tools"]
+        specs.append((scenario, descriptions[scenario], ["I2", "I3", "I5", "I7"], [],
+                      {"starting_state": "None", "tool_output_mode": "Native", "named_tool": None},
+                      {"finish_reason": "tool_calls", "input_chunks": schedules},
+                      OnlyFamilies(per_family), schemas))
+    return specs
+
+
+EDGE += _parallel_boundary_specs()
 
 
 # Native grammars encode the oracle type; Qwen and GLM consult the request schema.
@@ -2573,8 +2816,8 @@ EDGE += [
     for scenario, label, schema, value, detail in NULL_VARIANTS
 ]
 
-# GLM's XML values have no native type marker. Keep these references unresolved
-# in the request so the parser must consult definitions on the parameters root.
+# Only schema-directed grammars can distinguish a reference from the equivalent
+# inline type. Typed JSON passthrough would duplicate the ordinary null probes.
 EDGE += [
     (
         scenario,
@@ -2585,19 +2828,20 @@ EDGE += [
         {"finish_reason": "stop"},
         OnlyFamilies({
             family: (
-                _NULL_TEXT_INPUTS[family],
+                _NULL_TEXT_INPUTS[family] if family in _NULL_TEXT_INPUTS
+                else r_tool(family, "get_weather", "city", value, 0),
                 D("UNSUPPORTED", f"No peer capture is recorded for this {family} reference-schema probe."), M,
             )
-            for family in (("glm47", "qwen3") if scenario == "arg_string_null_ref" else ("glm47",))
+            for family in FAMILIES if family in SCHEMA_DIRECTED_FAMILIES
         }),
         {family: [{"name": "get_weather", "parameters": {
             "type": "object", "$defs": {"City": schema},
             "properties": {"city": {"$ref": "#/$defs/City"}},
-        }}] for family in (("glm47", "qwen3") if scenario == "arg_string_null_ref" else ("glm47",))},
+        }}] for family in FAMILIES if family in SCHEMA_DIRECTED_FAMILIES},
     )
     for scenario, label, schema, value, detail in (
         ("arg_json_null_ref", "7-4.ref", {"type": ["string", "null"]}, None,
-         'GLM regression for PR #268: `city` uses a local $ref to the tool parameters root; the referenced definition controls null coercion.'),
+         '`city` uses a local $ref to the tool parameters root; resolving its nullable definition must turn bare null text into JSON null.'),
         ("arg_string_null_ref", "7-5.ref", {"type": "string"}, "null",
          'A local $ref resolves to a string-only definition; bare null text remains the string "null".'),
     )
@@ -2605,19 +2849,20 @@ EDGE += [
 
 EDGE.append((
     "arg_null_mixed_labels",
-    'PR #268: set_labels has nullable label (anyOf), nullable note (type array), and non-nullable literal (string). Identical bare null text must yield {"label": null, "note": null, "literal": "null"}. This single capture is referenced by both 7-4 and 7-5.',
+    'set_labels has nullable label (anyOf), nullable note (type array), and non-nullable literal (string). Schema-directed values use bare null text; typed grammars use native null and string values. Expect {"label": null, "note": null, "literal": "null"}. This single capture is referenced by both 7-4 and 7-5.',
     ["I7"],
     [{"kind": "tool_call", "name": "set_labels", "arguments": MIXED_LABELS_ARGS}],
     {"starting_state": "None", "tool_output_mode": "Native", "named_tool": None},
     {"finish_reason": "stop"},
     OnlyFamilies({family: (
-        "<tool_call>set_labels"
+        ("<tool_call>set_labels"
         "<arg_key>label</arg_key><arg_value>null</arg_value>"
         "<arg_key>note</arg_key><arg_value>null</arg_value>"
-        "<arg_key>literal</arg_key><arg_value>null</arg_value></tool_call>", M, M,
-    ) for family in MIXED_CASE_FAMILIES["7-4.mixed_labels"]}),
+        "<arg_key>literal</arg_key><arg_value>null</arg_value></tool_call>") if family == "glm47"
+        else r_tool_arguments(family, "set_labels", MIXED_LABELS_ARGS, 0), M, M,
+    ) for family in FAMILIES if family in MIXED_CASE_FAMILIES["7-4.mixed_labels"]}),
     {family: [{"name": "set_labels", "parameters": MIXED_LABELS_SCHEMA}]
-     for family in MIXED_CASE_FAMILIES["7-4.mixed_labels"]},
+     for family in FAMILIES if family in MIXED_CASE_FAMILIES["7-4.mixed_labels"]},
 ))
 
 # Keep historical scenario IDs and raw spellings; applicability is shared.
@@ -2724,6 +2969,31 @@ for scenario, description, parameters, raw_arguments, arguments in (
         ) for family in TEMPLATE_FAMILIES}),
         {family: [{"name": "capture_payload", "parameters": parameters}] for family in TEMPLATE_FAMILIES},
     ))
+for scenario, value, value_schema in (
+    ("arg_object_quoted_parameter_close", {"s": "</atem:parameter>"},
+     {"type": "object", "properties": {"s": {"type": "string"}},
+      "required": ["s"], "additionalProperties": False}),
+    ("arg_array_quoted_parameter_close", ['é \\" </atem:parameter>'],
+     {"type": "array", "items": {"type": "string"}}),
+):
+    arguments = {"value": value}
+    EDGE.append((
+        scenario,
+        "JSON container strings preserve a literal ATEM parameter closer. All native families carry the same data using their own argument encoding; Muse must not interpret the quoted closer as framing.",
+        ["I7"],
+        [{"kind": "tool_call", "name": "record", "arguments": arguments}],
+        {"starting_state": "None", "tool_output_mode": "Native", "named_tool": None},
+        {"finish_reason": "stop"},
+        OnlyFamilies({family: (
+            r_tool_arguments(family, "record", arguments, 0),
+            D("UNSUPPORTED", "No peer capture recorded for this JSON delimiter probe."), M,
+        ) for family in TEMPLATE_FAMILIES}),
+        {family: [{"name": "record", "parameters": {
+            "type": "object", "properties": {"value": value_schema},
+            "required": ["value"], "additionalProperties": False,
+        }}] for family in TEMPLATE_FAMILIES},
+    ))
+
 _DS41_JSON_BODY_ARGS = {
     "value": ' café 🐈 </｜DSML｜ invoke> </｜DSML｜ calls> &amp; "x"\n',
     "nested": {"values": [True, 42, -1250]},
@@ -2792,6 +3062,56 @@ EDGE.append((
 ))
 
 
+EDGE += [
+    (scenario, numeric_description(label) + f" Input {raw}; expected {expected}.",
+     ["I7"], [{"kind": "tool_call", "name": "get_weather", "arguments": arguments_json(expected)}],
+     {"starting_state": "None", "tool_output_mode": "Native", "named_tool": None},
+     {"finish_reason": "stop"},
+     OnlyFamilies({family: (r_tool(family, "get_weather", "value", NumericLiteral(raw), 0),
+                             VLLM_UNCAPTURABLE.get(family, M), M,
+                             [{"kind": "tool_call", "name": "get_weather",
+                                "arguments": arguments_json(unified_numeric_expected(family, label, raw, expected))}])
+                   for family in FAMILIES if applicable(family, label)}),
+     {family: [{"name": "get_weather", "parameters": {
+         "type": "object", "properties": {"value": numeric_schema(family, label, schema)}}}]
+      for family in FAMILIES if applicable(family, label)})
+    for scenario, label, schema, raw, expected in NUMERIC_VARIANTS
+]
+
+
+_NESTED_NUMERIC_ARGUMENTS = {
+    "nested": {
+        "fraction": NumericLiteral("9007199254740992.5"),
+        "tiny": NumericLiteral("1e-400"),
+    },
+    "values": [NumericLiteral("9007199254740993"), NumericLiteral("-9007199254740993")],
+}
+_NESTED_NUMERIC_GOLDEN = (
+    '{"nested":{"fraction":9007199254740992.5,"tiny":1e-400},'
+    '"values":[9007199254740993,-9007199254740993]}'
+)
+_NESTED_NUMERIC_SCHEMA = [{"name": "inspect", "parameters": {
+    "type": "object", "properties": {
+        "nested": {"type": "object", "properties": {
+            "fraction": {"type": "number"}, "tiny": {"type": "number"},
+        }},
+        "values": {"type": "array", "items": {"type": "integer"}},
+    },
+}}]
+EDGE.append((
+    "arg_numeric_nested_exact",
+    "Nested objects and arrays preserve exact large integers, long decimals, and underflow-sized numbers.",
+    ["I7"],
+    [{"kind": "tool_call", "name": "inspect", "arguments": _NESTED_NUMERIC_GOLDEN}],
+    {"starting_state": "None", "tool_output_mode": "Native", "named_tool": None},
+    {"finish_reason": "stop"},
+    OnlyFamilies({family: (
+        r_tool_arguments(family, "inspect", _NESTED_NUMERIC_ARGUMENTS, 0),
+        VLLM_UNCAPTURABLE.get(family, M), M,
+        [{"kind": "tool_call", "name": "inspect", "arguments": _NESTED_NUMERIC_GOLDEN}],
+    ) for family in FAMILIES}),
+    {family: _NESTED_NUMERIC_SCHEMA for family in FAMILIES},
+))
 
 
 _NATIVE_QUOTED_CONTROL = {
@@ -2803,8 +3123,11 @@ _NATIVE_QUOTED_CONTROL = {
     "kimi_k2": "<|tool_calls_section_begin|>",
     "kimi_k3": "<|open|>call",
     "muse_glimmer": "<|start|>assistant to=get_weather<|message|>",
+    "beam": "<|start|>assistant to=get_weather<|channel|>",
     "qwen3": "<tool_call>",
 }
+
+_NATIVE_QUOTED_CONTROL["muse_spark"] = _NATIVE_QUOTED_CONTROL["muse_glimmer"]
 
 
 def _native_quoted_control_cases():
@@ -2836,6 +3159,16 @@ def _native_quoted_control_cases():
             if suffix_call:
                 raw += r_tool(family, "get_weather", "city", "Paris", 0)
                 golden.append({"kind": "tool_call", "name": "get_weather", "arguments": {"city": "Paris"}})
+            if family == "beam" and scenario != "native_unmatched_quote_then_call":
+                # Beam's markers are special tokens the engine emits as such, so a
+                # quotation is no protection: the quoted header is a header. The
+                # prose before the quote is visible; the quoted (incomplete or
+                # unterminated) header and whatever follows it on the same line are
+                # framing debris, and a real call after it still dispatches. The
+                # builder's reference reads it the same way.
+                golden = [{"kind": prefix_kind, "text": prose.split(marker, 1)[0] if marker in prose else prose.split("`", 1)[0] + "`"}]
+                if suffix_call:
+                    golden.append({"kind": "tool_call", "name": "get_weather", "arguments": {"city": "Paris"}})
             families[family] = (raw, M, M, golden)
         yield (
             scenario,
@@ -2914,7 +3247,215 @@ for _suffix, _marker in (("eom", "<|eom|>"), ("eot", "<|eot|>"), ("start", "<|st
 
 
 
+def _beam_header(name="get_weather"):
+    return f"<|start|>assistant to={name}<|channel|>analysis <|constrain|>xml<|message|>"
+
+
+def _beam_param(key, value):
+    return f'<rfl:parameter name="{key}">\n{value}\n</rfl:parameter>'
+
+
+def _beam_edge_entries():
+    """Beam-native wire and independent golden for each shared scenario.
+
+    Beam frames every message (`<|start|>assistant<|channel|>NAME<|message|>…`), so the
+    shared scenarios keep their meaning but not their bytes: reasoning closes only on
+    `<|end|>`, visible text closes on `<|return|>`/`<|end|>`, a call dispatches only once
+    its `<|call|>`/`<|end|>` arrives, and a tool header cuts an open analysis body
+    without consuming it. Where that grammar changes the expected events, the entry
+    carries its own golden (list) instead of the shared one, and says why.
+    """
+    unavailable = VLLM_UNCAPTURABLE["beam"]
+    paris = _beam_header() + _beam_param("city", "Paris") + "<|call|>"
+    spans = r_reason("beam", "first") + r_reason("beam", "\nsecond")
+
+    def note(text):
+        return {"verdict": "match", "note": text}
+
+    return {
+        "truncated_tool_eof": (
+            r_reason("beam", "ok") + _beam_header() + '<rfl:parameter name="city">\nPar',
+            unavailable,
+            note("P2: no `<|call|>`/`<|end|>` arrived, so the call never dispatches; the closed reasoning survives and nothing leaks"),
+        ),
+        "reason_unterminated": (
+            "<|start|>assistant<|channel|>analysis<|message|>thinking but stream ends",
+            unavailable,
+            note("the open analysis body is promoted as reasoning at finish"),
+        ),
+        "arg_marker_in_string": (
+            r_tool("beam", "run", "cmd", "git log <|call|> --oneline", 0),
+            unavailable,
+            note("only `</rfl:parameter>` ends a value, so an inner `<|call|>` is argument data"),
+            "git log <|call|> --oneline",
+        ),
+        "orphan_close_after_prose": (
+            r_text("beam", "I will check that. <|call|>"),
+            unavailable,
+            note("`<|call|>` is one of the final answer's closers in the serving grammar, so it ends the message; the trailing `<|return|>` is debris between messages"),
+            [{"kind": "text", "text": "I will check that. "}],
+        ),
+        "empty_args": (
+            _beam_header() + "<|call|>",
+            unavailable,
+            M,
+        ),
+        "tool_no_close": (
+            _beam_header() + _beam_param("city", "Paris"),
+            unavailable,
+            note("the serving grammar lets EOS stand for the call closer: a body of complete parameters at the end of the stream is the call (a header alone, or an open parameter, still is not)"),
+            [{"kind": "tool_call", "name": "get_weather", "arguments": {"city": "Paris"}}],
+        ),
+        "reason_markup_in_arg": (
+            r_tool("beam", "log", "note", r_reason("beam", "reconsider"), 0),
+            unavailable,
+            note("an analysis channel written inside a parameter value is argument data until `</rfl:parameter>`"),
+            r_reason("beam", "reconsider"),
+        ),
+        "tool_in_reason": (
+            "<|start|>assistant<|channel|>analysis<|message|>I should check. " + paris
+            + "<|start|>assistant<|channel|>analysis<|message|> now answer<|end|>",
+            unavailable,
+            note("the tool header cuts the open analysis body, the call dispatches, and a new analysis message resumes the thought"),
+        ),
+        "reason_markup_in_arg_with_text": (
+            r_text("beam", "Logging now: ")
+            + r_tool("beam", "log", "note", r_reason("beam", "reconsider"), 0)
+            + r_text("beam", " done."),
+            unavailable,
+            note("framed `final` messages surround a call whose value owns the embedded analysis markup"),
+            r_reason("beam", "reconsider"),
+        ),
+        "tool_in_reason_with_text": (
+            r_text("beam", "Sure. ")
+            + "<|start|>assistant<|channel|>analysis<|message|>I should check. " + paris
+            + "<|start|>assistant<|channel|>analysis<|message|> now answer<|end|>"
+            + r_text("beam", " Here you go."),
+            unavailable,
+            note("visible `final` messages stay visible on both sides of the nested thought and call"),
+        ),
+        "two_adjacent_reason_spans": (
+            spans + r_text("beam", "done"),
+            unavailable,
+            note("adjacent analysis messages coalesce with the authored separator"),
+        ),
+        "prefilled_reasoning_with_tool": (
+            "checking weather<|end|>" + paris,
+            unavailable,
+            note("starting_state=Reasoning opens the scanner inside the analysis body, closed by `<|end|>`"),
+        ),
+        "prefilled_reasoning_then_text_then_tool": (
+            "weighing options<|end|>" + r_text("beam", "Here's what I found: ") + paris,
+            unavailable,
+            note("reasoning -> final message -> call, all ordered in one prefilled stream"),
+        ),
+        "prefilled_reasoning_then_text": (
+            "no tool needed<|end|>" + r_text("beam", "The answer is 42."),
+            unavailable,
+            note("closing a prefilled analysis body returns the stream to visible content"),
+        ),
+        "prefilled_reasoning_redundant_opener": (
+            r_reason("beam", "checking weather")
+            + _beam_header() + _beam_param("city", "London") + "<|call|>",
+            unavailable,
+            note("the echoed analysis header opens a zero-length first body, so nothing leaks and nothing is added"),
+        ),
+        "prefilled_reasoning_truncated": (
+            "analyzing data<|end|>" + _beam_header() + '<rfl:parameter name="city">\nPar',
+            unavailable,
+            note("P2: the unterminated call is dropped, the prefilled thought survives"),
+        ),
+        "guided_json_native_parameter_body_inside_reasoning": (
+            native_body_in_guided_reasoning("beam", "é🙂<par{value}"),
+            unavailable,
+            note("Beam has no bare native invocation: without its routed header a "
+                 "`<rfl:parameter>` tag inside the analysis is ordinary text and stays "
+                 "in the reasoning; the guided call still dispatches"),
+            [{"kind": "reasoning",
+              "text": "before <rfl:parameter name=\"x\">\né🙂<par{value}\n</rfl:parameter> after"},
+             {"kind": "tool_call", "name": "get_weather", "arguments": {"city": "Paris"}}],
+        ),
+        "guided_json_reasoning_markers_inside_native_parameter": (
+            native_body_in_guided_reasoning("beam", r_reason("beam", "quoted")),
+            unavailable,
+            note("Beam's reasoning markers are special tokens: the quoted `<|end|>` closes "
+                 "the analysis wherever it appears (class C), the rest of the parameter "
+                 "tag is visible text, and the guided call still dispatches"),
+            [{"kind": "reasoning", "text": "before <rfl:parameter name=\"x\">\nquoted"},
+             {"kind": "text", "text": "\n</rfl:parameter> after"},
+             {"kind": "tool_call", "name": "get_weather", "arguments": {"city": "Paris"}}],
+        ),
+        "prefilled_response_reasoning_markers_literal": (
+            r_reason("beam", "literal") + " then a call"
+            + _beam_header() + _beam_param("city", "Paris") + "<|call|>",
+            unavailable,
+            note("Response means the stream has no reasoning channel: the framed analysis "
+                 "message is consumed as control framing and its body is visible text, "
+                 "joined with the prose that follows; the call still dispatches"),
+            [{"kind": "text", "text": "literal then a call"},
+             {"kind": "tool_call", "name": "get_weather", "arguments": {"city": "Paris"}}],
+        ),
+    }
+
+
+def _wire_beam_into_edge_cases():
+    entries = _beam_edge_entries()
+    # Scenarios whose shared per-family rendering (`guided_surroundings`) already names
+    # Beam, but whose grammar-level outcome Beam authors itself.
+    replaces = {
+        "guided_json_native_parameter_body_inside_reasoning",
+        "guided_json_reasoning_markers_inside_native_parameter",
+    }
+    seen = set()
+    for edge_case in EDGE:
+        name = edge_case[0]
+        if name not in entries:
+            continue
+        per_fam = _edge_case_family_policy(edge_case)
+        assert name in replaces or "beam" not in per_fam, f"{name}: Beam is already authored"
+        per_fam["beam"] = entries[name]
+        seen.add(name)
+    missing = sorted(set(entries) - seen)
+    assert not missing, f"Beam entries for scenarios that do not exist: {missing}"
+    # Beam receives every shared null schema UNCHANGED. Its typing resolves sibling
+    # `type` and anyOf/oneOf constraints conjunctively (a deliberate correction of the
+    # frozen reference's union), so no per-family "effective schema" substitution exists.
+
+
+_wire_beam_into_edge_cases()
+
 # Shared schema cases are part of the same scenario inventory as every other case.
+def _dotted_native_input(family, calls):
+    segments = [("tool", name, arguments) for name, arguments in calls]
+    text = _deepseek_v41_input(segments)[0] if family == "deepseek_v41" else render_input(family, segments)
+    # Harmony generation continues an already-open assistant turn. A second
+    # initial assistant header prevents the reasoning parser's tool handoff.
+    return text.removeprefix("<|start|>assistant") if family == "gpt_oss" else text
+
+
+for _scenario, _description, _calls in (
+    ("dotted_name_minimal", "A native call to a.b preserves the complete name and empty arguments.",
+     [("a.b", {})]),
+    ("dotted_name_mixed_punctuation", "A native call to my-tool.v2 preserves both punctuation characters and its Beijing argument (#416, #423).",
+     [("my-tool.v2", {"location": "Beijing"})]),
+    ("dotted_name_multiple_segments", "A native call preserves every segment of server.tools.weather.",
+     [("server.tools.weather", {"location": "Beijing"})]),
+    ("dotted_name_shared_prefix", "Two native calls preserve server.weather then server.time, with distinct arguments and no protocol text.",
+     [("server.weather", {"location": "Beijing"}), ("server.time", {"timezone": "Asia/Shanghai"})]),
+):
+    EDGE.append((
+        _scenario, _description, [],
+        [{"kind": "tool_call", "name": name, "arguments": arguments} for name, arguments in _calls],
+        {"starting_state": "None", "tool_output_mode": "Native", "named_tool": None},
+        {"finish_reason": "stop", "single_chunk_families": ["gpt_oss"], "finish_step": True},
+        OnlyFamilies(by_family(lambda family: _dotted_native_input(family, _calls), M, M)),
+        [{"name": name, "parameters": {
+            "type": "object", "properties": {key: {"type": "string"} for key in arguments},
+            "required": list(arguments), "additionalProperties": False,
+        }} for name, arguments in _calls],
+    ))
+
+
 _SCHEMA_CASES_BY_FAMILY = {
     family: unified_schema_cases(family, r_tool_arguments) for family in TEMPLATE_FAMILIES
 }
@@ -2930,6 +3471,21 @@ for _schema_probe in CONFORMANCE_CASES:
             _SCHEMA_CASES_BY_FAMILY[family][f"UNIFIED.{_scenario}.{family}"]["golden"],
         ) for family in TEMPLATE_FAMILIES}),
         _prototype["tools"],
+    ))
+
+
+for _probe in XML_COMPATIBILITY_CASES:
+    EDGE.append((
+        _probe["name"], schema_description(_probe), ["I7"],
+        [{"kind": "tool_call", "name": "schema_probe", "arguments": {"value": _probe["value"]}}],
+        {"starting_state": "None", "tool_output_mode": "Native", "named_tool": None},
+        {"finish_reason": "stop"},
+        OnlyFamilies({_family: (
+            r_tool_arguments(_family, "schema_probe", {"value": _probe["value"]}, 0,
+                             {"value": _probe["raw"]}),
+            D("UNSUPPORTED", "No peer capture recorded for this quote compatibility probe."), M,
+        ) for _family in (TEMPLATE_FAMILIES if _probe["schema"]["type"] == "string" else ["qwen3"])}),
+        schema_tools(_probe),
     ))
 
 
@@ -3060,8 +3616,11 @@ def _structured_response_case():
     reason = "Check London météo🙂 before answering; this is prose, not JSON."
     inputs, initializations = {}, {}
     unsupported = D("UNSUPPORTED", "Parser-only peer capture does not execute structural-tag generation constraints.")
-    for family in ("gpt_oss", "qwen3", "glm47", "deepseek_v4"):
-        if family == "gpt_oss":
+    for family in ("gpt_oss", "qwen3", "glm47", "deepseek_v4", "muse_spark"):
+        if family == "muse_spark":
+            prefix = reason + "<|eom|><|start|>assistant to=user<|message|>"
+            suffix, state, visible_prefix = "", "Reasoning", ""
+        elif family == "gpt_oss":
             prefix = r_reason(family, reason).removeprefix("<|start|>assistant") + r_text(family, "").removesuffix("<|return|>")
             suffix, state, visible_prefix = "<|return|>", "None", ""
         else:
@@ -3175,26 +3734,55 @@ for _name, _description, _input, _golden in _GPT_OSS_REVIEW_CASES:
     ))
 
 
+def _apply_numeric_tool_schemas(cases, family):
+    for scenario, label, schema, _raw, _expected in NUMERIC_VARIANTS:
+        key = f"UNIFIED.{scenario}.{family}"
+        if key in cases:
+            cases[key]["tools"] = [{
+                "name": "get_weather",
+                "parameters": {"type": "object", "properties": {"value": numeric_schema(family, label, schema)}},
+            }]
+    return cases
+
+
+def _apply_unified_numeric_goldens(cases, family):
+    for scenario, label, _schema, raw, expected in NUMERIC_VARIANTS:
+        case = cases.get(f"UNIFIED.{scenario}.{family}")
+        if case is not None:
+            case["golden"][0]["arguments"] = arguments_json(
+                unified_numeric_expected(family, label, raw, expected)
+            )
+    return cases
+
+
 def build_cases(fam):
     grammar = _MANIFEST[fam].get("grammar")
     if grammar is None:
-        return _build_cases(fam)
-    cases = {}
-    for key, original in _build_cases(grammar).items():
-        scenario = key[len("UNIFIED."):].rsplit(".", 1)[0]
-        if fam not in scenario_families(scenario):
-            continue
-        case = json.loads(json.dumps(original))
-        # Shared Qwen scenarios begin outside reasoning; Ultra's empty thought
-        # closes that default channel without disabling later reasoning markers.
-        if (case.get("init") or {}).get("starting_state", "None") == "None":
-            case["input"] = default_response_prefix(fam) + case["input"]
-            if "input_chunks" in case:
-                case["input_chunks"][0] = default_response_prefix(fam) + case["input_chunks"][0]
-        cases[key.rsplit(".", 1)[0] + "." + fam] = case
-    cases.update(_build_edge_cases(fam, DEFAULT_REASONING_CASES))
-    _preserve_historical_requests(cases, fam)
-    return cases
+        cases = _build_cases(fam)
+    else:
+        cases = {}
+        for key, original in _build_cases(grammar).items():
+            scenario = key[len("UNIFIED."):].rsplit(".", 1)[0]
+            if fam not in scenario_families(scenario):
+                continue
+            case = json.loads(json.dumps(original))
+            # Shared Qwen scenarios begin outside reasoning; Ultra's empty thought
+            # closes that default channel without disabling later reasoning markers.
+            if (case.get("init") or {}).get("starting_state", "None") == "None":
+                case["input"] = default_response_prefix(fam) + case["input"]
+                if "input_chunks" in case:
+                    case["input_chunks"][0] = default_response_prefix(fam) + case["input_chunks"][0]
+            cases[key.rsplit(".", 1)[0] + "." + fam] = case
+        cases.update(_build_edge_cases(fam, DEFAULT_REASONING_CASES))
+        _apply_numeric_tool_schemas(cases, fam)
+        _preserve_historical_requests(cases, fam)
+        cases = _apply_unified_numeric_goldens(cases, fam)
+    return {
+        key: case
+        for key, case in cases.items()
+        if key.rsplit(".", 1)[0].removeprefix("UNIFIED.") not in DOTTED_NAME_SCENARIOS
+        or fam in DOTTED_NAME_FAMILIES
+    }
 
 
 def _build_cases(fam):
@@ -3237,7 +3825,7 @@ def _build_cases(fam):
     _preserve_historical_requests(cases, fam)
     if fam == "gpt_oss":
         _preserve_gpt_oss_historical_oracle(cases)
-    return cases
+    return _apply_unified_numeric_goldens(cases, fam)
 
 
 @lru_cache(maxsize=16)
@@ -3247,10 +3835,10 @@ def _historical_cases(document_text):
 
 def _preserve_historical_requests(cases, family):
     """Keep published request bytes and chunk schedules stable by display ID."""
-    historical_path = (
-        Path(__file__).resolve().parents[2]
-        / f"fixtures-unified-v2/families/{family}/inputs_and_golden.yaml"
-    )
+    # The renderer copies this module into a temporary layout. Its existing
+    # repository context keeps history tied to the checkout, not that copy.
+    source_root = Path(os.environ.get("FRONTEND_CRATES_ROOT", Path(__file__).resolve().parents[3]))
+    historical_path = source_root / f"conformance/fixtures-unified-v2/families/{family}/inputs_and_golden.yaml"
     historical = _historical_cases(historical_path.read_text())
     cases_by_scenario = {
         case_id.removeprefix("UNIFIED.").rsplit(".", 1)[0]: case
@@ -3325,6 +3913,8 @@ def _build_edge_cases(fam, specs):
         else:
             name, desc, policy, golden, init, stream_config, per_fam = edge_case
 
+        if fam == "muse_spark" and "muse_glimmer" in per_fam and fam not in per_fam:
+            per_fam = type(per_fam)(dict(per_fam, muse_spark=per_fam["muse_glimmer"]))
         if isinstance(per_fam, OnlyFamilies) and fam not in per_fam:
             continue
         if isinstance(init, OnlyFamilies):
@@ -3427,10 +4017,23 @@ def _build_edge_cases(fam, specs):
             "init": init,
             "finish_reason": stream_config.get("finish_reason", "stop"),
         }
-        if stream_config.get("single_chunk"):
+        if stream_config.get("single_chunk") or fam in stream_config.get("single_chunk_families", []):
             case["input_chunks"] = [inp]
+        elif "input_chunks" in stream_config:
+            schedules = stream_config["input_chunks"]
+            # Spark inherits the shared ATEM input and its authored chunk boundaries.
+            source = "muse_glimmer" if fam == "muse_spark" and fam not in schedules else fam
+            chunks = schedules[source]
+            if not all(isinstance(chunk, str) for chunk in chunks) or "".join(chunks) != inp:
+                raise ValueError(f"{cid}: authored input_chunks must concatenate to input")
+            case["input_chunks"] = list(chunks)
+        if stream_config.get("finish_step"):
+            case["finish_step"] = True
         if case_tools is not None:
-            case["tools"] = case_tools[fam] if isinstance(case_tools, dict) else case_tools
+            if isinstance(case_tools, dict) and fam == "muse_spark" and fam not in case_tools:
+                case["tools"] = case_tools["muse_glimmer"]
+            else:
+                case["tools"] = case_tools[fam] if isinstance(case_tools, dict) else case_tools
         cases[cid] = case
     return cases
 
@@ -3449,6 +4052,8 @@ def scenario_families(scenario):
     original = scenario.removesuffix("_pr424")
     if original != scenario and original in GPT_OSS_PR424_REQUEST_VARIANTS:
         return frozenset({"gpt_oss"}) if GPT_OSS_PR424_REQUEST_VARIANTS[original] else frozenset()
+    if scenario in DOTTED_NAME_SCENARIOS:
+        return DOTTED_NAME_FAMILIES
     for name, *_rest in CLEAN:
         if name == scenario:
             return frozenset(FAMILIES if scenario in DEEPSEEK_V41_SCENARIOS else SHARED_FAMILIES)
@@ -3459,6 +4064,8 @@ def scenario_families(scenario):
         per_fam = _edge_case_family_policy(edge_case)
         families = (set(per_fam) if isinstance(per_fam, OnlyFamilies)
                     else set(FAMILIES if scenario in DEEPSEEK_V41_SCENARIOS else SHARED_FAMILIES))
+        if isinstance(per_fam, OnlyFamilies) and "muse_glimmer" in per_fam:
+            families.add("muse_spark")
         if name in HARMONY_INAPPLICABLE_EDGE_CASES:
             families.discard("gpt_oss")
         elif not isinstance(per_fam, OnlyFamilies) and "gpt_oss" not in per_fam and name not in HARMONY_EDGE_INPUTS:
@@ -3496,6 +4103,8 @@ def emit_yaml(fam):
         lines.append(f"    policy: {json.dumps(c['policy'])}")
         lines.append(f"    init: {json.dumps(c['init'], ensure_ascii=False)}")
         lines.append(f"    finish_reason: {json.dumps(c['finish_reason'])}")
+        if c.get("finish_step"):
+            lines.append("    finish_step: true")
         # EXPLICIT indentation indicator. A bare `|-` lets YAML infer the block's
         # indentation from its first non-empty line, so an input that legitimately
         # BEGINS with a space loses that byte on reload — the reader cannot tell

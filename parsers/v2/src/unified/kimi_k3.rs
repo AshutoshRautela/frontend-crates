@@ -1692,17 +1692,20 @@ impl NativeUnified for KimiK3Native {
     fn guided_reasoning(&self) -> Option<GuidedReasoning> {
         Some(GuidedReasoning::Channel(GuidedChannel {
             find_open: guided_find_open,
-            find_close: guided_find_close,
-            find_turn_end: guided_find_turn_end,
+            find_close: |haystack, _, _| guided_find_close(haystack),
+            find_turn_end: |haystack, _, _| guided_find_turn_end(haystack),
             find_transition: guided_find_transition,
             find_stray: guided_find_stray,
             find_routing: guided_find_routing,
             holdback: guided_holdback,
             strip_text: guided_strip_text,
+            // Kimi does not need Spark's cleanup of narrated ATEM syntax.
+            reasoning_filter: None,
             competitors: GUIDED_COMPETITORS,
             close_markers: GUIDED_CLOSE_MARKERS,
             response_literal_markers: RESPONSE_LITERAL_MARKERS,
             header_pending: None,
+            envelope_owned: false,
         }))
     }
 

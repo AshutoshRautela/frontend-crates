@@ -15,8 +15,10 @@ the point the case is added, and name the file to edit.
 """
 from __future__ import annotations
 
+import ast
 from collections import defaultdict
 from dataclasses import replace
+from decimal import Decimal
 import json
 import re
 import sys
@@ -34,13 +36,17 @@ import pytest  # noqa: E402
 import yaml  # noqa: E402
 
 import gen_unified_golden as G  # noqa: E402
-from schema_cases import CONFORMANCE_CASES, schema_arguments  # noqa: E402
+from schema_cases import CONFORMANCE_CASES, XML_COMPATIBILITY_CASES, schema_arguments  # noqa: E402
 import unified_history  # noqa: E402
 import unified_taxonomy as taxonomy  # noqa: E402
 from capture_stimulus import _without_synthetic_finish_step  # noqa: E402
 from dynamo_version import dynamo_v2_label  # noqa: E402
 from fixture_disposition import historical_unified_case_key  # noqa: E402
 from gen_unified_golden import (  # noqa: E402
+    PARALLEL_BOUNDARY_CASES,
+    UNIFIED_PARALLEL_BOUNDARY_FAMILIES,
+    PARALLEL_BOUNDARY_CASES,
+    UNIFIED_PARALLEL_BOUNDARY_FAMILIES,
     CLEAN,
     OnlyFamilies,
     EDGE,
@@ -49,6 +55,7 @@ from gen_unified_golden import (  # noqa: E402
     control_tokens,
     invoke_header_prefix,
 )
+from numeric_cases import NUMERIC_VARIANTS, applicable as numeric_applicable, canonical_events, numeric_expected, unified_numeric_expected
 from unified_taxonomy import (  # noqa: E402
     historical_case_label,
     UNIFIED_GROUP_LABEL,
@@ -538,7 +545,7 @@ def test_response_state_uses_only_control_marker_contracts() -> None:
             if case["init"]["starting_state"] == "Response"
         }
         extra = set()
-        if family == "muse_glimmer":
+        if family in {"muse_glimmer", "muse_spark"}:
             extra.update({
                 "guided_json_quoted_bare_tool_header_in_answer",
                 "muse_quoted_reserved_eom_argument",
@@ -594,8 +601,15 @@ def test_response_state_uses_only_control_marker_contracts() -> None:
             elif scenario == "gemma4_guided_response_extra_body_opener":
                 marker = "call:get_weather{"
             elif scenario == "guided_response_native_wrapper_whitespace_before_prose":
-                marker = "<atem:invoke" if family == "muse_glimmer" else control_tokens(family)[2]
-            elif family == "muse_glimmer":
+                if family in {"muse_glimmer", "muse_spark"}:
+                    marker = "<atem:invoke"
+                elif family == "beam":
+                    # Beam's tool header carries its recipient; the template's NAMEX
+                    # placeholder never appears verbatim, so assert the routed lead.
+                    marker = "<|start|>assistant to=f<|channel|>analysis <|constrain|>xml<|message|>"
+                else:
+                    marker = control_tokens(family)[2]
+            elif family in {"muse_glimmer", "muse_spark"}:
                 marker = "<|message|>"
             else:
                 marker = control_tokens(family)[0]
@@ -626,7 +640,7 @@ def test_an_undeclared_missing_family_fails_generation():
     original = list(G.EDGE)
     G.EDGE.append(scenario)
     try:
-        missing = sorted(set(G.FAMILIES) - {"muse_glimmer"})
+        missing = sorted(set(G.FAMILIES) - {"muse_glimmer", "muse_spark"})
         assert missing, "fixture assumes more than one family exists"
         with pytest.raises(KeyError, match="deliberately_incomplete_scenario"):
             for fam in missing:
@@ -656,10 +670,11 @@ def test_request_state_boundary_scenarios_generate_for_every_family():
 def test_scenario_families_matches_declared_scope():
     scoped = {
         "guided_json_quoted_bare_header_in_answer": set(G.GUIDED_FAMILIES),
-        "guided_json_quoted_bare_tool_header_in_answer": {"muse_glimmer"},
+        "guided_json_quoted_bare_tool_header_in_answer": {"muse_glimmer", "muse_spark"},
         "gemma4_guided_json_visible_call_prose_before_reasoning": {"gemma4"},
         "gemma4_guided_json_malformed_call_prefix_before_reasoning": {"gemma4"},
-        "arg_json_null_ref": {"glm47"},
+        "arg_json_null_ref": {"glm47", "qwen3", "nemotron_v3"},
+        "arg_null_mixed_labels": set(FAMILIES),
         "arg_string_null_ref": {"glm47", "qwen3", "nemotron_v3"},
         "glm_ref_object": set(FAMILIES),
         "glm_ref_encoded_targets": set(FAMILIES),
@@ -900,6 +915,8 @@ def test_inherited_family_preserves_published_chunk_schedules(family):
 
 # --- counts live where they can be checked, not in registry prose ---------------
 
+NESTED_NUMERIC_CASES = 1
+
 def test_unified_case_counts_match_the_generator():
     """Name exactly what is counted, and count it from the generator.
 
@@ -909,29 +926,45 @@ def test_unified_case_counts_match_the_generator():
     denominator survived in the prose before.
     """
     family_specific = {
-        "deepseek_v4": 132,
-        "deepseek_v41": 128,
-        "gemma4": 125,
-        "glm47": 123,
-        "gpt_oss": 164,
-        "kimi_k2": 123,
-        "kimi_k3": 132,
-        "muse_glimmer": 131,
-        "qwen3": 126,
-        "nemotron_v3": 127,
+        "beam": 125,
+        "deepseek_v4": 135,
+        "deepseek_v41": 131,
+        "gemma4": 128,
+        "glm47": 125,
+        "gpt_oss": 167,
+        "kimi_k2": 126,
+        "kimi_k3": 135,
+        "muse_glimmer": 139,
+        "muse_spark": 147,
+        "nemotron_v3": 133,
+        "qwen3": 132,
     }
     assert set(family_specific) == set(FAMILIES)
     per_family = {fam: len(build_cases(fam)) for fam in FAMILIES}
     for fam in FAMILIES:
-        assert per_family[fam] == family_specific[fam] + len(CONFORMANCE_CASES), f"{fam} diverged from the expected case count"
-    assert sum(per_family.values()) == sum(family_specific.values()) + len(FAMILIES) * len(CONFORMANCE_CASES)
+        dotted_cases = sum(
+            fam in G.scenario_families(scenario)
+            for scenario in G.DOTTED_NAME_SCENARIOS
+        )
+        boundary_cases = len(PARALLEL_BOUNDARY_CASES) if fam in UNIFIED_PARALLEL_BOUNDARY_FAMILIES else 0
+        numeric_count = sum(numeric_applicable(fam, label) for _, label, *_ in NUMERIC_VARIANTS)
+        assert per_family[fam] == family_specific[fam] + 2 + len(CONFORMANCE_CASES) + dotted_cases + boundary_cases + numeric_count + NESTED_NUMERIC_CASES, f"{fam} diverged from the expected case count"
+    assert sum(per_family.values()) == (
+        sum(family_specific.values())
+        + 2 * len(FAMILIES)
+        + len(FAMILIES) * len(CONFORMANCE_CASES)
+        + sum(len(G.scenario_families(scenario)) for scenario in G.DOTTED_NAME_SCENARIOS)
+        + len(UNIFIED_PARALLEL_BOUNDARY_FAMILIES) * len(PARALLEL_BOUNDARY_CASES)
+        + sum(numeric_applicable(fam, label) for fam in FAMILIES for _, label, *_ in NUMERIC_VARIANTS)
+        + len(FAMILIES) * NESTED_NUMERIC_CASES
+    )
 
 
 def test_deferred_case_ids_are_not_in_the_active_taxonomy():
     deferred = {"1-2", "5-5", "6-2", "32-6", "50-1", "50-2"} | {
         f"31-{number}" for number in range(31, 41)
     }
-    assert len(UNIFIED_TAX) == 221 + len(CONFORMANCE_CASES)
+    assert len(UNIFIED_TAX) == 239 + len(CONFORMANCE_CASES) + len(G.DOTTED_NAME_SCENARIOS) + len(PARALLEL_BOUNDARY_CASES) + len(NUMERIC_VARIANTS) + NESTED_NUMERIC_CASES
     assert not {f"UNIFIED.{case_id}" for case_id in deferred} & {
         numbered_id(scenario) for scenario in UNIFIED_TAX
     }
@@ -1124,7 +1157,9 @@ def _assert_reference_measurements_start_at_introduction(store):
     for (family, implementation), history in store.histories.items():
         if implementation != "dynamo_v2":
             continue
-        for capture_id in history.ordered_capture_ids():
+        capture_ids = history.ordered_capture_ids()
+        latest_capture_id = capture_ids[-1]
+        for capture_id in capture_ids:
             measured = {
                 history.family.cases[case_id]["display_id"]
                 for case_id in history.resolve(capture_id)
@@ -1135,9 +1170,13 @@ def _assert_reference_measurements_start_at_introduction(store):
             if G.unified_grammar_family(family) == "qwen3":
                 introduced_ids.add("UNIFIED.7-arg_string_null_ref")
             version = tuple(int(part) for part in history.captures[capture_id]["runtime_version"].split("."))
-            if version < (0, 7, 18):
+            # Beam joined the corpus at 0.7.29.
+            introduced_at = (0, 7, 29) if family == "beam" else (0, 7, 18)
+            if version < introduced_at:
                 assert not measured & introduced_ids, f"retrospective measurements in {family}/{capture_id}"
-            else:
+            elif capture_id == latest_capture_id:
+                # Historical shards can add selected rows; only the latest resolved
+                # history must contain the complete set of currently applicable cases.
                 assert introduced_ids <= measured, f"missing current measurements in {family}/{capture_id}"
 
 
@@ -1179,6 +1218,21 @@ def _family_value(scenario, family):
         return "{}" + _family_value("guided_json_native_parameter_array_before_payload", family)
     reason_open, reason_close, _, _ = control_tokens(family)
     marker = G._NATIVE_QUOTED_CONTROL.get(family, control_tokens(family)[2])
+    if family == "beam":
+        # Beam's markers are special tokens, so a quotation never keeps one literal
+        # (UNIFIED_CASES.md P6): the prose before the quote stays and the quoted header
+        # is framing. The authored beam goldens therefore end at the opening quote.
+        beam_quoted = {
+            "native_quoted_control_in_response": 'The literal "',
+            "native_quoted_control_in_reasoning": 'The literal "',
+            "native_quoted_control_then_call": 'The literal "',
+            "native_single_quoted_word_control": "The literal 'example ",
+            "native_single_quote_contraction_response": "The literal 'doesn't ",
+            "native_single_quote_contraction_reasoning": "The literal 'doesn't ",
+            "native_quoted_incomplete_header": "The literal `",
+        }
+        if scenario in beam_quoted:
+            return beam_quoted[scenario]
     if scenario in {
         "native_quoted_control_in_response",
         "native_quoted_control_in_reasoning",
@@ -1212,6 +1266,7 @@ def _family_value(scenario, family):
         return G._MIXED_CONTROL_STRINGS[G.unified_grammar_family(family)]
     if scenario == "arg_marker_in_string":
         close = {
+            "beam": "<|call|>",
             "deepseek_v4": "</｜DSML｜invoke>",
             "deepseek_v41": "</｜DSML｜ invoke>",
             "gemma4": "}<tool_call|>",
@@ -1219,6 +1274,7 @@ def _family_value(scenario, family):
             "kimi_k2": "<|tool_call_end|>",
             "kimi_k3": "<|close|>call<|sep|>",
             "muse_glimmer": "</atem:function_calls>",
+            "muse_spark": "</atem:function_calls>",
             "gpt_oss": "<|call|>",
             "qwen3": "</tool_call>",
         }[family]
@@ -1226,7 +1282,7 @@ def _family_value(scenario, family):
     if scenario in {"reason_markup_in_arg", "reason_markup_in_arg_with_text"}:
         if family == "gpt_oss":
             return "<|start|>assistant<|channel|>analysis<|message|>secret<|end|>"
-        return ("to=self<|message|>reconsider" if family == "muse_glimmer"
+        return ("to=self<|message|>reconsider" if family in {"muse_glimmer", "muse_spark"}
                 else f"{reason_open}reconsider{reason_close}")
     if scenario == "guided_json_marker_inside_argument":
         return reason_close
@@ -1234,6 +1290,7 @@ def _family_value(scenario, family):
         return {
             "gpt_oss": "<|call|><|start|>assistant<|channel|>final<|message|>literal<|return|>",
             "muse_glimmer": "<|eom|><|start|>assistant to=user<|message|>literal<|eom|>",
+            "muse_spark": "<|eom|><|start|>assistant to=user<|message|>literal<|eom|>",
             "kimi_k3": "<|close|>call<|sep|><|open|>response<|sep|>literal<|close|>response<|sep|>",
         }[family]
     quoted = {
@@ -1245,20 +1302,30 @@ def _family_value(scenario, family):
         recipient = quoted[scenario]
         if family == "gpt_oss":
             reason_open = reason_open.removeprefix("<|start|>assistant")
-        return (f"I mean to={recipient}literal" if family == "muse_glimmer"
+        return (f"I mean to={recipient}literal" if family in {"muse_glimmer", "muse_spark"}
                 else f"I mean {reason_open}{recipient} literal{reason_close}")
+    if scenario == "guided_json_narrated_invoke_in_reasoning":
+        # Beam: the narrated tool header is a framed `<|start|>` that ends the open
+        # thought, so the words after it are not reasoning (class F divergence).
+        return "I'll use " if family == "beam" else "I'll use  next"
+    if scenario == "orphan_close_after_prose":
+        return "I will check that. "
     if scenario in {
         "prefilled_response_reasoning_markers_literal",
         "guided_json_native_parameter_object_before_payload",
         "guided_json_native_parameter_array_before_payload",
         "guided_json_native_parameter_string_before_payload",
     }:
-        if scenario.startswith("guided_json_native_parameter_") and family not in {"qwen3", "muse_glimmer"}:
+        if scenario.startswith("guided_json_native_parameter_") and family not in {"qwen3", "muse_glimmer", "muse_spark"}:
             return f"I mean {reason_open}self literal{reason_close}"
         suffix = " then a call" if scenario == "prefilled_response_reasoning_markers_literal" else ""
         if family == "gpt_oss" and scenario == "prefilled_response_reasoning_markers_literal":
             return "<think>literal</think> then a call"
-        return ("to=selfliteral" if family == "muse_glimmer"
+        if family == "beam" and scenario == "prefilled_response_reasoning_markers_literal":
+            # Beam's framing is special tokens: under Response the framed analysis
+            # message is consumed as control and its body is visible text.
+            return "literal then a call"
+        return ("to=selfliteral" if family in {"muse_glimmer", "muse_spark"}
                 else f"{reason_open}literal{reason_close}") + suffix
     return None
 
@@ -1281,8 +1348,8 @@ def _logical_events(scenario, family, events):
     return out
 
 
-def _json_values(raw):
-    decoder = json.JSONDecoder()
+def _json_values(raw, *, exact_numbers=False):
+    decoder = json.JSONDecoder(parse_float=Decimal if exact_numbers else float)
     values = []
     for at, char in enumerate(raw):
         if char not in "[{":
@@ -1295,7 +1362,7 @@ def _json_values(raw):
     return values
 
 
-def _parse_gemma_value(raw, index=0):
+def _parse_gemma_value(raw, index=0, *, exact_numbers=False):
     while index < len(raw) and raw[index].isspace():
         index += 1
     if raw.startswith('<|"|>', index):
@@ -1318,17 +1385,30 @@ def _parse_gemma_value(raw, index=0):
                 assert key is not None, ("invalid Gemma object key", raw[index:])
                 index += key.end()
                 assert index < len(raw) and raw[index] == ":", ("missing Gemma key separator", raw)
-                value, index = _parse_gemma_value(raw, index + 1)
+                value, index = _parse_gemma_value(raw, index + 1, exact_numbers=exact_numbers)
                 values[key[0]] = value
             else:
-                value, index = _parse_gemma_value(raw, index)
+                value, index = _parse_gemma_value(raw, index, exact_numbers=exact_numbers)
                 values.append(value)
     token = re.match(r"(?:true|false|null|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)", raw[index:])
     assert token is not None, ("unsupported Gemma value", raw[index:])
-    return json.loads(token[0]), index + token.end()
+    return json.loads(token[0], parse_float=Decimal if exact_numbers else float), index + token.end()
 
 
-def _native_input_calls(family, raw):
+def _atem_parameter_end(raw, value_start):
+    # Independently decode a JSON value before looking for its XML closer;
+    # otherwise this fixture validator repeats the parser's quoted-closer bug.
+    minimum = value_start
+    at = value_start + len(raw[value_start:]) - len(raw[value_start:].lstrip())
+    if raw[at:at + 1] in {"{", "[", '"'}:
+        try:
+            _, minimum = json.JSONDecoder().raw_decode(raw, at)
+        except json.JSONDecodeError:
+            pass
+    return raw.find("</atem:parameter>", minimum)
+
+
+def _native_input_calls(family, raw, *, exact_numbers=False):
     """Read authored complete argument fields, not runtime recovery decisions.
 
     This fixture-only projection ignores invoke EOF policy: a syntactically present
@@ -1368,10 +1448,36 @@ def _native_input_calls(family, raw):
                 return calls
             cursor = outer_end + len("</tool_call>")
 
+    if family == "beam":
+        # Independent authoring-contract decoder for the Beam wire (not the parser):
+        # only a `to=NAME` header on the `analysis` channel is a tool call; its body
+        # runs to the next framed header. Values keep their literal bytes, with the
+        # one LF the renderer frames each edge with removed; no typing.
+        header = re.compile(
+            r'<\|start\|>assistant to=([A-Za-z_][A-Za-z0-9_.\-]*)<\|channel\|>analysis'
+            r'(?: <\|constrain\|>[A-Za-z0-9]+)?<\|message\|>'
+        )
+        # The reference tag rule: a value runs to the FIRST `</rfl:parameter>`, so an
+        # embedded header is value data. Parameters are read in sequence after the
+        # header; anything else (a terminator, a new header, EOF) ends the body.
+        parameter = re.compile(r'\s*<rfl:parameter name="([^"]+)">(.*?)</rfl:parameter>', re.S)
+        calls = []
+        for match in header.finditer(raw):
+            at = match.end()
+            arguments = {}
+            while True:
+                item = parameter.match(raw, at)
+                if item is None:
+                    break
+                arguments[item[1]] = item[2].removeprefix("\n").removesuffix("\n")
+                at = item.end()
+            calls.append({"kind": "tool_call", "name": match[1], "arguments": arguments})
+        return calls
+
     family = G.unified_grammar_family(family)
     if family == "gpt_oss":
         calls = []
-        decoder = json.JSONDecoder()
+        decoder = json.JSONDecoder(parse_float=Decimal if exact_numbers else float)
         endings = ("<|call|>", "<|end|>", "<|return|>")
         owned_until = 0
         headers = re.finditer(
@@ -1406,6 +1512,7 @@ def _native_input_calls(family, raw):
         "deepseek_v41": r'<｜DSML｜ invoke name="([^"]+)">',
         "qwen3": r'<function=([^>]+)>',
         "muse_glimmer": r'<atem:invoke name="([^"]+)">',
+        "muse_spark": r'<atem:invoke name="([^"]+)">',
         "gemma4": r'call:([\w.-]+)\{',
         "kimi_k2": r'<\|tool_call_begin\|>(?:functions\.)?([\w.-]+):\d+<\|tool_call_argument_begin\|>',
         "kimi_k3": r'<\|open\|>\s*call tool="([^"]+)" index="\d+"\s*<\|sep\|>',
@@ -1417,7 +1524,7 @@ def _native_input_calls(family, raw):
             rf'<｜DSML｜{gap}parameter name="([^"]+)" string="(true|false)">(.*?)</｜DSML｜{gap}parameter>',
             re.S,
         )
-        decoder = json.JSONDecoder()
+        decoder = json.JSONDecoder(parse_float=Decimal if exact_numbers else float)
         calls = []
         cursor = 0
         while match := re.search(headers[family], raw[cursor:]):
@@ -1443,7 +1550,9 @@ def _native_input_calls(family, raw):
                 parameter = parameter_pattern.search(raw, body_cursor)
                 if parameter and (body_end < 0 or parameter.start() < body_end):
                     key, is_string, value = parameter.groups()
-                    arguments[key] = value if is_string == "true" else json.loads(value)
+                    arguments[key] = value if is_string == "true" else json.loads(
+                        value, parse_float=Decimal if exact_numbers else float
+                    )
                     body_cursor = parameter.end()
                     continue
                 cursor = len(raw) if body_end < 0 else body_end + len(invocation_end)
@@ -1455,28 +1564,58 @@ def _native_input_calls(family, raw):
     calls = []
     for index, match in enumerate(found):
         body = raw[match.end():found[index + 1].start() if index + 1 < len(found) else len(raw)]
+        # Muse parameters own nested invocation-shaped text. The independent
+        # fixture projection must not clip an outer argument at an inner header.
+        if family in {"muse_glimmer", "muse_spark"}:
+            tail = raw[match.end():]
+            cursor = 0
+            while True:
+                close = tail.find("</atem:invoke>", cursor)
+                parameter = re.search(r'<atem:parameter name="[^"]+">', tail[cursor:])
+                if parameter is None or (close >= 0 and close < cursor + parameter.end()):
+                    body = tail[:close] if close >= 0 else tail
+                    break
+                value_start = cursor + parameter.end()
+                end = _atem_parameter_end(tail, value_start)
+                if end < 0:
+                    body = tail
+                    break
+                cursor = end + len("</atem:parameter>")
         arguments = {}
         if G.unified_grammar_family(family) == "qwen3":
             # The generator frames values with one newline; payload whitespace is data.
             arguments = {key: value.removeprefix("\n").removesuffix("\n")
                          for key, value in re.findall(r'<parameter=([^>]+)>(.*?)</parameter>', body, re.S)}
-        elif family == "muse_glimmer":
-            for key, value in re.findall(r'<atem:parameter name="([^"]+)">(.*?)</atem:parameter>', body, re.S):
+        elif family in {"muse_glimmer", "muse_spark"}:
+            cursor = 0
+            while parameter := re.search(r'<atem:parameter name="([^"]+)">', body[cursor:]):
+                key = parameter[1]
+                value_start = cursor + parameter.end()
+                end = _atem_parameter_end(body, value_start)
+                if end < 0:
+                    break
+                value = body[value_start:end]
+                cursor = end + len("</atem:parameter>")
                 try:
-                    arguments[key] = json.loads(value)
+                    arguments[key] = json.loads(
+                        value, parse_float=Decimal if exact_numbers else float
+                    )
                 except json.JSONDecodeError:
                     arguments[key] = value
         elif family == "gemma4":
-            arguments, _ = _parse_gemma_value("{" + body)
+            arguments, _ = _parse_gemma_value("{" + body, exact_numbers=exact_numbers)
         elif family == "kimi_k2":
             start = len(body) - len(body.lstrip(" \t\r\n"))
-            arguments, _ = json.JSONDecoder().raw_decode(body, start)
+            decoder = json.JSONDecoder(parse_float=Decimal if exact_numbers else float)
+            arguments, _ = decoder.raw_decode(body, start)
         else:
             pattern = r'<\|open\|>\s*argument key="([^"]+)" type="([^"]+)"\s*<\|sep\|>(.*?)<\|close\|>\s*argument\s*<\|sep\|>'
             for key, kind, value in re.findall(pattern, body, re.S):
-                arguments[key] = value if kind == "string" else json.loads(value)
+                arguments[key] = value if kind == "string" else json.loads(
+                    value, parse_float=Decimal if exact_numbers else float
+                )
             if not arguments and re.match(r'<\|open\|>\s*json ', body):
-                values = _json_values(body)
+                values = _json_values(body, exact_numbers=exact_numbers)
                 if values:
                     arguments = values[0]
         calls.append({"kind": "tool_call", "name": match[1], "arguments": arguments})
@@ -1566,7 +1705,9 @@ def _assert_malformed_recovery(family, case):
         "deepseek_v41": '<｜DSML｜ invoke name="echo">',
         "gemma4": "<|tool_call>call:echo{",
         "muse_glimmer": "<|start|>assistant to=echo<|message|>",
+        "muse_spark": "<|start|>assistant to=echo<|message|>",
         "gpt_oss": "<|start|>assistant<|channel|>commentary to=functions.echo",
+        "beam": "<|start|>assistant to=echo<|channel|>",
     }
     at = raw.index(openers[family])
     prefix, suffix = raw[:at], raw[at:]
@@ -1590,8 +1731,9 @@ def _assert_malformed_recovery(family, case):
         "qwen3": "</parameter>\n</function>\n</tool_call>", "glm47": "</arg_value></tool_call>",
         "deepseek_v4": "</｜DSML｜parameter></｜DSML｜invoke>",
         "deepseek_v41": "</｜DSML｜ parameter></｜DSML｜ invoke>",
-        "gemma4": "}}<tool_call|>", "muse_glimmer": "</atem:invoke>",
+        "gemma4": "}}<tool_call|>", "muse_glimmer": "</atem:invoke>", "muse_spark": "</atem:invoke>",
         "gpt_oss": "<|call|>",
+        "beam": "</rfl:parameter><|call|>",
     }
     assert closers[family] in prefix
     echoes = [{"kind": "tool_call", "name": "echo", "arguments": {"value": value}} for value in ("é", "Café")]
@@ -1599,7 +1741,7 @@ def _assert_malformed_recovery(family, case):
     bad = []
     if family == "kimi_k2":
         bad = [{"kind": "tool_call", "name": "bad", "arguments": {}}]
-    elif family in {"qwen3", "glm47", "deepseek_v4", "muse_glimmer", "gpt_oss"}:
+    elif family in {"qwen3", "glm47", "deepseek_v4", "muse_glimmer", "gpt_oss", "muse_spark", "beam"}:
         bad = [{"kind": "tool_call", "name": "bad", "arguments": {"value": '{"x":"unfinished'}}]
     assert case["golden"] == bad + echoes
     if family != "gpt_oss":
@@ -1620,7 +1762,7 @@ def _assert_input_carries_events(family: str, scenario: str, case: dict) -> None
     tools = [event for event in case["golden"] if event["kind"] == "tool_call"]
     if tools:
         if case["init"]["tool_output_mode"] == "Native":
-            candidates = _native_input_calls(family, raw)
+            candidates = _native_input_calls(family, raw, exact_numbers=True)
             for candidate in candidates:
                 tool_schema = next(
                     (tool for tool in case.get("tools", []) if tool["name"] == candidate["name"]),
@@ -1632,24 +1774,33 @@ def _assert_input_carries_events(family: str, scenario: str, case: dict) -> None
                 properties = parameters.get("properties", {})
                 for key, value in candidate["arguments"].items():
                     schema = properties.get(key, {})
-                    if G.unified_grammar_family(family) not in {"qwen3", "glm47"} or not isinstance(value, str):
+                    # Families whose wire carries untyped text values: the authoring
+                    # contract types them against the declared schema (a literal
+                    # `null` for a nullable property, JSON for a non-string one).
+                    if G.unified_grammar_family(family) not in {"qwen3", "glm47", "beam"} or not isinstance(value, str):
+                        continue
+                    if scenario in {probe["name"] for probe in XML_COMPATIBILITY_CASES} and schema == {"type": "custom"}:
+                        assert family == "qwen3"
+                        candidate["arguments"][key] = ast.literal_eval(value.strip())
                         continue
                     if value == "null" and matches_schema(None, schema, parameters):
                         candidate["arguments"][key] = None
                     elif (not matches_schema(value, schema, parameters)
-                          or (G.unified_grammar_family(family) == "qwen3" and scenario in {
+                          or (G.unified_grammar_family(family) in ("qwen3", "beam") and scenario in {
                               "schema_integer_const_ambiguous", "schema_object_const_union",
                               "schema_type_array_string_integer",
-                          })):
+                          }) or family == "qwen3"):
                         try:
-                            decoded = json.loads(value)
+                            decoded = json.loads(value, parse_float=Decimal)
                         except json.JSONDecodeError:
                             continue
-                        if matches_schema(decoded, schema, parameters):
+                        if matches_schema(decoded, schema, parameters) and (
+                            family != "qwen3" or not isinstance(decoded, str)
+                        ):
                             candidate["arguments"][key] = decoded
         else:
             candidates = []
-            for value in _json_values(raw):
+            for value in _json_values(raw, exact_numbers=True):
                 if case["init"]["named_tool"] is not None:
                     candidates.append({"kind": "tool_call", "name": case["init"]["named_tool"], "arguments": value})
                 else:
@@ -1658,9 +1809,25 @@ def _assert_input_carries_events(family: str, scenario: str, case: dict) -> None
                             candidates.append({"kind": "tool_call", **call})
         cursor = 0
         for event in tools:
-            assert event in candidates[cursor:], (family, scenario, "input call differs from golden", event, candidates)
-            cursor = candidates.index(event, cursor) + 1
+            expected = event
+            if isinstance(event.get("arguments"), str):
+                expected = {
+                    **event,
+                    "arguments": json.loads(event["arguments"], parse_float=Decimal),
+                }
+            assert expected in candidates[cursor:], (
+                family, scenario, "input call differs from golden", event, candidates,
+            )
+            cursor = candidates.index(expected, cursor) + 1
     for event in case["golden"]:
+        if event["kind"] in {"message_start", "message_end"}:
+            assert family == "muse_spark" and case["init"].get("preserve_message_phases")
+            if event["kind"] == "message_start":
+                recipient = {"commentary":"commentary", "final_answer":"user"}[event["phase"]]
+                assert f"assistant to={recipient}<|message|>" in raw
+            else:
+                assert "<|eom|>" in raw or "<|eot|>" in raw
+            continue
         if event["kind"] in {"reasoning", "text"}:
             text = event["text"]
             if text in raw:
@@ -1681,6 +1848,8 @@ def _assert_input_carries_events(family: str, scenario: str, case: dict) -> None
             continue
         assert event["kind"] == "tool_call"
         name, arguments = event["name"], event["arguments"]
+        if isinstance(arguments, str):
+            arguments = json.loads(arguments, parse_float=Decimal)
         assert name in raw or case["init"]["named_tool"] == name, (family, scenario, "input tool name", name)
         assert isinstance(arguments, dict), (family, scenario, "argument object")
         for key, value in arguments.items():
@@ -1711,6 +1880,17 @@ def _assert_input_carries_events(family: str, scenario: str, case: dict) -> None
             assert control_tokens(family)[1] in raw, (family, scenario, "missing reasoning closer")
 
 
+BEAM_GRAMMAR_EXCEPTIONS = {
+    "guided_json_native_parameter_body_inside_reasoning",
+    "guided_json_reasoning_markers_inside_native_parameter",
+}
+BEAM_NUMERIC_STRING_SCENARIOS = {
+    scenario for scenario, label, _schema, raw, expected in NUMERIC_VARIANTS
+    if unified_numeric_expected("beam", label, raw, expected)
+    != numeric_expected("beam", label, raw, expected)
+}
+
+
 def _assert_cross_family_contract(corpus):
     by_scenario = defaultdict(dict)
     clean = {row[0]: row[3] for row in CLEAN}
@@ -1721,7 +1901,7 @@ def _assert_cross_family_contract(corpus):
             _assert_input_carries_events(family, scenario, case)
             if scenario == "guided_json_quoted_bare_tool_header_in_answer":
                 # A tool name inside a thought is prose, not a recipient header.
-                assert family == "muse_glimmer" and "to=get_weather<|message|>" in case["input"], (
+                assert family in {"muse_glimmer", "muse_spark"} and "to=get_weather<|message|>" in case["input"], (
                     family, scenario, "missing tool-recipient boundary",
                 )
             init = dict(case["init"])
@@ -1777,6 +1957,9 @@ def _assert_cross_family_contract(corpus):
                 # These native spellings are ambiguous. Validate each family's
                 # established interpretation, then compare the shared scenario.
                 events = [{"kind": "tool_call", "name": "schema_probe", "arguments": {"value": probe["value"]}}]
+
+            if scenario.startswith("arg_numeric_"):
+                events = canonical_events(events)
             if scenario in {"arg_json_null", "arg_string_null"}:
                 value = None if scenario == "arg_json_null" else "null"
                 expected_type = "string" if value is not None else ["string", "null"]
@@ -1801,6 +1984,11 @@ def _assert_cross_family_contract(corpus):
                         assert f'</｜DSML｜{gap}invoke>' not in case["input"]
                 else:
                     assert events == [{"kind": "tool_call", "name": "get_weather", "arguments": {"city": "Paris"}}]
+                    if family == "beam":
+                        # Beam's serving grammar lets EOS stand for `<|call|>`: the
+                        # delimited body is the call, with no terminator in the input.
+                        assert "</rfl:parameter>" in case["input"]
+                        assert "<|call|>" not in case["input"]
                 events = None
             suppressed = []
             if init["tool_output_mode"] == "GuidedJson":
@@ -1817,13 +2005,18 @@ def _assert_cross_family_contract(corpus):
                 else:
                     suppressed = [call for call in _native_input_calls(family, case["input"]) if call["arguments"]]
                 if scenario in {"guided_json_reasoning_markers_inside_native_parameter", "guided_json_reasoning_markers_inside_native_parameter_pr424"}:
-                    opener, closer, _, _ = control_tokens(family)
-                    if family == "gpt_oss" and not scenario.endswith("_pr424"):
-                        opener = opener.removeprefix("<|start|>assistant")
-                    assert suppressed == [{"kind": "tool_call", "name": "f", "arguments": {"x": opener + "quoted" + closer}}], (
-                        family, scenario, "wrong suppressed marker role or payload",
-                    )
-                    suppressed[0]["arguments"]["x"] = "FAMILY_REASONING_MARKERS"
+                    if family == "beam":
+                        # Beam has no bare native invocation: without its routed header the
+                        # parameter tag is text, so nothing is suppressed (authored golden).
+                        assert suppressed == [], (family, scenario, "Beam suppresses no bare invocation")
+                    else:
+                        opener, closer, _, _ = control_tokens(family)
+                        if family == "gpt_oss" and not scenario.endswith("_pr424"):
+                            opener = opener.removeprefix("<|start|>assistant")
+                        assert suppressed == [{"kind": "tool_call", "name": "f", "arguments": {"x": opener + "quoted" + closer}}], (
+                            family, scenario, "wrong suppressed marker role or payload",
+                        )
+                        suppressed[0]["arguments"]["x"] = "FAMILY_REASONING_MARKERS"
                 if scenario == "guided_json_native_parameter_string_before_payload":
                     for call in suppressed:
                         value = call["arguments"]["x"]
@@ -1843,7 +2036,13 @@ def _assert_cross_family_contract(corpus):
     assert set(by_scenario) == set(UNIFIED_TAX) - taxonomy.RETIRED_SCENARIOS
     for scenario, families in by_scenario.items():
         assert set(families) == (set(G.scenario_families(scenario)) & set(NATIVE_FAMILIES)), (scenario, "applicability", set(families))
-        contracts = list(families.items())
+        # Beam authors its own golden where its grammar changes the outcome (its parameter
+        # tags are plain text outside a routed header; its reasoning markers are special
+        # tokens), so it stands outside the shared contract for those scenarios only.
+        contracts = [
+            (family, contract) for family, contract in families.items()
+            if not (family == "beam" and scenario in BEAM_GRAMMAR_EXCEPTIONS | BEAM_NUMERIC_STRING_SCENARIOS)
+        ]
         first_family, reference = contracts[0]
         for family, contract in contracts[1:]:
             assert contract == reference, (scenario, first_family, family, "cross-family contract", reference, contract)
@@ -1853,7 +2052,14 @@ def test_all_scenarios_preserve_cross_family_input_and_output_contracts():
     _assert_cross_family_contract({family: build_cases(family) for family in NATIVE_FAMILIES})
 
 
-@pytest.mark.parametrize("family", [family for family in NATIVE_FAMILIES if family != "muse_glimmer"])
+def test_gpt_oss_numeric_input_oracle_preserves_exact_decimal_values():
+    scenario = "arg_numeric_14_large_decimal"
+    case = build_cases("gpt_oss")[f"UNIFIED.{scenario}.gpt_oss"]
+    calls = _native_input_calls("gpt_oss", case["input"], exact_numbers=True)
+    assert calls[0]["arguments"]["value"] == Decimal("9007199254740993.0")
+
+
+@pytest.mark.parametrize("family", [family for family in NATIVE_FAMILIES if family not in {"muse_glimmer", "muse_spark"}])
 def test_cross_family_contract_rejects_prose_only_recipient_case(family):
     corpus = {family: build_cases(family) for family in NATIVE_FAMILIES}
     _assert_cross_family_contract(corpus)
@@ -2051,8 +2257,8 @@ def test_gpt_oss_variants_use_shared_parents_or_explicit_header_grammar(scenario
 
 @pytest.mark.parametrize(("scenario", "parent", "families"), [
     ("gpt_oss_tool_body_whitespace", "tool_only", {"gpt_oss", "kimi_k2", "kimi_k3"}),
-    ("gpt_oss_quoted_truncated_tool_then_final", "tool_no_close", {"gpt_oss", "muse_glimmer", "kimi_k3"}),
-    ("gpt_oss_quoted_message_header_literal", "arg_marker_in_string", {"gpt_oss", "muse_glimmer", "kimi_k3"}),
+    ("gpt_oss_quoted_truncated_tool_then_final", "tool_no_close", {"gpt_oss", "muse_glimmer", "muse_spark", "kimi_k3"}),
+    ("gpt_oss_quoted_message_header_literal", "arg_marker_in_string", {"gpt_oss", "muse_glimmer", "muse_spark", "kimi_k3"}),
 ])
 def test_retained_harmony_review_ids_cover_native_shared_variants(scenario, parent, families):
     assert G.scenario_families(scenario) == families
@@ -2065,7 +2271,7 @@ def test_retained_harmony_review_ids_cover_native_shared_variants(scenario, pare
         assert case["init"] == {"starting_state": "None", "tool_output_mode": "Native", "named_tool": None}
         if parent == "tool_no_close":
             assert case["golden"] == [{"kind": "text", "text": "Answer"}]
-            if family == "muse_glimmer":
+            if family in {"muse_glimmer", "muse_spark"}:
                 assert '<atem:parameter name="q">abc<|eom|>' in case["input"]
                 assert "</atem:parameter>" not in case["input"]
             else:
@@ -2083,7 +2289,7 @@ def test_retained_harmony_review_ids_cover_native_shared_variants(scenario, pare
                 payload = event["arguments"]["q"]
                 assert payload in case["input"]
                 assert "literal" in payload
-                assert ("assistant to=user<|message|>" if family == "muse_glimmer"
+                assert ("assistant to=user<|message|>" if family in {"muse_glimmer", "muse_spark"}
                         else '<|open|>response<|sep|>') in payload
 
 

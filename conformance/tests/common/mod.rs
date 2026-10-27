@@ -15,9 +15,193 @@ pub mod known_toolcalling_chunking;
 pub mod known_unified_divergences;
 pub mod unified_capture;
 
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
+
+pub fn canonical_argument_json(raw: &str) -> String {
+    match raw.as_bytes().first() {
+        Some(b'{') => {
+            let fields: BTreeMap<String, Box<serde_json::value::RawValue>> =
+                serde_json::from_str(raw).expect("validated object arguments");
+            let fields = fields
+                .into_iter()
+                .map(|(key, value)| {
+                    format!(
+                        "{}={}",
+                        serde_json::to_string(&key).expect("serialize object key"),
+                        canonical_argument_json(value.get()),
+                    )
+                })
+                .collect::<Vec<_>>();
+            format!("object:[{}]", fields.join(","))
+        }
+        Some(b'[') => {
+            let items: Vec<Box<serde_json::value::RawValue>> =
+                serde_json::from_str(raw).expect("validated array arguments");
+            let items = items
+                .iter()
+                .map(|item| canonical_argument_json(item.get()))
+                .collect::<Vec<_>>();
+            format!("array:[{}]", items.join(","))
+        }
+        Some(b'"') => {
+            let value: String = serde_json::from_str(raw).expect("validated string argument");
+            format!(
+                "string:{}",
+                serde_json::to_string(&value).expect("serialize string")
+            )
+        }
+        Some(b't') => "boolean:true".to_string(),
+        Some(b'f') => "boolean:false".to_string(),
+        Some(b'n') => "null".to_string(),
+        Some(b'-' | b'0'..=b'9') => canonical_argument_number(raw),
+        _ => unreachable!("RawValue only accepts JSON"),
+    }
+}
+
+fn canonical_argument_number(raw: &str) -> String {
+    let (negative, unsigned) = match raw.strip_prefix('-') {
+        Some(unsigned) => (true, unsigned),
+        None => (false, raw),
+    };
+    let (mantissa, exponent) = match unsigned.split_once(['e', 'E']) {
+        Some((mantissa, exponent)) => match exponent.parse::<i64>() {
+            Ok(exponent) => (mantissa, exponent),
+            Err(_) => return format!("number-token:{raw}"),
+        },
+        None => (unsigned, 0),
+    };
+    let (whole, fraction) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+    let digits = format!("{whole}{fraction}");
+    let digits = digits.trim_start_matches('0');
+    if digits.is_empty() {
+        return "number:0".to_string();
+    }
+    let trailing_zeroes = digits.len() - digits.trim_end_matches('0').len();
+    let significant = digits.trim_end_matches('0');
+    let adjustment = match i64::try_from(trailing_zeroes)
+        .ok()
+        .zip(i64::try_from(fraction.len()).ok())
+        .and_then(|(trailing, fractional)| trailing.checked_sub(fractional))
+    {
+        Some(adjustment) => adjustment,
+        None => return format!("number-token:{raw}"),
+    };
+    let Some(exponent) = exponent.checked_add(adjustment) else {
+        return format!("number-token:{raw}");
+    };
+    format!(
+        "number:{}:{}:{exponent}",
+        if negative { "-" } else { "+" },
+        significant
+    )
+}
+
+pub fn json_values_equal<T: serde::Serialize>(left: &T, right: &T) -> bool {
+    let left = serde_json::to_string(left).expect("JSON comparison input");
+    let right = serde_json::to_string(right).expect("JSON comparison input");
+    canonical_argument_json(&left) == canonical_argument_json(&right)
+}
+
+#[derive(Debug)]
+pub struct EngineResult {
+    pub calls: Vec<(String, serde_json::Value)>,
+    pub normal_text: String,
+}
+
+impl PartialEq for EngineResult {
+    fn eq(&self, other: &Self) -> bool {
+        self.normal_text == other.normal_text && json_values_equal(&self.calls, &other.calls)
+    }
+}
+
+impl Eq for EngineResult {}
+
+#[cfg(test)]
+mod json_comparison_tests {
+    #[test]
+    fn number_spelling_does_not_hide_value_type_or_order_changes() {
+        for (left, right, equal) in [
+            (r#"{"value":2.50}"#, r#"{"value":25e-1}"#, true),
+            (r#"{"value":42.0}"#, r#"{"value":42}"#, true),
+            (r#"{"value":2.5}"#, r#"{"value":"2.5"}"#, false),
+            (
+                r#"{"value":9007199254740992.5}"#,
+                r#"{"value":9007199254740992.0}"#,
+                false,
+            ),
+            (r#"{"value":1e-400}"#, r#"{"value":0}"#, false),
+            ("[1,2]", "[2,1]", false),
+        ] {
+            let left: serde_json::Value = serde_json::from_str(left).unwrap();
+            let right: serde_json::Value = serde_json::from_str(right).unwrap();
+            assert_eq!(super::json_values_equal(&left, &right), equal);
+        }
+    }
+}
+
+pub fn decoded_golden_arguments(arguments: &serde_json::Value) -> serde_json::Value {
+    match arguments {
+        serde_json::Value::String(raw) => {
+            serde_json::from_str(raw).expect("authored JSON arguments")
+        }
+        value => value.clone(),
+    }
+}
+
+pub fn json_to_yaml_value<T: serde::Serialize>(value: &T) -> serde_yaml::Value {
+    fn convert(value: serde_json::Value) -> serde_yaml::Value {
+        match value {
+            serde_json::Value::Null => serde_yaml::Value::Null,
+            serde_json::Value::Bool(value) => serde_yaml::Value::Bool(value),
+            serde_json::Value::Number(number) => {
+                let lexeme = number.to_string();
+                let nonzero_digit = lexeme
+                    .split(['e', 'E'])
+                    .next()
+                    .expect("JSON number has a mantissa")
+                    .bytes()
+                    .any(|byte| byte.is_ascii_digit() && byte != b'0');
+                let yaml_incompatible = number
+                    .as_f64()
+                    .is_none_or(|value| !value.is_finite() || value == 0.0 && nonzero_digit);
+                if yaml_incompatible {
+                    serde_yaml::Value::String(lexeme)
+                } else {
+                    serde_yaml::from_str(&lexeme).expect("JSON number parses as YAML")
+                }
+            }
+            serde_json::Value::String(value) => serde_yaml::Value::String(value),
+            serde_json::Value::Array(values) => {
+                serde_yaml::Value::Sequence(values.into_iter().map(convert).collect())
+            }
+            serde_json::Value::Object(values) => serde_yaml::Value::Mapping(
+                values
+                    .into_iter()
+                    .map(|(key, value)| (serde_yaml::Value::String(key), convert(value)))
+                    .collect(),
+            ),
+        }
+    }
+
+    convert(serde_json::to_value(value).expect("value serializes as JSON"))
+}
+
+pub fn unified_event_to_yaml_value<T: serde::Serialize>(event: &T) -> serde_yaml::Value {
+    let mut event = serde_json::to_value(event).expect("event serializes as JSON");
+    if event.get("kind").and_then(serde_json::Value::as_str) == Some("tool_call")
+        && let Some(arguments) = event.get_mut("arguments")
+    {
+        // Preserve the whole JSON payload: YAML float scalars round decimals,
+        // and quoting individual numbers would change their argument types.
+        *arguments = serde_json::Value::String(
+            serde_json::to_string(arguments).expect("tool arguments serialize as JSON"),
+        );
+    }
+    json_to_yaml_value(&event)
+}
 
 /// Copy the schema file with historical harnesses: tool registration and argument
 /// typing are request inputs, not parser-version differences.
@@ -279,7 +463,10 @@ pub fn fixture_name(path: &Path) -> String {
 }
 
 /// Fold prior family captures through the current parser release checkpoint.
-pub const STREAM_DYNAMO_V2_CURRENT_CAPTURE: &str = "dynamo_v2-0.7.24";
+pub const STREAM_DYNAMO_V2_CURRENT_CAPTURE: &str = "dynamo_v2-0.8.0";
+
+// Batch-on-stream retains its own snapshot when the streaming capture advances.
+pub const BATCH_ON_STREAM_DYNAMO_V2_CAPTURE: &str = "dynamo_v2-0.7.24";
 
 // Consumers may reuse verified archives in tagless clones; producers still require tags.
 pub const UNIFIED_DYNAMO_V2_CURRENT_CAPTURE: &str = "dynamo_v2-current";
@@ -615,6 +802,24 @@ pub fn unified_families() -> std::collections::BTreeMap<String, UnifiedFamily> {
     doc.unified
 }
 
+/// Scope a producer run without changing the shared corpus or its family registry.
+pub fn capture_families() -> Option<std::collections::BTreeSet<String>> {
+    let registered = unified_families();
+    let requested = std::env::var("CONFORMANCE_CAPTURE_FAMILIES").ok()?;
+    let selected: std::collections::BTreeSet<String> = requested
+        .split(',')
+        .map(|name| name.trim().to_string())
+        .collect();
+    assert!(!selected.is_empty(), "empty capture family selection");
+    for family in &selected {
+        assert!(
+            registered.contains_key(family),
+            "unknown capture family: {family}"
+        );
+    }
+    Some(selected)
+}
+
 /// One family, or a panic naming the manifest — a family reaching the harness without a
 /// declaration is a missing row, and saying so beats a generic "no parser mapping".
 pub fn unified_family(corpus_name: &str) -> UnifiedFamily {
@@ -637,6 +842,8 @@ pub fn unified_family(corpus_name: &str) -> UnifiedFamily {
 /// parsed as `Native` because its input did not happen to start with `[`.
 #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize, PartialEq)]
 pub struct Init {
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub preserve_message_phases: bool,
     #[serde(default)]
     pub starting_state: String,
     #[serde(default)]
@@ -663,6 +870,9 @@ impl Init {
             "tool_output_mode": if self.tool_output_mode.is_empty() { "Native" } else { &self.tool_output_mode },
             "named_tool": self.named_tool,
         });
+        if self.preserve_message_phases {
+            value["preserve_message_phases"] = serde_json::json!(true);
+        }
         if let Some(request) = &self.structural_tag {
             value["structural_tag"] =
                 serde_json::to_value(request).expect("structural-tag request");
@@ -718,6 +928,10 @@ impl Init {
                     == dynamo_parsers_v2::UnifiedParserStartingState::Reasoning,
             })?
             .ok_or_else(|| anyhow::anyhow!("response schema produced no structural tag"))?;
+        let stop_tokens: &[&str] = match family {
+            "gpt_oss" | "harmony" => &["<|return|>"],
+            _ => &[],
+        };
         let script = std::env::var_os("CONFORMANCE_STRUCTURAL_TAG_CHECKER")
             .map(PathBuf::from)
             .unwrap_or_else(|| {
@@ -752,6 +966,7 @@ impl Init {
             .expect("piped verifier input")
             .write_all(&serde_json::to_vec(&serde_json::json!({
                 "structural_tag": tag, "chunks": chunks, "rejected": request.rejected,
+                "stop_tokens": stop_tokens,
             }))?)?;
         let output = child.wait_with_output()?;
         anyhow::ensure!(
@@ -804,6 +1019,8 @@ impl Init {
         parser: &mut Box<dyn dynamo_parsers_v2::UnifiedParser>,
     ) -> anyhow::Result<()> {
         use dynamo_parsers_v2::{InvalidGuidedPayloadPolicy, UnifiedParserInit};
+        #[cfg(not(conformance_legacy_message_phases))]
+        parser.preserve_message_phases(self.preserve_message_phases);
         parser.initialize_request(UnifiedParserInit {
             starting_state: self.starting_state(),
             tool_output_mode: self.output_mode(),

@@ -19,6 +19,8 @@ pub use tool_calling::kimi_k3::KimiK3ToolStreamParser;
 pub use tool_calling::minimax_m2::MiniMaxM2ToolStreamParser;
 pub use tool_calling::minimax_m3::MiniMaxM3ToolStreamParser;
 pub use tool_calling::muse_glimmer::MuseGlimmerToolStreamParser;
+// Expose Spark's parser without changing the existing Glimmer entry point.
+pub use tool_calling::muse_spark::MuseSparkToolStreamParser;
 pub use tool_calling::qwen3_coder::Qwen3CoderToolStreamParser;
 pub use tool_calling::traits::{Tool, ToolCallDelta, ToolParseResult, ToolParser, ToolParserInput};
 pub use tool_calling::{
@@ -30,6 +32,7 @@ pub use tool_calling::{
 pub use tool_calling::{CalledFunctionStream, ToolCallResponseChunk, ToolCallType};
 // One state machine per stream owning reasoning + content + tool calls, emitting
 // ONE ordered event stream (see `unified`).
+pub use unified::{ArgumentFraming, MalformedToolCall, MalformedToolCallPolicy, ToolCallPolicy};
 pub use unified::{
     CommittedCall, GuidedJsonCursor, InvalidGuidedPayload, InvalidGuidedPayloadKind,
     InvalidGuidedPayloadPolicy, REGISTERED_UNIFIED_FAMILIES, UnifiedEvent, UnifiedParser,

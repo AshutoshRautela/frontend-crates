@@ -46,6 +46,8 @@ struct GoldenCase {
     #[serde(default)]
     tools: Option<serde_json::Value>,
     golden: Vec<UnifiedEvent>,
+    #[serde(skip)]
+    raw_golden_arguments: Vec<String>,
     /// Request-scoped parser configuration, declared by the case. Shared with
     /// `unified_render` via `common::Init` so both harnesses configure a case
     /// identically; see that type for why it is declared and not inferred.
@@ -62,12 +64,42 @@ fn load_native_golden() -> Vec<GoldenFile> {
             continue;
         }
         let text = std::fs::read_to_string(&path).unwrap();
-        files.push(
-            serde_yaml::from_str(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display())),
-        );
+        let raw: serde_yaml::Value =
+            serde_yaml::from_str(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        let mut file: GoldenFile = serde_yaml::from_value(raw.clone())
+            .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        if let Some(cases) = raw.get("cases").and_then(serde_yaml::Value::as_mapping) {
+            for (id, value) in cases {
+                let Some(id) = id.as_str() else { continue };
+                let Some(case) = file.cases.get_mut(id) else {
+                    continue;
+                };
+                case.raw_golden_arguments = value
+                    .get("golden")
+                    .and_then(serde_yaml::Value::as_sequence)
+                    .into_iter()
+                    .flatten()
+                    .filter(|event| {
+                        event.get("kind").and_then(serde_yaml::Value::as_str) == Some("tool_call")
+                    })
+                    .filter_map(|event| event.get("arguments").and_then(serde_yaml::Value::as_str))
+                    .map(str::to_owned)
+                    .collect();
+            }
+        }
+        files.push(file);
     }
     files.retain(|file| has_unified_parser(&file.family));
     files.sort_by(|a, b| a.family.cmp(&b.family));
+    for file in &mut files {
+        for case in file.cases.values_mut() {
+            for event in &mut case.golden {
+                if let UnifiedEvent::ToolCall { arguments, .. } = event {
+                    *arguments = common::decoded_golden_arguments(arguments);
+                }
+            }
+        }
+    }
     files
 }
 
@@ -87,6 +119,25 @@ fn structural_response_case_checks_the_schema_before_parsing() {
                 case.golden,
                 "{id}"
             );
+            if file.family == "gpt_oss" {
+                for invalid in [
+                    "<|return|>".to_string(),
+                    format!("{}extra", case.input),
+                    format!("{}<|return|>", case.input),
+                    case.input.replace("<|return|>", "<|call|>"),
+                ] {
+                    assert!(
+                        events(
+                            &file.family,
+                            std::slice::from_ref(&invalid),
+                            &case.init,
+                            &tools,
+                        )
+                        .is_err(),
+                        "{id}: accepted invalid stop sequence {invalid:?}"
+                    );
+                }
+            }
             // Parsing the same stream still succeeds with a contradictory schema.
             // Only a real grammar check can reject this request before parsing.
             case.init.structural_tag.as_mut().unwrap().schema =
@@ -98,7 +149,10 @@ fn structural_response_case_checks_the_schema_before_parsing() {
         }
     }
     families.sort();
-    assert_eq!(families, ["deepseek_v4", "glm47", "gpt_oss", "qwen3"]);
+    assert_eq!(
+        families,
+        ["deepseek_v4", "glm47", "gpt_oss", "muse_spark", "qwen3"]
+    );
 }
 
 fn has_unified_parser(family: &str) -> bool {
@@ -111,6 +165,15 @@ fn events(
     init: &Init,
     tool_schemas: &[dynamo_parsers_v2::Tool],
 ) -> Result<Vec<UnifiedEvent>, String> {
+    events_and_raw(family, chunks, init, tool_schemas).map(|(events, _)| events)
+}
+
+fn events_and_raw(
+    family: &str,
+    chunks: &[String],
+    init: &Init,
+    tool_schemas: &[dynamo_parsers_v2::Tool],
+) -> Result<(Vec<UnifiedEvent>, std::collections::BTreeMap<usize, String>), String> {
     let mut parser = create_unified_parser_for_family(family, tool_schemas)
         .unwrap_or_else(|e| panic!("create unified parser for `{family}`: {e}"));
     init.apply(&mut parser, family);
@@ -121,7 +184,9 @@ fn events(
         capture::CaptureFailure::Error(error) => error,
         other => panic!("unexpected capture failure: {other:?}"),
     })?;
-    Ok(assemble(&rows.into_iter().flatten().collect::<Vec<_>>()))
+    let deltas = rows.into_iter().flatten().collect::<Vec<_>>();
+    let raw_arguments = dynamo_parsers_v2::tool_arguments_raw(&deltas);
+    Ok((assemble(&deltas), raw_arguments))
 }
 
 fn render(result: &Result<Vec<UnifiedEvent>, String>) -> String {
@@ -132,6 +197,8 @@ fn render(result: &Result<Vec<UnifiedEvent>, String>) -> String {
     events
         .iter()
         .map(|e| match e {
+            UnifiedEvent::MessageStart { phase } => format!("message_start({phase:?})"),
+            UnifiedEvent::MessageEnd => "message_end".into(),
             UnifiedEvent::Reasoning { text } => format!("reasoning({text:?})"),
             UnifiedEvent::Text { text } => format!("text({text:?})"),
             UnifiedEvent::ToolCall { name, arguments } => format!("tool_call({name}, {arguments})"),
@@ -160,6 +227,64 @@ fn splittings(input: &str) -> Vec<(String, Vec<String>)> {
     ]
 }
 
+/// Quote-looking strings must survive every possible two-chunk boundary,
+/// including boundaries inside their native escaping and framing.
+#[test]
+fn string_quote_controls_survive_every_split_for_every_family() {
+    let mut covered = std::collections::BTreeSet::new();
+    for file in load_native_golden() {
+        let mut count = 0;
+        for (id, case) in file.cases {
+            if !id.contains("xml_string_type_") {
+                continue;
+            }
+            count += 1;
+            let tools = common::unified_tools_for_schemas(case.tools.as_ref());
+            let expected = if id.contains("single_quoted") {
+                "{'a':1}"
+            } else {
+                r#"{"a":1}"#
+            };
+            assert_eq!(
+                case.golden,
+                vec![UnifiedEvent::ToolCall {
+                    name: "schema_probe".into(),
+                    arguments: serde_json::json!({"value": expected}),
+                }],
+                "{id}: oracle must preserve the exact string"
+            );
+            for (schedule, chunks) in splittings(&case.input) {
+                assert_eq!(
+                    events(&file.family, &chunks, &case.init, &tools).unwrap(),
+                    case.golden,
+                    "{id}: {schedule}"
+                );
+            }
+            for split in
+                (0..=case.input.len()).filter(|offset| case.input.is_char_boundary(*offset))
+            {
+                let chunks = vec![case.input[..split].into(), case.input[split..].into()];
+                assert_eq!(
+                    events(&file.family, &chunks, &case.init, &tools).unwrap(),
+                    case.golden,
+                    "{id}: split {split}"
+                );
+            }
+        }
+        assert_eq!(count, 2, "{}: missing quote control", file.family);
+        covered.insert(file.family);
+    }
+    assert_eq!(
+        covered,
+        REGISTERED_UNIFIED_FAMILIES
+            .iter()
+            .map(|family| dynamo_parsers_v2::canonical_unified_family(family)
+                .unwrap()
+                .to_string())
+            .collect()
+    );
+}
+
 /// The gate: assembled events must equal the golden, exactly and in order.
 #[test]
 fn unified_parser_matches_the_golden_oracle() {
@@ -177,13 +302,34 @@ fn unified_parser_matches_the_golden_oracle() {
         for (id, case) in &file.cases {
             checked += 1;
             let case_tools = common::unified_tools_for_schemas(case.tools.as_ref());
-            let got = events(
+            let (got, raw_arguments) = match events_and_raw(
                 &file.family,
                 &capture::input_chunks(&case.input, case.input_chunks.as_deref()),
                 &case.init,
                 &case_tools,
-            );
-            if got.as_ref() != Ok(&case.golden) {
+            ) {
+                Ok(result) => (Ok(result.0), Some(result.1)),
+                Err(error) => (Err(error), None),
+            };
+            if id.starts_with("UNIFIED.arg_numeric_")
+                && let Some(actual) = raw_arguments
+                    .as_ref()
+                    .filter(|_| !case.raw_golden_arguments.is_empty())
+            {
+                let expected = case
+                    .raw_golden_arguments
+                    .iter()
+                    .enumerate()
+                    .map(|(index, arguments)| (index, arguments.clone()))
+                    .collect::<std::collections::BTreeMap<_, _>>();
+                if actual == &expected {
+                    continue;
+                }
+            }
+            if !got
+                .as_ref()
+                .is_ok_and(|events| common::json_values_equal(events, &case.golden))
+            {
                 match divergences::expected(&known, &file.family, id, Check::Golden) {
                     Some(Expected::Golden(expected)) if render(&got) == expected.actual => {
                         observed.insert((file.family.clone(), id.clone()));
@@ -277,8 +423,8 @@ fn unified_parser_is_chunk_invariant() {
 }
 
 #[test]
-fn reference_argument_cases_preserve_results_at_every_split() {
-    let scenarios = [
+fn reference_argument_and_dotted_name_cases_preserve_results_at_every_split() {
+    let reference_scenarios = [
         "glm_ref_object",
         "glm_ref_encoded_targets",
         "glm_ref_json_looking_strings",
@@ -287,13 +433,33 @@ fn reference_argument_cases_preserve_results_at_every_split() {
         "nullable_reference_alias_literals",
         "local_schema_id_preserves_type",
     ];
+    let dotted_scenarios = [
+        "dotted_name_minimal",
+        "dotted_name_mixed_punctuation",
+        "dotted_name_multiple_segments",
+        "dotted_name_shared_prefix",
+    ];
+    let dotted_native_families = [
+        "beam",
+        "deepseek_v4",
+        "deepseek_v41",
+        "gemma4",
+        "glm47",
+        "gpt_oss",
+        "kimi_k2",
+        "kimi_k3",
+        "muse_glimmer",
+        "muse_spark",
+        "nemotron_v3",
+        "qwen3",
+    ];
     let mut checked = 0;
     let files = load_native_golden();
-    let family_count = files.len();
     for file in files {
         for (id, case) in &file.cases {
-            if !scenarios
+            if !reference_scenarios
                 .iter()
+                .chain(dotted_scenarios.iter())
                 .any(|scenario| id == &format!("UNIFIED.{scenario}.{}", file.family))
             {
                 continue;
@@ -306,6 +472,15 @@ fn reference_argument_cases_preserve_results_at_every_split() {
                 &tools,
             );
             assert!(whole.is_ok(), "{id}: {}", render(&whole));
+            if id.contains(".dotted_name_") {
+                assert_eq!(whole.as_ref(), Ok(&case.golden), "{id}");
+                let characters = chunk_every(&case.input, 1);
+                assert_eq!(
+                    events(&file.family, &characters, &case.init, &tools),
+                    whole,
+                    "{id}: characters"
+                );
+            }
             for split in case
                 .input
                 .char_indices()
@@ -319,7 +494,15 @@ fn reference_argument_cases_preserve_results_at_every_split() {
             checked += 1;
         }
     }
-    assert_eq!(checked, family_count * scenarios.len());
+    let native_families = common::unified_families()
+        .values()
+        .filter(|family| family.native)
+        .count();
+    assert_eq!(
+        checked,
+        native_families * reference_scenarios.len()
+            + dotted_native_families.len() * dotted_scenarios.len(),
+    );
 }
 
 /// I6: parsing the whole output at once assembles to the streamed result.

@@ -19,7 +19,7 @@ These goals govern every tool-calling and reasoning parser, v1 and v2, and are t
 5. **Make a reasonable, bounded attempt to recover — recover only what is provably complete.** A captured value is complete when a delimiter follows it (the next marker such as `<`, or a closing `"` / `}` / `]` / `)`); recover that value — and the call — even when an outer end or wrapper marker is missing. A value that runs straight into end-of-stream with nothing after it is ambiguous: it may be truncated mid-token (is `NY` the whole value, or a cut-off `NYC`?), so drop it — never guess. Keying recovery on this single delimiter-terminated test is what keeps the decision consistent across families: same input shape, same drop/recover outcome. Recovery never invents content the model did not emit, never leaks markup, and `tracing::warn!`s with a stable `why=` field plus small byte counts (never raw model text or arguments). **A published spec overrides this rule (see goal 1):** if the model publishes a parser/regex that requires a fence, honor it — drop when that fence is missing, even though the value is delimiter-terminated — and document the divergence with the spec URL and a verbatim quote (e.g. MiniMax-M2.1 publishes `invoke_regex = re.compile(r"<invoke name=(.*?)</invoke>", re.DOTALL)`, which requires `</invoke>`, so a missing `</invoke>` yields no call). In the v1 batch parsers this rule is carried by the `allow_eof_recovery` flag (finalize / non-streaming only — streaming jails keep it `false`): `true` recovers a call whose outer end/wrapper marker is missing as long as the body still parses (and still drops a body truncated mid-value), `false` drops it. State the consequence in the fixture `reason:` — e.g. `allow_eof_recovery=true, so the complete-but-unterminated call is recovered` or `allow_eof_recovery=false (spec requires the fence), so the call is dropped`. Recovering an inner value whose own close tag is missing — the value is terminated by the next marker — is a separate value-capture concern, not this flag.
 6. **Preserve as much of the original output as possible.** When the spec is silent, `normal_text` is the model output with only the recognized tool-call / reasoning markup spans removed — text before, between, and after calls is kept verbatim. Do not drop surrounding narration.
 7. **Parsing is separate from validation.** Emit a tool call even when its function name is not in the request's tools list; the serving layer validates and rejects unknown tools. This matches vLLM.
-8. **v1 (batch) and v2 (streaming) must always agree.** Fed the same complete output, both paths produce identical results — same calls, same `normal_text`. The only intended difference is mechanism, not output: v1 is the simple, inefficient reference that jails (buffers) the entire response before parsing, while v2 parses token-incrementally and jails only the minimal ambiguous suffix, so it can emit unambiguous text and calls as soon as they arrive (lower latency). v2 also delegates value-typing to the v1 batch parser, so the two stay in agreement by construction. This equivalence is v2's correctness contract, enforced by the `batch_via_stream` conformance test (`conformance/tests/conformance_toolcalling_batch_via_stream.rs`); any intentional stream-vs-batch difference is recorded in its `known_divergences` allowlist.
+8. **v1 and v2 can produce different argument values.** v1 uses the batch parser, while v2 owns its streaming conversion path and preserves exact argument text. `UnifiedEvent.arguments` remains a `serde_json::Value` projection and can lose numeric precision; use `tool_arguments_raw()` when the exact assembled JSON text matters. The `batch_via_stream` conformance test (`conformance/tests/conformance_toolcalling_batch_via_stream.rs`) records intentional differences in its `known_divergences` allowlist.
 9. **Mirror vLLM Rust's contract shape, not necessarily its output.** The types and method names mirror vLLM Rust so vLLM can adopt this crate, but Dynamo may intentionally diverge on output content (e.g. preserve surrounding text where vLLM drops it) — every such divergence carries a `reason:`.
 
 The end-to-end workflow for adding a parser — fetch the chat template, identify the format, prefer an existing parser + config over new code, register, test, render — lives in the `tool-parser-generator` skill under `.agents/skills/tool-parser-generator/`. Adding a family to the **unified** path (one ordered reasoning + content + tool stream, rather than the reasoning-then-tool split) is a different workflow with its own tiers and traps — see [`UNIFIED_PORTING.md`](UNIFIED_PORTING.md). Reasoning parsers follow the same goals; see [`../parsers/v1/src/reasoning/README.md`](../parsers/v1/src/reasoning/README.md).
@@ -42,7 +42,7 @@ Tool-call families:
 | **Harmony** | OpenAI Harmony token stream with `<\|channel\|>`, `<\|message\|>`, `<\|call\|>` | `harmony/harmony_parser.rs` (wraps external `openai_harmony` crate) | gpt-oss-20B / 120B |
 | **Pythonic** | `[func_name(arg=value, ...)]` Python function-call syntax | `pythonic/pythonic_parser.rs` | some Llama variants |
 | **Gemma 4** | Custom: `<\|tool_call>call:name{key:<\|"\|>val<\|"\|>}<tool_call\|>`, bare keys, custom string delimiter | `gemma4/parser.rs` (recursive-descent into `serde_json::Value`) | Google Gemma 4 thinking models |
-| **ATEM** | Recipient-routed channels `<\|start\|>assistant to=<rcpt><\|message\|>...<\|eom\|>` whose tool bodies hold `<atem:invoke name="NAME"><atem:parameter name="KEY">VALUE</atem:parameter></atem:invoke>` | `atem/muse_glimmer_parser.rs` | Muse-Glimmer-30B |
+| **ATEM** | Recipient-routed channels `<\|start\|>assistant to=<rcpt><\|message\|>...<\|eom\|>` whose tool bodies hold `<atem:invoke name="NAME"><atem:parameter name="KEY">VALUE</atem:parameter></atem:invoke>` | `tool_calling/muse_glimmer.rs`, `tool_calling/muse_spark.rs` | Muse Glimmer, Muse Spark |
 
 Reasoning families:
 
@@ -53,9 +53,9 @@ Reasoning families:
 | **Harmony channel** | Hidden `analysis` channel | `gpt_oss_parser.rs` (wraps external `openai_harmony`) | gpt-oss-20B / 120B |
 | **Granite** | Custom start/end tokens | `granite_parser.rs` | IBM Granite |
 | **Gemma 4 channel** | `<\|channel>thought\n...<channel\|>` with role-label prefix stripped | `gemma4_parser.rs` | Google Gemma 4 thinking models |
-| **ATEM channel** | `<\|start\|>assistant to=self<\|message\|>...<\|eom\|>` — the recipient picks the channel, so there is no delimiter pair | `muse_glimmer_parser.rs` | Muse-Glimmer-30B |
+| **ATEM channel** | `<\|start\|>assistant to=self<\|message\|>...<\|eom\|>` — the recipient picks the channel, so there is no delimiter pair; Muse Spark additionally reserves `commentary` as visible text | `unified/muse_glimmer.rs`, `unified/muse_spark.rs` | Muse Glimmer, Muse Spark |
 
-Streaming (v2) implementations exist today for `harmony`, `deepseek_v4` (DSML), `qwen3_coder`, `gemma4`, and `muse_glimmer` (ATEM); the remaining families run on the v1 batch parser until their streaming port lands.
+Streaming (v2) implementations exist today for `harmony`, `deepseek_v4` (DSML), `qwen3_coder`, `gemma4`, `muse_glimmer`, and `muse_spark` (ATEM); the remaining families run on the v1 batch parser until their streaming port lands.
 
 The `deepseek_v4` tool-only selector also accepts V4.1's spaced DSML tags (`<｜DSML｜ calls>`, `<｜DSML｜ invoke ...>`). Both dialects use one scanner with their existing boundary parsers and decoders; there is no separate tool-only selector. Reasoning behavior and V4.1 JSON-body support remain separate changes (#253 and #250).
 
@@ -335,3 +335,32 @@ expected:
 ```
 
 Do not keep inferred Python exception markers after reasoning moves to v2. The YAML should say exactly which parser failed and with what message.
+
+### Muse Spark Open structural tags
+
+The `muse_spark_open` / `muse_spark` structural-tag builder constrains native
+ATEM calls, including qualified tool names, raw scalar parameters, JSON-valued
+containers, required/named choice, and single-call policy. It preserves the
+model's reasoning header and allows one pre-tool commentary message. Auto choice can also constrain the
+final answer inside its native `to=user` envelope.
+
+The grammar must run from the first generated token. An external reasoning gate
+that activates only after a tool channel opens cannot enforce forced choice and
+is rejected. The grammar completes before the checkpoint's end-of-turn stop
+token, allowing the engine to terminate rather than masking EOS. Dynamo configures this ownership for its SGLang and vLLM workers.
+
+Constrained arguments support closed objects with declared properties and
+optional/required fields in schema order; `tool_arguments_any_order` is rejected
+rather than allowing duplicate or missing fields. Strings use native unquoted ATEM text; the Spark
+parser retains their declared string type even for values such as `42` and
+`true`. Enum and constant strings are constrained directly. Other scalar and
+container parameters use JSON Schema validation inside the ATEM envelope.
+Freeform custom input retains its raw, verbatim representation. Non-strict
+tools retain unconstrained parameter values.
+
+Unsupported XML-envelope constraints (for example open top-level argument
+properties, escaped or empty parameter names, and unrestricted text constraints
+on raw string input) return build errors rather than weaker grammars.
+Literal ATEM parameter-closing delimiters inside argument strings are outside
+this native format's qualification. Reserved tool names such as `commentary`
+use the generic `to=tool` channel while retaining their exact function name.
