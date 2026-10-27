@@ -162,8 +162,9 @@ pub(super) fn map_prompt_render_error(error: anyhow::Error) -> PromptRenderError
 /// # Errors
 ///
 /// [`NormalizedArgsRequest::new`] fails when the messages cannot be converted
-/// to JSON, with the same error the formatter would return without the
-/// wrapper.
+/// to JSON. The caller returns that as an invalid request, as the formatter
+/// would without the wrapper, though a formatter may word its own error
+/// differently.
 pub(super) struct NormalizedArgsRequest<'a> {
     inner: &'a dyn OAIChatLikeRequest,
     messages: serde_json::Value,
