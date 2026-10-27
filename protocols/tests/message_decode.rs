@@ -306,22 +306,24 @@ fn decoder_matches_the_flatten_oracle_from_a_value() {
 /// in a skipped value is dropped with it, where the oracle refused it.
 #[test]
 fn a_skipped_value_is_not_parsed() {
-    for input in [
-        r#"{"role":"user","content":"hi","x":1e400}"#,
-        r#"{"role":"user","content":"hi","x":{"a":[-1e400]}}"#,
-        r#"{"role":"user","content":"hi","x":"\ud800"}"#,
-        r#"{"role":"assistant","audio":{"id":"a","x":1e400}}"#,
+    // With serde_json's `arbitrary_precision`, which another crate can turn
+    // on, a number keeps its digits and is never out of range, so only the
+    // escape differs.
+    let numbers = !arbitrary_precision();
+    for (input, number) in [
+        (r#"{"role":"user","content":"hi","x":1e400}"#, true),
+        (r#"{"role":"user","content":"hi","x":{"a":[-1e400]}}"#, true),
+        (r#"{"role":"assistant","audio":{"id":"a","x":1e400}}"#, true),
+        (r#"{"role":"user","content":"hi","x":"\ud800"}"#, false),
     ] {
-        assert!(serde_json::from_str::<Oracle>(input).is_err(), "{input}");
+        let oracle = serde_json::from_str::<Oracle>(input);
+        assert_eq!(oracle.is_err(), numbers || !number, "{input}");
         serde_json::from_str::<ChatCompletionRequestMessage>(input)
             .unwrap_or_else(|error| panic!("{input}: {error}"));
     }
     // With `role` last, the tagged enum buffers the message, and refuses it.
-    let input = r#"{"content":"hi","x":1e400,"role":"user"}"#;
-    assert_eq!(
-        text(serde_json::from_str::<ChatCompletionRequestMessage>(input).unwrap_err()),
-        "number out of range"
-    );
+    let input = r#"{"content":"hi","x":"\ud800","role":"user"}"#;
+    assert!(serde_json::from_str::<ChatCompletionRequestMessage>(input).is_err());
 }
 
 #[test]
