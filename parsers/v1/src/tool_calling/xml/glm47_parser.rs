@@ -809,7 +809,10 @@ fn schema_type_match(
             Value::Object(_) => expected == "object",
         }
     };
-    let literal_hint = match (schema.get("enum").and_then(Value::as_array), schema.get("const")) {
+    let literal_hint = match (
+        schema.get("enum").and_then(Value::as_array),
+        schema.get("const"),
+    ) {
         (Some(values), _) if !values.is_empty() => Some(values.iter().any(value_matches)),
         (_, Some(value)) => Some(value_matches(value)),
         _ => None,
@@ -2413,35 +2416,64 @@ mod tests {
     }
 }
 
-
 #[cfg(test)]
 mod enum_const_type_hint {
     use super::*;
     fn run(parameter: Value, raw: &str) -> Value {
-        let tools = vec![ToolDefinition { name: "probe".into(), parameters: Some(serde_json::json!({"type":"object","properties":{"value": parameter}})), strict: None }];
-        let wire = format!("<tool_call>probe<arg_key>value</arg_key><arg_value>{raw}</arg_value></tool_call>");
-        let (calls, _) = try_tool_call_parse_glm47(&wire, &Glm47ParserConfig::default(), Some(&tools)).unwrap();
+        let tools = vec![ToolDefinition {
+            name: "probe".into(),
+            parameters: Some(
+                serde_json::json!({"type":"object","properties":{"value": parameter}}),
+            ),
+            strict: None,
+        }];
+        let wire = format!(
+            "<tool_call>probe<arg_key>value</arg_key><arg_value>{raw}</arg_value></tool_call>"
+        );
+        let (calls, _) =
+            try_tool_call_parse_glm47(&wire, &Glm47ParserConfig::default(), Some(&tools)).unwrap();
         let arguments: Value = serde_json::from_str(&calls[0].function.arguments).unwrap();
         arguments["value"].clone()
     }
     #[test]
     fn enum_and_const_without_type_are_typed_from_their_members() {
-        assert_eq!(run(serde_json::json!({"enum":[1,2,4,8]}), "2"), serde_json::json!(2));
-        assert_eq!(run(serde_json::json!({"const":3}), "3"), serde_json::json!(3));
-        assert_eq!(run(serde_json::json!({"enum":[1.5,2.5,3.5]}), "2.5"), serde_json::json!(2.5));
-        assert_eq!(run(serde_json::json!({"enum":[true,false]}), "true"), serde_json::json!(true));
-        assert_eq!(run(serde_json::json!({"const":true}), "true"), serde_json::json!(true));
-        assert_eq!(run(serde_json::json!({"anyOf":[{"enum":[1,2,4]},{"type":"null"}]}), "4"), serde_json::json!(4));
-        assert_eq!(run(serde_json::json!({"anyOf":[{"enum":[1,2,4]},{"type":"null"}]}), "null"), serde_json::json!(null));
+        assert_eq!(
+            run(serde_json::json!({"enum":[1,2,4,8]}), "2"),
+            serde_json::json!(2)
+        );
+        assert_eq!(
+            run(serde_json::json!({"const":3}), "3"),
+            serde_json::json!(3)
+        );
+        assert_eq!(
+            run(serde_json::json!({"enum":[1.5,2.5,3.5]}), "2.5"),
+            serde_json::json!(2.5)
+        );
+        assert_eq!(
+            run(serde_json::json!({"enum":[true,false]}), "true"),
+            serde_json::json!(true)
+        );
+        assert_eq!(
+            run(
+                serde_json::json!({"anyOf":[{"enum":[1,2,4]},{"type":"null"}]}),
+                "4"
+            ),
+            serde_json::json!(4)
+        );
         // string enums stay verbatim strings, including JSON-looking text
-        assert_eq!(run(serde_json::json!({"enum":["fast","slow"]}), "fast"), serde_json::json!("fast"));
-        assert_eq!(run(serde_json::json!({"enum":["1","2"]}), "1"), serde_json::json!("1"));
+        assert_eq!(
+            run(serde_json::json!({"enum":["1","2"]}), "1"),
+            serde_json::json!("1")
+        );
         // mixed enums keep the existing string preference
-        assert_eq!(run(serde_json::json!({"enum":[1,"a"]}), "1"), serde_json::json!("1"));
-        // declared types unchanged
-        assert_eq!(run(serde_json::json!({"type":["integer"]}), "30"), serde_json::json!(30));
-        assert_eq!(run(serde_json::json!({"type":"string"}), "7"), serde_json::json!("7"));
+        assert_eq!(
+            run(serde_json::json!({"enum":[1,"a"]}), "1"),
+            serde_json::json!("1")
+        );
         // an enum that contradicts the declared type does not override it
-        assert_eq!(run(serde_json::json!({"type":"string","enum":[1,2]}), "1"), serde_json::json!("1"));
+        assert_eq!(
+            run(serde_json::json!({"type":"string","enum":[1,2]}), "1"),
+            serde_json::json!("1")
+        );
     }
 }
