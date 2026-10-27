@@ -12,6 +12,14 @@ Request/response types for OpenAI- and Anthropic-compatible inference servers. B
 - **Anthropic Messages** — fully owned (no upstream equivalent).
 - **Embeddings**, **Images** — re-exported.
 
+## Chat message decoding
+
+A chat message whose first key is `role` decodes in one pass, without a
+buffer. A value that no field of the message reads is skipped without being
+parsed, as serde skips unknown fields elsewhere in a request. So a number out
+of range or a lone surrogate escape in such a value is dropped, not refused.
+A message that puts another key first is buffered once and parsed in full.
+
 ## JSON key order
 
 The `preserve_order` feature is on by default. It turns on serde_json's

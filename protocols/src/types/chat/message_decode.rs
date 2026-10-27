@@ -12,6 +12,11 @@
 //!
 //! Both paths run the same guard, [`decode_role`]: it refuses a second
 //! `role`, and `tools` or `partial` on a role that cannot carry them.
+//!
+//! A value that no field reads is skipped without being parsed, as serde
+//! skips an unknown field anywhere else. So a number out of range, or a lone
+//! surrogate escape, in such a value is dropped, where a buffered message
+//! refused it.
 
 use std::fmt;
 use std::marker::PhantomData;

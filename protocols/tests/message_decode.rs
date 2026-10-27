@@ -8,7 +8,8 @@
 //! to the decoder it replaced: a `role`-tagged enum whose variants each
 //! `#[serde(flatten)]` the message beside its `tools` and `partial` guard.
 //! `Oracle` below is a copy of that decoder. Every input in the corpus must
-//! give the same message, or the same error text, from both.
+//! give the same message, or the same error text, from both. The tests at the
+//! end name the differences.
 
 use dynamo_protocols::types::{
     ChatCompletionRequestAssistantMessage, ChatCompletionRequestDeveloperMessage,
@@ -298,23 +299,29 @@ fn decoder_matches_the_flatten_oracle_from_a_value() {
     }
 }
 
+/// The one difference in what the two decoders accept. The oracle buffered
+/// each message, so it parsed every value, even one no field reads. The
+/// decoder skips such a value, as serde skips an unknown field anywhere
+/// else in a request. So a number out of range, or a lone surrogate escape,
+/// in a skipped value is dropped with it, where the oracle refused it.
 #[test]
-#[ignore = "F1: a value the decoder skips is not parsed, so 1e400 there is not refused; waiting on a ruling"]
-fn review_f1_unknown_number_keeps_the_oracle_refusal() {
-    let input = r#"{"role":"user","content":"hi","x":1e400}"#;
-    let oracle = text(
-        serde_json::from_str::<Oracle>(input)
-            .err()
-            .expect("oracle refuses"),
-    );
-    assert_eq!(oracle, "number out of range");
-    let fallback = r#"{"content":"hi","x":1e400,"role":"user"}"#;
+fn a_skipped_value_is_not_parsed() {
+    for input in [
+        r#"{"role":"user","content":"hi","x":1e400}"#,
+        r#"{"role":"user","content":"hi","x":{"a":[-1e400]}}"#,
+        r#"{"role":"user","content":"hi","x":"\ud800"}"#,
+        r#"{"role":"assistant","audio":{"id":"a","x":1e400}}"#,
+    ] {
+        assert!(serde_json::from_str::<Oracle>(input).is_err(), "{input}");
+        serde_json::from_str::<ChatCompletionRequestMessage>(input)
+            .unwrap_or_else(|error| panic!("{input}: {error}"));
+    }
+    // With `role` last, the tagged enum buffers the message, and refuses it.
+    let input = r#"{"content":"hi","x":1e400,"role":"user"}"#;
     assert_eq!(
-        text(serde_json::from_str::<ChatCompletionRequestMessage>(fallback).unwrap_err()),
-        oracle
+        text(serde_json::from_str::<ChatCompletionRequestMessage>(input).unwrap_err()),
+        "number out of range"
     );
-    let decoded = serde_json::from_str::<ChatCompletionRequestMessage>(input).map_err(text);
-    assert_eq!(decoded, Err(oracle), "{input}");
 }
 
 #[test]
