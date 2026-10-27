@@ -531,3 +531,98 @@ fn rendering_matches_dynamo() {
     }
     eprintln!("render parity: {cases} cases, {errors} of them client errors");
 }
+
+#[test]
+#[ignore = "F1: raw prompts eagerly materialize discarded messages when normalization is enabled"]
+fn review_raw_prompt_skips_message_materialization() {
+    use dynamo_renderer::{OAIChatLikeRequest, TextInput};
+    use std::cell::Cell;
+
+    struct RawRequest {
+        inner: NvCreateChatCompletionRequest,
+        message_reads: Cell<usize>,
+    }
+
+    impl OAIChatLikeRequest for RawRequest {
+        fn model(&self) -> String {
+            self.inner.model()
+        }
+
+        fn messages(&self) -> minijinja::Value {
+            self.message_reads.set(self.message_reads.get() + 1);
+            self.inner.messages()
+        }
+
+        fn typed_messages(
+            &self,
+        ) -> Option<&[dynamo_protocols::types::ChatCompletionRequestMessage]> {
+            self.message_reads.set(self.message_reads.get() + 1);
+            self.inner.typed_messages()
+        }
+
+        fn should_add_generation_prompt(&self) -> bool {
+            self.inner.should_add_generation_prompt()
+        }
+
+        fn extract_text(&self) -> Option<TextInput> {
+            self.inner.extract_text()
+        }
+    }
+
+    impl NvExtProvider for RawRequest {
+        fn nvext(&self) -> Option<&oracle::NvExt> {
+            self.inner.nvext()
+        }
+
+        fn raw_prompt(&self) -> Option<String> {
+            Some("raw text".to_string())
+        }
+    }
+
+    impl CommonExtProvider for RawRequest {
+        fn get_continue_final_message(&self) -> Option<bool> {
+            None
+        }
+    }
+
+    let request = RawRequest {
+        inner: serde_json::from_value(json!({
+            "model": "m",
+            "messages": [{"role": "user", "content": "x".repeat(4 * 1024 * 1024)}],
+            "nvext": {"use_raw_prompt": true}
+        }))
+        .unwrap(),
+        message_reads: Cell::new(0),
+    };
+    let preprocessor = OpenAIPreprocessor {
+        formatter: Arc::new(dynamo_renderer::NoOpFormatter),
+        normalize_tool_call_args: true,
+        selected_family: None,
+    };
+    let old = preprocessor.apply_template(&request).unwrap().unwrap();
+    assert_eq!(old.as_str(), "raw text");
+    assert_eq!(
+        request.message_reads.get(),
+        0,
+        "Dynamo bypasses the messages"
+    );
+
+    let new = render_chat_prompt(
+        preprocessor.formatter.as_ref(),
+        &request,
+        ChatPromptOptions {
+            normalize_tool_call_args: true,
+            use_raw_prompt: true,
+            continue_final_message: false,
+        },
+        || request.raw_prompt(),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(new.as_str(), old.as_str());
+    assert_eq!(
+        request.message_reads.get(),
+        0,
+        "raw prompts must bypass message materialization"
+    );
+}
