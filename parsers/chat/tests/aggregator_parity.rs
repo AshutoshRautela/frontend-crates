@@ -359,6 +359,7 @@ async fn moved_aggregator_matches_dynamo_llm() {
     let on_main = numbers_kept_as_written();
     let mut drift = std::collections::HashMap::new();
     let mut mismatches = Vec::new();
+    let mut drifted = Vec::new();
     for case in &fixture.cases {
         let name = case[0].as_str().expect("name");
         let option_values = &fixture.options[case[1].as_u64().expect("options") as usize];
@@ -378,6 +379,13 @@ async fn moved_aggregator_matches_dynamo_llm() {
                 && let Some(kind) = main_drift(&json!([input, option_values]), expected, &actual)
             {
                 *drift.entry(kind).or_insert(0usize) += 1;
+                drifted.push(json!({
+                    "name": name,
+                    "version": format!("{version:?}"),
+                    "drift": format!("{kind:?}"),
+                    "expected": expected,
+                    "actual": actual,
+                }));
                 continue;
             }
             {
@@ -390,8 +398,13 @@ async fn moved_aggregator_matches_dynamo_llm() {
             }
         }
     }
+    // `PARITY_DUMP=<path>` writes every run that differs, allowed or not.
     if let Ok(path) = std::env::var("PARITY_DUMP") {
-        let lines: Vec<String> = mismatches.iter().map(Value::to_string).collect();
+        let lines: Vec<String> = mismatches
+            .iter()
+            .chain(&drifted)
+            .map(Value::to_string)
+            .collect();
         std::fs::write(path, lines.join("\n")).expect("write PARITY_DUMP");
     }
     assert!(
