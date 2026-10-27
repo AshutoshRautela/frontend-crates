@@ -585,6 +585,17 @@ fn structured_streams() -> Vec<(&'static str, Vec<In>)> {
         In::data(chunk(json!([delta(0, json!({"content": "Hi"}), Some("stop"))]))),
     ]));
     cases.push(("no_items", vec![]));
+    // The last chunk's service tier wins, even when it is absent; the last
+    // fingerprint that was sent wins.
+    let mut first = chunk(json!([delta(0, json!({"role": "assistant", "content": "Hi"}), None)]));
+    first["system_fingerprint"] = json!("fp-1");
+    first["service_tier"] = json!("default");
+    let mut second = chunk(json!([delta(0, json!({"content": "!"}), None)]));
+    second["system_fingerprint"] = json!("fp-2");
+    second["service_tier"] = json!("flex");
+    let third = chunk(json!([delta(0, json!({}), Some("stop"))]));
+    cases.push(("envelope_metadata", vec![In::data(first.clone()), In::data(second.clone()), In::data(third)]));
+    cases.push(("envelope_metadata_kept", vec![In::data(first), In::data(second)]));
     cases.push(("error_after_text", vec![
         In::data(chunk(json!([delta(0, json!({"role": "assistant", "content": "Hi"}), None)]))),
         In::Error("backend failed".into()),

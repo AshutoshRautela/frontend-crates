@@ -3,7 +3,7 @@
 
 //! Parity with dynamo-llm's chat aggregator.
 //!
-//! `tests/data/aggregator_parity.json.gz` holds 73,890 `stream: false` replies
+//! `tests/data/aggregator_parity.json.gz` holds 74,124 `stream: false` replies
 //! and the response that dynamo-llm's own
 //! `NvCreateChatCompletionResponse::from_annotated_stream` gave for each, before
 //! the aggregator moved here. It was recorded at ai-dynamo/dynamo
@@ -15,19 +15,20 @@
 //! and `2`. This test runs every case at all three versions and expects that
 //! version's output.
 //!
-//! On frontend-crates `main`, 1,956 of the 221,670 runs differ, in two ways.
+//! On frontend-crates `main`, 1,956 of the 222,372 runs differ, in two ways.
 //! dynamo-parsers-v2 0.8 turns on serde_json `arbitrary_precision` for every
 //! crate in the build, and the parsers keep a number as the model wrote it
 //! (frontend-crates #339):
 //!
 //! - [`MainDrift::NumberText`] (1,336 runs): a tool call's arguments hold the
-//!   same JSON value with other number text, `1e+3` where dynamo sent
+//!   same exact values with other number text, `1e+3` where dynamo sent
 //!   `1000.0`.
 //! - [`MainDrift::HugeNumberKept`] (620 runs): a call whose arguments hold
 //!   `1e400`. dynamo cannot parse that number, so it drops the call or never
 //!   finds it. With `arbitrary_precision`, the aggregator's own argument check
 //!   and the parsers accept it, and the call reaches the client. When the call
-//!   comes from a guided-JSON fallback, the content changes with it.
+//!   comes from a guided-JSON fallback, the content changes with it. Nothing
+//!   else may change.
 //!
 //! The test pins both counts. On the `dynamo-parsers-v2-v0.7.35` tag, with
 //! dynamo-parsers 10.0.7 (the versions dynamo pins), every run matches.
@@ -198,20 +199,41 @@ fn tool_calls(output: &Value) -> Vec<&Value> {
         .collect()
 }
 
-/// Every number as an `f64`, so `1e+3` and `1000.0` compare equal.
-fn numbers_as_f64(value: &mut Value) {
+/// A number's exact value as `<digits>e<exponent>`, so `1e+3`, `1000`, and
+/// `1000.0` compare equal and `9007199254740992` and `9007199254740993` do not.
+fn exact_number(text: &str) -> String {
+    let (sign, rest) = text
+        .strip_prefix('-')
+        .map_or(("", text), |rest| ("-", rest));
+    let (mantissa, exponent) = match rest.find(['e', 'E']) {
+        Some(at) => (
+            &rest[..at],
+            rest[at + 1..].parse::<i64>().expect("exponent"),
+        ),
+        None => (rest, 0),
+    };
+    let (whole, fraction) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+    let digits = format!("{whole}{fraction}");
+    let digits = digits.trim_start_matches('0');
+    if digits.is_empty() {
+        return "0".to_string();
+    }
+    let significant = digits.trim_end_matches('0');
+    let exponent = exponent - fraction.len() as i64 + (digits.len() - significant.len()) as i64;
+    format!("{sign}{significant}e{exponent}")
+}
+
+/// Every number as its exact value, as a string.
+fn exact_numbers(value: &mut Value) {
     match value {
-        Value::Number(number) => {
-            let float = number.as_f64().expect("finite number");
-            *value = json!(float);
-        }
-        Value::Array(items) => items.iter_mut().for_each(numbers_as_f64),
-        Value::Object(map) => map.values_mut().for_each(numbers_as_f64),
+        Value::Number(number) => *value = json!(exact_number(&number.to_string())),
+        Value::Array(items) => items.iter_mut().for_each(exact_numbers),
+        Value::Object(map) => map.values_mut().for_each(exact_numbers),
         _ => {}
     }
 }
 
-/// Each call's arguments parsed, with numbers as `f64`.
+/// Each call's arguments parsed, with numbers as exact values.
 fn with_parsed_arguments(output: &Value) -> Value {
     let mut output = output.clone();
     for choice in output["ok"]["choices"].as_array_mut().into_iter().flatten() {
@@ -225,7 +247,7 @@ fn with_parsed_arguments(output: &Value) -> Value {
                 .as_str()
                 .and_then(|text| serde_json::from_str(text).ok())
             {
-                numbers_as_f64(&mut parsed);
+                exact_numbers(&mut parsed);
                 *arguments = parsed;
             }
         }
@@ -233,18 +255,70 @@ fn with_parsed_arguments(output: &Value) -> Value {
     output
 }
 
-fn main_drift(expected: &Value, actual: &Value) -> Option<MainDrift> {
+/// `actual` with the kept call taken back out: no tool calls, the finish
+/// reason the call turned into `tool_calls` restored, the empty wrapper a
+/// guided-JSON fallback leaves restored to dynamo's content, and reasoning
+/// that dynamo moved to content (because it had no call) moved again.
+fn without_kept_call(expected: &Value, actual: &Value) -> Value {
+    let mut actual = actual.clone();
+    let expected_choices = expected["ok"]["choices"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    for (choice, expected) in actual["ok"]["choices"]
+        .as_array_mut()
+        .into_iter()
+        .flatten()
+        .zip(&expected_choices)
+    {
+        let message = choice["message"].as_object_mut().expect("message");
+        message.remove("tool_calls");
+        if message.get("content") == Some(&json!("<tool_call>\n\n</tool_call>")) {
+            message.insert("content".into(), expected["message"]["content"].clone());
+        }
+        if message.get("content") == Some(&Value::Null)
+            && expected["message"].get("reasoning_content").is_none()
+            && message.get("reasoning_content") == expected["message"].get("content")
+        {
+            let reasoning = message.remove("reasoning_content").expect("reasoning");
+            message.insert("content".into(), reasoning);
+        }
+        if choice["finish_reason"] == json!("tool_calls")
+            && matches!(expected["finish_reason"].as_str(), None | Some("stop"))
+        {
+            choice["finish_reason"] = expected["finish_reason"].clone();
+        }
+    }
+    actual
+}
+
+/// Every string in the input and the request options, joined: a kept call's
+/// name and ID must come from one of them, or the ID is generated.
+fn input_text(value: &Value, text: &mut String) {
+    match value {
+        Value::String(item) => text.push_str(item),
+        Value::Array(items) => items.iter().for_each(|item| input_text(item, text)),
+        Value::Object(map) => map.values().for_each(|item| input_text(item, text)),
+        _ => {}
+    }
+}
+
+fn main_drift(input: &Value, expected: &Value, actual: &Value) -> Option<MainDrift> {
     let expected_calls = tool_calls(expected);
     let actual_calls = tool_calls(actual);
+    let mut sent = String::new();
+    input_text(input, &mut sent);
     if expected_calls.is_empty()
         && !actual_calls.is_empty()
         && actual_calls.iter().all(|call| {
-            call["function"]["arguments"]
-                .as_str()
-                .is_some_and(|arguments| {
-                    arguments.contains("1e400") || arguments.contains("1e+400")
-                })
+            let arguments = call["function"]["arguments"].as_str().unwrap_or_default();
+            let name = call["function"]["name"].as_str().unwrap_or_default();
+            let id = call["id"].as_str().unwrap_or_default();
+            (arguments.contains("1e400") || arguments.contains("1e+400"))
+                && sent.contains(name)
+                && (matches!(id, "call-*" | "call_*") || sent.contains(id))
         })
+        && &without_kept_call(expected, actual) == expected
     {
         return Some(MainDrift::HugeNumberKept);
     }
@@ -281,7 +355,7 @@ async fn run(input: &Value, options: &AggregatorOptions) -> Value {
 #[tokio::test]
 async fn moved_aggregator_matches_dynamo_llm() {
     let fixture = fixture();
-    assert_eq!(fixture.cases.len(), 73_890);
+    assert_eq!(fixture.cases.len(), 74_124);
     let on_main = numbers_kept_as_written();
     let mut drift = std::collections::HashMap::new();
     let mut mismatches = Vec::new();
@@ -300,7 +374,9 @@ async fn moved_aggregator_matches_dynamo_llm() {
             if &actual == expected {
                 continue;
             }
-            if on_main && let Some(kind) = main_drift(expected, &actual) {
+            if on_main
+                && let Some(kind) = main_drift(&json!([input, option_values]), expected, &actual)
+            {
                 *drift.entry(kind).or_insert(0usize) += 1;
                 continue;
             }
@@ -342,22 +418,28 @@ async fn moved_aggregator_matches_dynamo_llm() {
 }
 
 #[tokio::test]
-#[ignore = "F1: huge-number drift accepts unrelated response changes"]
 async fn main_drift_rejects_unrelated_huge_number_changes() {
     let fixture = fixture();
     let name = "structured/Some(\"glm47\")/Some(\"glm45\")/big_number_args/stop/base";
     let case = fixture.cases.iter().find(|case| case[0] == name).unwrap();
     let expected = &fixture.outputs[case[5].as_u64().unwrap() as usize];
+    let input = &fixture.inputs[case[2].as_u64().unwrap() as usize];
+    let option_values = &fixture.options[case[1].as_u64().unwrap() as usize];
     let actual = run(
-        &fixture.inputs[case[2].as_u64().unwrap() as usize],
+        input,
         &options(
             &fixture.options[case[1].as_u64().unwrap() as usize],
             ParserVersion::V2,
         ),
     )
     .await;
+    if !numbers_kept_as_written() {
+        // Without `arbitrary_precision` nothing drifts.
+        assert_eq!(&actual, expected);
+        return;
+    }
     assert_eq!(
-        main_drift(expected, &actual),
+        main_drift(&json!([input, option_values]), expected, &actual),
         Some(MainDrift::HugeNumberKept)
     );
 
@@ -387,13 +469,13 @@ async fn main_drift_rejects_unrelated_huge_number_changes() {
     ] {
         let mut changed = actual.clone();
         *changed.pointer_mut(pointer).unwrap() = replacement;
-        if main_drift(expected, &changed).is_some() {
+        if main_drift(&json!([input, option_values]), expected, &changed).is_some() {
             admitted.push(label);
         }
     }
     let mut changed_model = actual;
     changed_model["ok"]["model"] = json!("different-model");
-    if main_drift(expected, &changed_model).is_some() {
+    if main_drift(&json!([input, option_values]), expected, &changed_model).is_some() {
         admitted.push("model");
     }
     assert!(
@@ -403,7 +485,6 @@ async fn main_drift_rejects_unrelated_huge_number_changes() {
 }
 
 #[test]
-#[ignore = "F1: f64 comparison accepts changed integer argument values"]
 fn main_drift_rejects_changed_integer_values() {
     let expected = json!({"ok": {"choices": [{"message": {"tool_calls": [{
         "id": "call_a", "type": "function", "function": {
@@ -413,11 +494,10 @@ fn main_drift_rejects_changed_integer_values() {
     let mut actual = expected.clone();
     actual["ok"]["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"] =
         json!("{\"count\":9007199254740993}");
-    assert_eq!(main_drift(&expected, &actual), None);
+    assert_eq!(main_drift(&json!([]), &expected, &actual), None);
 }
 
 #[test]
-#[ignore = "F2: no replay input exercises a nonempty fingerprint or service tier"]
 fn replay_covers_optional_envelope_metadata() {
     let fixture = fixture();
     let missing: Vec<_> = ["system_fingerprint", "service_tier"]
