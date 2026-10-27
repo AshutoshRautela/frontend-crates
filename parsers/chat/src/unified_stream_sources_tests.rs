@@ -1203,3 +1203,101 @@ fn reset_ranges_for_other_bytes_are_refused_before_emission() {
     );
     check_sources(&output, &texts).unwrap();
 }
+
+#[test]
+fn disabling_sources_before_usage_flush_refuses_undated_held_text() {
+    #[derive(Clone)]
+    struct OptionalSources {
+        data: Slotted,
+        enabled: bool,
+    }
+
+    impl SourceSlot for OptionalSources {
+        fn sources(&self) -> Option<&[ChoiceSources]> {
+            self.enabled.then_some(self.data.slot.as_slice())
+        }
+
+        fn sources_mut(&mut self) -> Option<&mut Vec<ChoiceSources>> {
+            self.enabled.then_some(&mut self.data.slot)
+        }
+    }
+
+    impl UnifiedStreamChunk for OptionalSources {
+        fn inner(&self) -> &CreateChatCompletionStreamResponse {
+            self.data.inner()
+        }
+
+        fn inner_mut(&mut self) -> &mut CreateChatCompletionStreamResponse {
+            self.data.inner_mut()
+        }
+
+        fn tool_call_completion(&self) -> &[ToolCallCompletion] {
+            self.data.tool_call_completion()
+        }
+
+        fn tool_call_completion_mut(&mut self) -> &mut Vec<ToolCallCompletion> {
+            self.data.tool_call_completion_mut()
+        }
+
+        fn clear_nvext(&mut self) {
+            self.data.clear_nvext();
+        }
+
+        fn clear_llm_metrics(&mut self) {
+            self.data.clear_llm_metrics();
+        }
+
+        fn scrub_synthetic(&mut self) {
+            self.data.scrub_synthetic();
+        }
+    }
+
+    let _parser = ParserOverride::install(false);
+    let mut usage = chunk("", false);
+    let data = usage.data.as_mut().unwrap();
+    data.inner.choices.clear();
+    data.inner.usage = Some(
+        serde_json::from_value(json!({
+            "prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2
+        }))
+        .unwrap(),
+    );
+    let (input, _) = with_slots(&[text_chunk(0, Some("<"), None, false), usage]);
+    let input = input
+        .into_iter()
+        .enumerate()
+        .map(|(position, item)| Annotated {
+            data: item.data.map(|data| OptionalSources {
+                data,
+                enabled: position == 0,
+            }),
+            id: item.id,
+            event: item.event,
+            comment: item.comment,
+            error: item.error,
+        })
+        .collect();
+    let output = Request::native("glm47").run(input);
+    let emitted: Vec<_> = output
+        .iter()
+        .filter_map(|item| item.data.as_ref())
+        .map(|data| (&data.data.chunk.inner.choices, data.sources()))
+        .collect();
+    assert!(
+        output.last().is_some_and(Annotated::is_error),
+        "disabling recording emitted held text without a slot: {emitted:?}"
+    );
+    assert!(
+        output
+            .iter()
+            .filter_map(|item| item.data.as_ref())
+            .all(|data| {
+                data.sources().is_some()
+                    && data
+                        .inner()
+                        .choices
+                        .iter()
+                        .all(|choice| text_len(choice.delta.content.as_ref()) == 0)
+            })
+    );
+}
