@@ -335,3 +335,28 @@ fn review_f2_unknown_numeric_map_keys_keep_the_oracle_value() {
         assert_eq!(decoded, Ok(oracle));
     }
 }
+
+#[test]
+#[ignore = "F3: an inner field error masks the oracle error for a duplicate guard field"]
+fn review_f3_duplicate_guard_fields_keep_error_precedence() {
+    let inputs = [
+        r#"{"role":"user","content":5,"partial":null,"partial":null}"#,
+        r#"{"content":5,"partial":null,"partial":null,"role":"user"}"#,
+    ];
+    let oracle: Vec<_> = inputs
+        .iter()
+        .map(|input| {
+            text(
+                serde_json::from_str::<Oracle>(input)
+                    .err()
+                    .expect("oracle refuses"),
+            )
+        })
+        .collect();
+    assert_eq!(oracle, vec!["duplicate field `partial`"; inputs.len()]);
+    let decoded: Vec<_> = inputs
+        .iter()
+        .map(|input| text(serde_json::from_str::<ChatCompletionRequestMessage>(input).unwrap_err()))
+        .collect();
+    assert_eq!(decoded, oracle);
+}
