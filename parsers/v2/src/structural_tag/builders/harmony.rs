@@ -123,7 +123,8 @@ static FORMAT: TemplatedToolCallFormat = TemplatedToolCallFormat {
     // https://github.com/mlc-ai/xgrammar/issues/701
     // tool_call_end: "<|call|>",
     tool_call_end: "",
-    tool_call_trigger: "<|channel|>commentary to=functions.",
+    // Enter before the excluded `to=functions.` completes, preserving ordinary commentary.
+    tool_call_trigger: "<|channel|>commentary to=functions",
     first_tool_call_prefix: "",
     tool_call_separator: "<|start|>assistant",
     arguments_style: JsonSchemaStyle::Json,

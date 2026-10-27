@@ -23,6 +23,7 @@ jobs:
       pull-requests: read
     outputs:
       conformance: ${{ steps.filter.outputs.conformance }}
+      structural-tag: ${{ steps.filter.outputs.structural-tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -32,10 +33,38 @@ jobs:
         uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
         with:
           filters: |
+            structural-tag:
+              - 'parsers/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
+              - 'conformance/utils/structural-tag-requirements.in'
+              - '.github/workflows/ci.yml'
             conformance:
               - 'conformance/**'
               - 'parsers/**'
               - '.github/workflows/ci.yml'
+
+  structural-tag-compat:
+    needs: changes
+    if: ${{ needs.changes.outputs.structural-tag == 'true' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Install Rust
+        run: rustup toolchain install
+      - name: Install lean XGrammar 0.2.7 compatibility verifier
+        run: |
+          python3 -m venv /tmp/structural-tag-compat
+          /tmp/structural-tag-compat/bin/pip install --no-deps -r conformance/utils/structural-tag-requirements.in
+          /tmp/structural-tag-compat/bin/pip install --no-deps xgrammar==0.2.7
+      - name: Execute structural-tag contracts
+        env:
+          CONFORMANCE_GRAMMAR_PYTHON: /tmp/structural-tag-compat/bin/python
+          CONFORMANCE_GRAMMAR_VERSION: "0.2.7"
+        run: cargo test --locked -p dynamo-parsers-v2 --test structural_tag_xgrammar -- --ignored --nocapture
 
   rust:
     runs-on:
@@ -77,6 +106,9 @@ jobs:
           python3 -m venv /tmp/structural-tag-venv
           /tmp/structural-tag-venv/bin/pip install --no-deps -r conformance/utils/structural-tag-requirements.in
           echo "CONFORMANCE_GRAMMAR_PYTHON=/tmp/structural-tag-venv/bin/python" >> "$GITHUB_ENV"
+
+      - name: Execute structural-tag contracts with the pinned verifier
+        run: cargo test --locked -p dynamo-parsers-v2 --test structural_tag_xgrammar -- --ignored --nocapture
 
       # nextest runs test binaries concurrently; doctests run separately below.
       - name: Run tests

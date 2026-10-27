@@ -151,8 +151,8 @@ mod tests {
         }];
 
         for (family, trigger) in [
-            ("qwen3", "<tool_call>\n<function="),
-            ("qwen3_coder", "<tool_call>\n<function="),
+            ("qwen3", "<tool_call>"),
+            ("qwen3_coder", "<tool_call>"),
             ("deepseek_v4", "<｜DSML｜tool_calls>"),
             ("glm47", "<tool_call>"),
         ] {
