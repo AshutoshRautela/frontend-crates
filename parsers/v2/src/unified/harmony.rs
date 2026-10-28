@@ -13,6 +13,7 @@ use openai_harmony::{
 };
 
 use crate::tool_calling::arguments::{parsed_json_literal, raw_json_literal};
+use crate::tool_calling::scan::push_source;
 use crate::tool_calling::traits::{Result, Tool, ToolCallDelta};
 use crate::unified::{
     GuidedChannel, GuidedGrammar, GuidedReasoning, GuidedRouted, NativeUnified, UnifiedParser,
@@ -196,16 +197,6 @@ impl SourceRecorder {
     }
 }
 
-fn push_range(ranges: &mut Vec<Range<usize>>, range: Range<usize>) {
-    if range.is_empty() {
-        return;
-    }
-    match ranges.last_mut() {
-        Some(last) if last.end == range.start => last.end = range.end,
-        _ => ranges.push(range),
-    }
-}
-
 /// Skip the first `skip` bytes of `queue`, then move the next `len` bytes into
 /// `ranges`. A byte from a made-up token, or a short queue, gets no range, so
 /// the tiling check fails instead of dating the byte by a guess.
@@ -228,7 +219,7 @@ fn commit_sources(
         let skipped = skip.min(take);
         let kept = take - skipped;
         match front.start {
-            Some(start) => push_range(ranges, start + skipped..start + take),
+            Some(start) => push_source(ranges, start + skipped..start + take),
             None if kept > 0 => tracing::warn!(
                 why = "harmony_source_synthetic",
                 bytes = kept,
@@ -1019,7 +1010,7 @@ impl HarmonyRuntime {
     fn take_pending_text(&mut self) -> String {
         let mut recovered = std::mem::take(&mut self.text_pending);
         if let Some(recorder) = &mut self.recorder {
-            push_range(
+            push_source(
                 &mut recorder.ranges,
                 recorder.fed - recovered.len()..recorder.fed,
             );

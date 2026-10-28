@@ -452,16 +452,21 @@ pub trait UnifiedParser: Send {
     /// Record the input byte range behind every committed Text and Reasoning byte.
     ///
     /// Call after [`Self::initialize_request`] and before the first parse. Offsets
-    /// count the text this instance received through [`Self::parse_into`], and keep
-    /// counting across [`Self::reset`]. Returns `false` when this parser cannot
-    /// record exact ranges, so the caller can refuse the request.
+    /// count the text this instance received through [`Self::parse_into`] since
+    /// recording was turned on, and keep counting across [`Self::reset`] and a new
+    /// request. Returns `false` when this parser cannot record exact ranges, so the
+    /// caller can refuse the request. Guided tool output never records.
+    ///
+    /// The families on the shared scanner and GPT-OSS record. Kimi K3, Muse
+    /// Glimmer, and Muse Spark return `false`.
     fn record_sources(&mut self) -> bool {
         false
     }
 
     /// Move the input ranges of the Text and Reasoning bytes committed since the
     /// last call into `out`, in output order. Text returned by [`Self::reset`]
-    /// counts as committed. Each range's input bytes equal the text bytes it
+    /// counts as committed. A failed [`Self::finish`] returns no events, so its
+    /// text has no ranges. Each range's input bytes equal the text bytes it
     /// stands for, and the ranges tile that text with no gap.
     fn take_sources(&mut self, _out: &mut Vec<std::ops::Range<usize>>) {}
 
@@ -916,6 +921,17 @@ impl<E: InvokeEmitter> ScannerUnified<E> {
 }
 
 impl<E: InvokeEmitter + Send> NativeUnified for ScannerUnified<E> {
+    /// The shared scanner commits text only as verbatim buffer prefixes, so every
+    /// family on it records exact ranges.
+    fn record_sources(&mut self) -> bool {
+        self.scanner.record_sources();
+        true
+    }
+
+    fn take_sources(&mut self, out: &mut Vec<std::ops::Range<usize>>) {
+        self.scanner.take_sources(out);
+    }
+
     fn preserve_special_tokens(&self) -> bool {
         self.scanner.preserve_special_tokens()
     }
@@ -980,7 +996,14 @@ impl<E: InvokeEmitter + Send> NativeUnified for ScannerUnified<E> {
     }
 
     fn finish_native(&mut self, output: &mut UnifiedParserOutput) -> Result<()> {
-        self.scanner.finish_ordered_into(output)
+        // `GuidedRouted::finish` drops the output on error, so the ranges of the
+        // text this call emitted go with it.
+        let mark = self.scanner.sources_mark();
+        let result = self.scanner.finish_ordered_into(output);
+        if result.is_err() {
+            self.scanner.restore_sources(mark);
+        }
+        result
     }
 
     fn allow_implicit_tool_terminator(&mut self) {
