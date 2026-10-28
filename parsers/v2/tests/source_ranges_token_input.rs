@@ -24,7 +24,6 @@ fn parser(record: bool) -> Box<dyn UnifiedParser> {
 }
 
 #[test]
-#[ignore = "F1: recording accepts token input and commits text without a source range"]
 fn recording_rejects_token_input_before_committing_unmapped_text() {
     let tokens = encode_harmony("A").unwrap();
     let expected = vec![UnifiedParserEvent::Text("A".into())];

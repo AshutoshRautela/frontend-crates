@@ -451,7 +451,8 @@ pub trait UnifiedParser: Send {
 
     /// Record the input byte range behind every committed Text and Reasoning byte.
     ///
-    /// Call after [`Self::initialize_request`] and before the first parse. Offsets
+    /// Call after [`Self::initialize_request`] and before the first parse. Feed
+    /// text only: while recording, [`Self::parse_token_ids_into`] fails. Offsets
     /// count the text this instance received through [`Self::parse_into`] since
     /// recording was turned on, and keep counting across [`Self::reset`] and a new
     /// request. Returns `false` when this parser cannot record exact ranges, so the
@@ -1403,6 +1404,11 @@ impl<N: NativeUnified + Send> UnifiedParser for GuidedRouted<N> {
         }
         if !self.native.input_capabilities().token_ids {
             anyhow::bail!("this unified parser does not support token-id ingestion");
+        }
+        // Ranges are offsets into the text fed through `parse_into`. Token input
+        // has no such bytes, so its text could not be dated.
+        if self.recording {
+            anyhow::bail!("source recording does not support token-id input");
         }
         self.started = true;
         if self.guided.is_none() {
