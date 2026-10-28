@@ -154,7 +154,8 @@ def test_native_publication_prefix_switch_raw_downloads_and_legacy_routes(histor
         driver.get(base + "?" + urlencode({"tab": "tab-unified", "slots_tab-unified": hidden}))
         _ready(driver, "tab-unified")
         normalized = driver.execute_script("return window.__conformanceController.selection(document.getElementById('tab-unified')).selected")
-        assert normalized[0] in choices
+        assert normalized == [hidden]
+        assert driver.find_elements("css selector", f"option[value='{hidden}']")
         driver.refresh()
         _ready(driver, "tab-unified")
         assert driver.execute_script("return window.__conformanceController.selection(document.getElementById('tab-unified')).selected") == normalized
@@ -348,7 +349,7 @@ def test_history_discovery_renders_first_and_preserves_selection(historical_publ
     try:
         driver.get(f'http://127.0.0.1:{server.server_port}/frontend-crates/')
         assert gate[0].wait(15), 'history discovery did not start'
-        WebDriverWait(driver, 30).until(lambda page: page.execute_script("return Boolean(document.querySelector('#tab-unified[data-load-state=ready] td.cell'))"))
+        WebDriverWait(driver, 30).until(lambda page: page.execute_script("return Boolean(document.querySelector('#tab-unified[data-load-state=ready] .matrix-cell'))"))
         assert driver.execute_script("return window.__conformanceController.selection(document.getElementById('tab-unified')).selected") == ['dynamo']
         assert not driver.find_elements('css selector', f"option[value='{previous_dynamo_capture['key']}']")
         assert not any('/viewer-data/' in path for path in requests)
@@ -356,14 +357,14 @@ def test_history_discovery_renders_first_and_preserves_selection(historical_publ
             driver.find_element('css selector', "[data-slot-open='0']").click()
             driver.find_element('css selector', "[data-picker-engine-choice='vllm']").click()
             driver.find_element('css selector', "[data-slot-capture='0']").send_keys(Keys.ESCAPE)
-            WebDriverWait(driver, 30).until(lambda page: page.execute_script("return Boolean(document.querySelector('#tab-unified[data-load-state=ready] td.cell'))"))
+            WebDriverWait(driver, 30).until(lambda page: page.execute_script("return Boolean(document.querySelector('#tab-unified[data-load-state=ready] .matrix-cell'))"))
         expected = driver.execute_script("return window.__conformanceController.selection(document.getElementById('tab-unified')).selected")
-        cell = driver.find_element('css selector', '#tab-unified td.cell[data-ttip-click=pin]')
+        cell = driver.find_element('css selector', '#tab-unified .matrix-cell[data-ttip-click=pin]')
         cell.click()
         WebDriverWait(driver, 10).until(lambda page: page.find_elements('css selector', '.ttip-pinned .ttip-head'))
         generation = driver.execute_script('return window.__conformanceLoader.generation')
         gate[1].set()
-        _ready(driver, 'tab-unified')
+        _ready(driver, 'tab-unified', reference=False)
         assert driver.execute_script("return document.getElementById('viewer').dataset.historyAvailable") == 'true'
         assert driver.execute_script("return document.getElementById('tab-unified')._comparisonSelection.keys") == expected
         assert driver.execute_script('return window.__conformanceLoader.generation') > generation
@@ -401,7 +402,7 @@ def test_same_model_replacement_keeps_tooltips_and_retires_old_only_models(publi
                 window.__conformanceController.updatePanel(panel, pin);
             }
         """)
-        cell = driver.find_element('css selector', '#tab-unified td.cell[data-ttip-click=pin]')
+        cell = driver.find_element('css selector', '#tab-unified .matrix-cell[data-ttip-click=pin]')
         cell.click()
         WebDriverWait(driver, 10).until(lambda page: page.find_elements('css selector', '.ttip-pinned .ttip-head'))
         assert driver.execute_script("return Boolean(window.__conformanceCellModel(window.previousTooltipCell))")
