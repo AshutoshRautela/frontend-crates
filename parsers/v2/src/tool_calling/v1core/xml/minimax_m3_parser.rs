@@ -177,6 +177,35 @@ pub(crate) fn native_types_require_json(root: &Value, schema: &Value) -> bool {
     mixed || walker.exhausted
 }
 
+/// Nested XML identifies an object or an array, but not which union alternative
+/// it belongs to. `object_child` types a child only when exactly one alternative
+/// can describe an object, and `array_item` reads the first alternative's
+/// `items`. Report unions the native grammar would render as nested tags but
+/// the parser could not type, so the builder keeps them on the JSON path.
+pub(crate) fn native_union_children_ambiguous(root: &Value, schema: &Value) -> bool {
+    let mut walker = SchemaWalker::new(root);
+    let Some(object) = schema.as_object() else {
+        return false;
+    };
+    for keyword in ["anyOf", "oneOf"] {
+        let Some(branches) = object.get(keyword).and_then(Value::as_array) else {
+            continue;
+        };
+        let objects = branches
+            .iter()
+            .filter(|branch| walker.may_describe_object(branch))
+            .count();
+        let arrays = branches
+            .iter()
+            .filter(|branch| walker.array_item(Some(branch)).is_some())
+            .count();
+        if objects > 1 || arrays > 1 {
+            return true;
+        }
+    }
+    walker.exhausted
+}
+
 #[derive(Clone, Copy)]
 pub(crate) enum M3ParameterKind {
     LiteralString { streamable: bool },
