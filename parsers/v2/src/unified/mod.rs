@@ -465,17 +465,20 @@ pub trait UnifiedParser: Send {
         None
     }
 
-    /// Record where committed text came from. Call before the first parse.
+    /// Record where committed text came from. Call after any prompt prefix
+    /// replays, before the generated text.
     ///
     /// Returns `false` when this parser cannot, so the caller can refuse the
-    /// request. The default cannot.
+    /// request. A parser that still holds replayed prefix bytes refuses: those
+    /// prompt bytes can surface as output, and they have no offset in the
+    /// generated text. The default cannot.
     fn record_sources(&mut self) -> bool {
         false
     }
 
     /// Move the input byte ranges of the Text and Reasoning bytes committed since
-    /// the last call into `out`, in output order. Offsets count every byte this
-    /// parser received. The default records nothing.
+    /// the last call into `out`, in output order. Offsets count the bytes this
+    /// parser received since recording was turned on. The default records nothing.
     fn take_sources(&mut self, _out: &mut Vec<std::ops::Range<usize>>) {}
 }
 
