@@ -27,11 +27,20 @@ fn main() -> anyhow::Result<()> {
     let mut parser = create_unified_parser_for_family("qwen3", &[])?;
     parser.initialize_request(UnifiedParserInit::default())?;
     let mut output = UnifiedParserOutput::default();
-    for delta in ["<think>check", "</think>Hello"] {
-        parser.parse_into(delta, &mut output)?;
-        // New committed events can be forwarded now, in output.events order.
+    for delta in ["<think>check", " again", "</think>Hello", " there"] {
+        // A retained output coalesces its last event; forward a fresh buffer.
+        let mut committed = UnifiedParserOutput::default();
+        parser.parse_into(delta, &mut committed)?;
+        for event in &committed.events {
+            println!("{event:?}");
+        }
+        output.append(&mut committed);
     }
-    output.append(&mut parser.finish()?);
+    let mut tail = parser.finish()?;
+    for event in &tail.events {
+        println!("{event:?}");
+    }
+    output.append(&mut tail);
     assert_eq!(output.assembled().len(), 2);
 
     // Reuse only after the previous stream has finished or been abandoned.
@@ -45,9 +54,9 @@ fn main() -> anyhow::Result<()> {
 }
 ```
 
-Create one parser per choice of a request. Preserve special tokens when `preserve_special_tokens()` is true. Resolve prompt-prefilled reasoning, native versus guided tool output, and invalid-payload policy into one `UnifiedParserInit` before feeding deltas; the neutral default above starts in native mode. Token-aware callers must check `input_capabilities()` before using token input. Call `finish()` once to flush held-back bytes and EOF recovery. On failure, events already appended by `parse_into` remain committed; `reset()` returns uncommitted bytes and clears stream state. Initialize again for the next request because built-in reset may retain the previous request configuration.
+Create one parser per choice of a request. Preserve special tokens when `preserve_special_tokens()` is true. Resolve prompt-prefilled reasoning, native versus guided tool output, and invalid-payload policy into one `UnifiedParserInit` before feeding deltas; the neutral default above starts in native mode. Token-aware callers must check `input_capabilities()` before using token input. Finalize once: call `finish_at_eos()` only when the backend confirms a grammar-ending EOS; call `finish()` for truncation, cancellation, or transport EOF. Confirmed EOS can close complete native tool arguments whose final terminator is implicit (for example Beam); an interrupted stream must not be promoted to that success condition. The text-only example above uses ordinary `finish()`. On failure, events already appended by `parse_into` remain committed; `reset()` returns uncommitted bytes and clears stream state. Initialize again for the next request because built-in reset may retain the previous request configuration.
 
-`output.events` contains incremental `UnifiedParserEvent` values. Tool-call updates carry a stable `tool_index`, an optional name, raw `arguments` fragments, and a `complete` flag; provisional updates do not authorize execution. Retain and concatenate argument fragments per index (or retain the whole output and call `tool_arguments_raw()`) when exact JSON text, key order, or numeric representation matters. `assembled()` gives ordered `UnifiedEvent` values with a typed `serde_json::Value` argument projection; it cannot preserve every lexical representation. Do not serialize that projection back into the wire arguments when fidelity is required. Validate tool availability, authorization, schema, and call policy in the serving layer before execution.
+`output.events` retains incremental `UnifiedParserEvent` values for assembly. Adjacent text or reasoning events coalesce in place, so its length is not a cursor for newly committed output. Forward each fresh per-advance buffer before appending it to retained output, and forward the finalization buffer once too. Tool-call updates carry a stable `tool_index`, an optional name, raw `arguments` fragments, and a `complete` flag; provisional updates do not authorize execution. Retain and concatenate argument fragments per index (or retain the whole output and call `tool_arguments_raw()`) when exact JSON text, key order, or numeric representation matters. `assembled()` gives ordered `UnifiedEvent` values with a typed `serde_json::Value` argument projection; it cannot preserve every lexical representation. Do not serialize that projection back into the wire arguments when fidelity is required. Validate tool availability, authorization, schema, and call policy in the serving layer before execution.
 
 ## Parser goals (read first)
 
@@ -201,37 +210,7 @@ Retain archive-backed `TOOLCALLING.*` fixtures and their original observations a
 
 ## Historical Fixture Format
 
-Retained non-Unified v2 fixtures use explicit implementation names. Do not rely on renderer inference for parser failures.
-
-```yaml
-captured_with:
-  dynamo_v2: Dynamo parser v2
-  vllm_rust: v0.22.0 0b3ba88f165976e77ca5e6a7a3f5bba4562b80af
-  vllm_python: 0.22.0
-  sglang_python: 0.5.12.post1
-cases:
-  TOOLCALLING.streamv1.4.a:
-    expected:
-      dynamo_v2:
-        calls: []
-        normal_text: ''
-      vllm_rust:
-        unavailable: 'vLLM Rust parser not captured: tool parser parsing failed: invalid Hermes'
-      vllm_python:
-        calls: []
-        normal_text: ''
-      sglang_python:
-        calls: []
-        normal_text: ''
-```
-
-Rules:
-
-- Use `expected.dynamo_rust`, `expected.vllm_rust`, `expected.vllm_python`, and `expected.sglang_python` for parser output in v2 fixtures.
-- Use `unavailable.<impl>` or `expected.<impl>.unavailable` when a parser does not exist, cannot run, or capture failed before output was available.
-- Use `expected.<impl>.error` only when the parser ran and the expected behavior is a thrown parser exception.
-- Every `X` or `✗` parser-failure marker in generated HTML must have the exact error text in YAML and in the pop-out.
-- Put source versions under `captured_with.*`; do not write local checkout paths into YAML.
+Retained archives contain multiple historical schemas, including older combined implementation maps and later implementation-specific snapshots. Preserve their original implementation keys, request bindings, and producer provenance; do not rewrite a historical `dynamo_v2` record to `dynamo_rust` or apply a current schema to old observations. See the [fixture storage guide](../../conformance/fixtures/README.md) for retained storage, and the [latest capture plan](../../docs/CONFORMANCE-LATEST-PLAN.md) for administrator updates. Normal contributor work uses the Unified inputs/GOLDEN and latest tests described above.
 
 ## Adding A Day-0 Tool-Calling Parser
 

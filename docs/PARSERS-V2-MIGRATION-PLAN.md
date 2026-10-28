@@ -45,7 +45,7 @@ The v1/v2 split is kept because **v2 is still under active development**: it liv
 | `parsers/v2/src/tool_calling/*` | v2 frontend-crate-owned | Rust home for streaming tool-calling parsers. Current Harmony implementation is `parsers/v2/src/tool_calling/harmony.rs`. |
 | `parsers/v2-py/` | v2 frontend-crate-owned | Test-only PyO3 package exposing the v2 parser to Python as `dynamo_parsers_v2`. Not published. |
 | `conformance/fixtures/toolcalling/fixtures-stream-v1/` | legacy streaming convention | Per-chunk fixtures for non-Unified stream parsers, including `dynamo_v2` implementation captures. |
-| `conformance/fixtures/toolcalling/fixtures-batch-on-stream-v1/` | legacy streaming convention | Complete batch text captured through non-Unified stream parsers for stream-vs-batch comparison. |
+| `conformance/fixtures/toolcalling/fixtures-batch-on-stream-v1.tar.gz` | legacy streaming convention | Complete batch text captured through non-Unified stream parsers for stream-vs-batch comparison. |
 | `conformance/viewer/` and `conformance/utils/src/assets/` | frontend-crate-owned | Shared JavaScript data/model engine and maintained matrix renderer. |
 
 ## Migration Steps
@@ -92,7 +92,7 @@ These files exist only for the parser v1/v2 migration and conformance workflow.
 | `parsers/v2/` | Temporary Rust parser crate for v2 streaming work. |
 | `parsers/v2-py/` | Temporary PyO3 binding crate/package for v2 streaming work. |
 | `conformance/fixtures/toolcalling/fixtures-stream-v1/` | Legacy, non-Unified stream fixtures using the v1 corpus convention. |
-| `conformance/fixtures/toolcalling/fixtures-batch-on-stream-v1/` | Legacy, non-Unified batch-on-stream fixture overlays. |
+| `conformance/fixtures/toolcalling/fixtures-batch-on-stream-v1.tar.gz` | Legacy, non-Unified batch-on-stream fixture overlays. |
 | `conformance/utils/check.sh` | Runs Unified v2 conformance, source status, and CI qualification without legacy staging. |
 | `conformance/utils/src/viewer_catalog.py` | Indexes active source resources and checks their hashes without rendering a report. |
 | `conformance/utils/src/validate.py` | Cross-implementation validation via `docker exec` or pip. |

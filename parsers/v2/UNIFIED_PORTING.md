@@ -6,7 +6,7 @@ This doc is for adding a family to the Unified path. The [README registry invent
 
 ## What you get for free
 
-`ScannerUnified` (`src/unified/mod.rs`) is the shared body. It is generic over the emitter and holds a `WrappedBlockScanner`, and the whole `UnifiedParser` impl is family-blind: `initialize`, `initialize_request`, `parse_into`, `finish`, `reset`.
+`ScannerUnified` (`src/unified/mod.rs`) implements `NativeUnified` over a `WrappedBlockScanner` and family emitter. `GuidedRouted` wraps that native owner, stores request/guided state, and implements the shared `UnifiedParser` lifecycle: initialization, incremental parsing, ordinary or confirmed-EOS finalization, and reset/reuse. Extend the matching shared owner rather than adding a family-specific lifecycle.
 
 Everything below is shared by `src/tool_calling/scan.rs` and the guided router in `src/unified/mod.rs` — do NOT reimplement any of it per family:
 
@@ -20,7 +20,7 @@ Everything below is shared by `src/tool_calling/scan.rs` and the guided router i
 
 The Gemma4 port added invoke scanning and optional reasoning labels. Extend these shared hooks before adding a family-specific drain loop.
 
-Guided decoding is a BACKEND feature, not a model feature — any family can be served with it — which is why `GuidedState` lives on the shared type and is parameterized on the family's `ReasoningSpec` markers rather than on any one grammar. A family that joins the unified path inherits it.
+Guided decoding is a BACKEND feature, not a model feature — any family can be served with it — which is why `GuidedState` is owned by the shared `GuidedRouted` wrapper and is parameterized on the family's `ReasoningSpec` markers rather than on any one grammar. A family that joins the unified path inherits it.
 
 ## Conversion contract
 
