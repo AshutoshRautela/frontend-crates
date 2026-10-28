@@ -6,7 +6,7 @@ Everything below uses only the public API. There is nothing private you need.
 
 ## 1. Implement the trait
 
-One method is required. `finish` is required too, because a parser that forgets to flush would silently drop the tail of every stream.
+`parse_into` and `finish` are required, because a parser that forgets to flush would silently drop the tail of every stream.
 
 ```rust
 use dynamo_parsers_v2::{
@@ -73,7 +73,7 @@ fn main() {
 }
 ```
 
-Register during startup, before serving. Registration is process-wide and takes effect for parsers created after it returns; a parser already mid-stream keeps the implementation it was built with, so a request cannot straddle the change.
+Register during startup, before serving. Registration is process-wide and intended for startup. A parser already created keeps its implementation; a concurrent constructor that looked up the factory before registration may still finish with the old factory. Register before accepting requests.
 
 ## 3. Replacing a family this crate already ships
 
@@ -86,7 +86,7 @@ dynamo_parsers_v2::register_unified_parser("qwen3", my_qwen3_factory);
 
 `unregister_unified_parser("qwen3")` removes yours and the built-in becomes reachable again — the built-in is shadowed, never replaced. `builtin_unified_families()` tells you what ships here; `vendor_unified_families()` tells you what has been registered on top.
 
-This is deliberately supported. Disagreeing with one of our families should cost you a registration call, not a fork.
+Built-in aliases canonicalize together: registering `qwen3` also shadows `qwen3_coder`, and unregistering either restores both. Arbitrary vendor names remain exact names. Registration changes factory lookup only; it does not add a tool-only entry, a structural-tag builder, a serving route, or conformance enrollment. Integrate and test each of those separately when needed.
 
 ## 4. What the contract requires
 
