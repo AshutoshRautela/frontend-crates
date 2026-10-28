@@ -218,8 +218,14 @@ impl UnifiedParser for TagParser {
         self.ids.get(tool_index).map(String::as_str)
     }
 
+    /// As the real parsers do: refuse while bytes are held, and count offsets
+    /// from here.
     fn record_sources(&mut self) -> bool {
+        if !self.buf.is_empty() {
+            return false;
+        }
         self.record = true;
+        self.start = 0;
         true
     }
 
@@ -537,17 +543,19 @@ fn two_choices_record_separately() {
     assert_recording_is_transparent(&Request::native("glm47"), input);
 }
 
+/// Recording starts after the prompt prefix replays, so a range counts the
+/// generated text only.
 #[test]
 fn the_prompt_prefix_is_not_counted_as_input() {
     let _parser = ParserOverride::install(false);
     let request = Request {
         prefill: StreamPrefill {
             starting_state: UnifiedParserStartingState::Reasoning,
-            prefix: Some("<|channel>"),
+            prefix: Some("<|channel>thought\n"),
         },
         ..Request::native("gemma4")
     };
-    let (input, texts) = with_slots(&split("thought\nR<channel|>A", 3));
+    let (input, texts) = with_slots(&split("R<channel|>A", 3));
     let output = request.run(input);
     check_sources(&output, &texts).unwrap();
     let (mut content, mut reasoning) = (Vec::new(), Vec::new());
@@ -557,8 +565,38 @@ fn the_prompt_prefix_is_not_counted_as_input() {
             reasoning.extend(sources.reasoning.clone());
         }
     }
-    assert_eq!(reasoning, vec![8..9]);
-    assert_eq!(content, vec![19..20]);
+    assert_eq!(reasoning, vec![0..1]);
+    assert_eq!(content, vec![11..12]);
+}
+
+/// A prompt prefix that leaves bytes held refuses recording when the stream
+/// starts, before any generated output. The test parser holds `<|channel>thou`
+/// as a partial opener; had the output disproved it, those prompt bytes would
+/// have surfaced as text with no offset in the generated input.
+#[test]
+fn a_held_prompt_prefix_refuses_before_any_output() {
+    let _parser = ParserOverride::install(false);
+    let request = Request {
+        prefill: StreamPrefill {
+            starting_state: UnifiedParserStartingState::Reasoning,
+            prefix: Some("<|channel>thou"),
+        },
+        ..Request::native("gemma4")
+    };
+    let plain = split("ght\nR<channel|>A", 3);
+    let stock = request.run(plain.clone());
+    assert!(
+        stock.iter().all(|item| !item.is_error()),
+        "recording off must not refuse"
+    );
+    let (input, _) = with_slots(&plain);
+    let output = request.run(input);
+    assert!(output.iter().all(|item| item.data.is_none()), "{output:?}");
+    let error = output.iter().find_map(|item| item.error.as_deref());
+    assert!(
+        error.is_some_and(|error| error.contains("the gemma4 parser cannot record sources")),
+        "{error:?}"
+    );
 }
 
 fn ends_with_error(output: &[Recorded]) -> bool {
@@ -749,14 +787,21 @@ fn the_corpus_records_without_changing_a_chunk() {
         let expected: Vec<_> = request.run(input.clone()).iter().map(plain_key).collect();
         let (slotted, texts) = with_slots(&input);
         let output = request.run(slotted);
-        // The test parser, unlike Gemma's, releases a disproven prompt prefix as
-        // text. Those bytes are prompt, not output, so the adapter refuses them.
+        // A replayed prompt prefix that leaves bytes held refuses to record,
+        // before any generated output: those prompt bytes could surface as
+        // text, and they have no offset in the generated input. Gemma 4 does
+        // this for a partial `thought` label, and so does the test parser.
         if name.starts_with("gemma_prefix/")
-            && output
-                .last()
-                .and_then(|item| item.error.as_deref())
-                .is_some_and(|error| error.contains("outside the fed input"))
+            && output.iter().any(|item| {
+                item.error
+                    .as_deref()
+                    .is_some_and(|error| error.contains("cannot record sources"))
+            })
         {
+            assert!(
+                output.iter().all(|item| item.data.is_none()),
+                "{name}: the refusal came after generated output"
+            );
             prefix_refused += 1;
             continue;
         }
@@ -769,7 +814,8 @@ fn the_corpus_records_without_changing_a_chunk() {
     }
     assert!(checked > 1000, "{checked} cases checked");
     assert!(refused > 400, "{refused} guided cases refused");
-    assert!(prefix_refused <= 8, "{prefix_refused} prefix cases refused");
+    // Every corpus prefix ends inside the opener, so the test parser holds it.
+    assert_eq!(prefix_refused, 16, "{prefix_refused} prefix cases refused");
 }
 
 /// The same with the real parsers. It enforces nothing until the
