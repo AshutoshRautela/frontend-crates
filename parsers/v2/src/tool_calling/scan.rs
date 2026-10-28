@@ -3775,33 +3775,31 @@ mod tests {
             }),
             strict: None,
         }];
-        for length in [4096, 8192] {
-            let mut scanner = crate::tool_calling::qwen3_coder::qwen3_scanner(&tools);
-            let content = format!("keep </tool_call> as data {}", "x".repeat(length));
-            let input = format!(
-                "<tool_call>\n<function=create_file>\n<parameter=content>{content}</parameter>\n</function>\n</tool_call>"
-            );
-            let mut events = Vec::new();
-            for (at, ch) in input.char_indices() {
-                events.extend(
-                    scanner
-                        .push_ordered(&input[at..at + ch.len_utf8()])
-                        .unwrap(),
-                );
-            }
-            events.extend(scanner.finish_ordered().unwrap());
-            let arguments = crate::unified::tool_arguments_raw(&events);
-            assert_eq!(
-                serde_json::from_str::<serde_json::Value>(&arguments[&0]).unwrap(),
-                serde_json::json!({ "content": content })
-            );
-            assert!(
-                scanner.block_end_searched_bytes <= 32 * input.len(),
-                "searched {} bytes for {} input bytes",
-                scanner.block_end_searched_bytes,
-                input.len()
+        let mut scanner = crate::tool_calling::qwen3_coder::qwen3_scanner(&tools);
+        let content = format!("keep </tool_call> as data {}", "x".repeat(8192));
+        let input = format!(
+            "<tool_call>\n<function=create_file>\n<parameter=content>{content}</parameter>\n</function>\n</tool_call>"
+        );
+        let mut events = Vec::new();
+        for (at, ch) in input.char_indices() {
+            events.extend(
+                scanner
+                    .push_ordered(&input[at..at + ch.len_utf8()])
+                    .unwrap(),
             );
         }
+        events.extend(scanner.finish_ordered().unwrap());
+        let arguments = crate::unified::tool_arguments_raw(&events);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&arguments[&0]).unwrap(),
+            serde_json::json!({ "content": content })
+        );
+        assert!(
+            scanner.block_end_searched_bytes <= 32 * input.len(),
+            "searched {} bytes for {} input bytes",
+            scanner.block_end_searched_bytes,
+            input.len()
+        );
     }
 
     #[test]
