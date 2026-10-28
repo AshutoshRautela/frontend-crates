@@ -15,23 +15,24 @@
 //! and `2`. This test runs every case at all three versions and expects that
 //! version's output.
 //!
-//! On frontend-crates `main`, 1,956 of the 222,372 runs differ, in two ways.
-//! dynamo-parsers-v2 0.8 turns on serde_json `arbitrary_precision` for every
-//! crate in the build, and the parsers keep a number as the model wrote it
-//! (frontend-crates #339):
+//! The expected differences depend on the build ([`Build`]), and the test pins
+//! each count:
 //!
-//! - [`MainDrift::NumberText`] (1,336 runs): a tool call's arguments hold the
-//!   same exact values with other number text, `1e+3` where dynamo sent
-//!   `1000.0`.
-//! - [`MainDrift::HugeNumberKept`] (620 runs): a call whose arguments hold
-//!   `1e400`. dynamo cannot parse that number, so it drops the call or never
-//!   finds it. With `arbitrary_precision`, the aggregator's own argument check
-//!   and the parsers accept it, and the call reaches the client. When the call
-//!   comes from a guided-JSON fallback, the content changes with it. Nothing
-//!   else may change.
-//!
-//! The test pins both counts. On the `dynamo-parsers-v2-v0.7.35` tag, with
-//! dynamo-parsers 10.0.7 (the versions dynamo pins), every run matches.
+//! - On the `dynamo-parsers-v2-v0.7.35` tag, with dynamo-parsers 10.0.7 (the
+//!   versions dynamo pins), every run matches.
+//! - With dynamo-parsers-v2 0.8 and serde_json `arbitrary_precision` off,
+//!   144 runs differ: GLM tool arguments keep `1000` where dynamo sent
+//!   `1000.0` ([`MainDrift::NumberText`]). 0.8 passes arguments through as the
+//!   model wrote them (frontend-crates #339). This is a known difference from
+//!   stock dynamo, which goes away when dynamo moves to 0.8.
+//! - While frontend-crates `main` turns `arbitrary_precision` on for the whole
+//!   build, 1,956 runs differ: 1,336 [`MainDrift::NumberText`] runs (`1e+3`
+//!   where dynamo sent `1000.0`), and 620 [`MainDrift::HugeNumberKept`] runs,
+//!   where a call holding `1e400`, which dynamo drops or never finds, reaches
+//!   the client. Only the call, its finish reason, and the content a
+//!   guided-JSON fallback consumed may change. These come from the feature, not
+//!   from the move, and go away when the feature is opt-in; remove this case
+//!   then.
 //!
 //! The chunks hold only the OpenAI part and the tool-call completion evidence.
 //! dynamo folds `nvext` and prompt logprobs around the aggregator, so the
@@ -183,6 +184,37 @@ enum MainDrift {
 /// frontend-crates `main`.
 fn numbers_kept_as_written() -> bool {
     serde_json::from_str::<Value>("1e400").is_ok()
+}
+
+/// The build the replay runs on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Build {
+    /// dynamo-parsers-v2 0.7.35, as dynamo pins it.
+    Pinned,
+    /// dynamo-parsers-v2 0.8 with serde_json `arbitrary_precision` off.
+    PassThrough,
+    /// dynamo-parsers-v2 0.8 with `arbitrary_precision` on, as on `main` today.
+    ArbitraryPrecision,
+}
+
+fn build() -> Build {
+    if numbers_kept_as_written() {
+        return Build::ArbitraryPrecision;
+    }
+    // 0.7.35 writes a GLM number argument as a float; 0.8 keeps an integer.
+    let parsed = dynamo_chat_parsing::unified_stream::parse_complete_with_policy(
+        "glm47",
+        "<tool_call>write_file<arg_key>count</arg_key><arg_value>1e3</arg_value></tool_call>",
+        &GuidedToolConstraint::None,
+        &tools(),
+        Default::default(),
+    )
+    .expect("GLM parse");
+    match parsed.tool_calls[0].function.arguments.as_str() {
+        r#"{"count":1000.0}"# => Build::Pinned,
+        r#"{"count":1000}"# => Build::PassThrough,
+        other => panic!("unknown GLM argument text: {other}"),
+    }
 }
 
 fn tool_calls(output: &Value) -> Vec<&Value> {
@@ -356,7 +388,7 @@ async fn run(input: &Value, options: &AggregatorOptions) -> Value {
 async fn moved_aggregator_matches_dynamo_llm() {
     let fixture = fixture();
     assert_eq!(fixture.cases.len(), 74_124);
-    let on_main = numbers_kept_as_written();
+    let build = build();
     let mut drift = std::collections::HashMap::new();
     let mut mismatches = Vec::new();
     let mut drifted = Vec::new();
@@ -375,7 +407,7 @@ async fn moved_aggregator_matches_dynamo_llm() {
             if &actual == expected {
                 continue;
             }
-            if on_main
+            if build != Build::Pinned
                 && let Some(kind) = main_drift(&json!([input, option_values]), expected, &actual)
             {
                 *drift.entry(kind).or_insert(0usize) += 1;
@@ -418,16 +450,16 @@ async fn moved_aggregator_matches_dynamo_llm() {
             .collect::<Vec<_>>()
             .join("\n")
     );
-    let pinned = if on_main {
-        [
+    let pinned: std::collections::HashMap<_, _> = match build {
+        Build::Pinned => [].into(),
+        Build::PassThrough => [(MainDrift::NumberText, 144)].into(),
+        Build::ArbitraryPrecision => [
             (MainDrift::NumberText, 1_336),
             (MainDrift::HugeNumberKept, 620),
         ]
-        .into()
-    } else {
-        std::collections::HashMap::new()
+        .into(),
     };
-    assert_eq!(drift, pinned, "runs that differ on frontend-crates main");
+    assert_eq!(drift, pinned, "runs that differ on the {build:?} build");
 }
 
 #[tokio::test]
@@ -447,7 +479,7 @@ async fn main_drift_rejects_unrelated_huge_number_changes() {
     )
     .await;
     if !numbers_kept_as_written() {
-        // Without `arbitrary_precision` nothing drifts.
+        // Without `arbitrary_precision` no call with `1e400` is kept.
         assert_eq!(&actual, expected);
         return;
     }
